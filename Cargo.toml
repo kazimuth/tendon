@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "rustdoc-scrape",
+    "test-crate",
+    "transgress-abi"
+]
