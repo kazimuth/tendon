@@ -6,4 +6,4 @@ edition = "2018"
 
 [dependencies]
 serde = "1.0.91"
-slotmap = { version = "0.3.0", features = "serde" }
+slotmap = { version = "0.3.0", features = ["serde"] }

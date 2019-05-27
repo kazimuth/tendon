@@ -44,7 +44,7 @@ pub struct Enum {}
 /// A single struct.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Struct {
-    pub ident: StructIdent,
+    pub ident: TypeIdent,
     pub doc: String,
     pub generic: Generic,
     pub size: usize,

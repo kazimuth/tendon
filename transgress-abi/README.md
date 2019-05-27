@@ -30,6 +30,9 @@ abi
   - thread locals wrappers?
     - ThreadLocal<Option<T>>
 - catch_panic
+- auto-instantiation
+  - default types
+  - used in docs?
 
 runtime
 
@@ -50,6 +53,7 @@ runtime
   - identify crates by name+semver (+ option hash?)
   - additional checks?
 - reexports
+  serde?
 - capabilities?
 
 * provide lowering to wasm-bindgen from rustdoc-scrape / from ABI
