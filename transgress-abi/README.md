@@ -55,27 +55,37 @@ fast parsing + validation of ABIs
 ## reading
 
 https://gankro.github.io/blah/rust-layouts-and-abis/
+
 -> size, alignment
+
 -> offsets within type: undefined unless transparent or C
+
 -> reprs: Rust, C, transparent, packed(N), simd, align=X, int
 
 https://doc.rust-lang.org/nomicon/README.html
+
 -> all sortsa stuff
 
 https://github.com/dtolnay/semver-trick
 https://rust-lang-nursery.github.io/api-guidelines/future-proofing.html#future-proofing
+
 -> special trick for handling cross-library
+
 -> will be handled if we handle reexports correctly
 
 https://docs.rs/abi_stable/0.4.1/abi_stable/
 https://crates.io/crates/abi_stable
+
 -> similar idea, but way more work / boilerplate than my goal
+
 -> divides crate ABIs based on 0.x.0 and y.0.0
 
 https://rustwasm.github.io/book/reference/which-crates-work-with-wasm.html
+
 -> stuff that doesn't mess with the OS will run easy under wasm
 
 https://github.com/WebAssembly/design/issues/1274
+
 -> future?
 
 https://en.wikipedia.org/wiki/GraalVM
