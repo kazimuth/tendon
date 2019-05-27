@@ -6,3 +6,4 @@ edition = "2018"
 
 [dependencies]
 escargot = "0.5"
+scraper = "0.1"
