@@ -7,18 +7,18 @@ pub fn x(y: i32) {}
 
 /// opaque struct
 pub struct Opaque {
-    members: Vec<i32>,
+    member_a: Vec<i32>,
 }
 
 /// non-opaque struct
 /// hmm...
 pub struct NonOpaque {
-    pub members: Vec<i32>,
+    pub member_b: Vec<i32>,
 }
 
 /// partially-opaque struct
 pub struct PartiallyOpaque {
-    pub members: Vec<i32>,
+    pub member_c: Vec<i32>,
     _nonexhaustive: (),
 }
 
@@ -31,6 +31,7 @@ pub struct Generic<T: Sized + std::io::Write> {
 pub struct ReprC {
     pub x: i32,
     pub y: *mut (),
+    pub w: i64,
 }
 
 pub mod z {

@@ -2,5 +2,7 @@
 members = [
     "rustdoc-scrape",
     "test-crate",
-    "transgress-abi"
+    "transgress-abi",
+    "purvey",
+    "analysis-to-transgress"
 ]
