@@ -9,3 +9,4 @@ Currently needs nightly to harvest save-analysis, but it might be possible to do
 https://github.com/rust-lang/rls/tree/master/rls-rustc
 
 just go through rls?
+--> invoke rls --cli

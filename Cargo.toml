@@ -1,8 +1,6 @@
 [workspace]
 members = [
-    "rustdoc-scrape",
     "test-crate",
     "transgress-abi",
-    "purvey",
-    "analysis-to-transgress"
+    "analysis-to-transgress",
 ]

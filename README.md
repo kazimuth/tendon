@@ -13,6 +13,8 @@ ideally:
 
 use-cases:
 
+aimed at large API surfaces that we don't want to bind by hand
+
 - stable rust plugins
 - python bindings
 - java bindings
@@ -30,16 +32,3 @@ impl strategies:
     - https://github.com/servo/html5ever
 
   - other paths: rust-analyzer, rustc nightly, hand implementation, ...
-
-compare: cffi, abi-vs-api bindings
-
-1. lower to ABI
-
-- generate rust shim implementing ABI
-  - mask ABI-less things
-- generate [target-lang] shim using ABI
-
-2. OR, generate rust code that generates API
-
-- wasm-bindgen
-- rust-swig

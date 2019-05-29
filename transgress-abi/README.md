@@ -1,6 +1,6 @@
 # transgress-abi
 
-A stable ABI for rust code.
+A stable ABI for rust code?
 
 ## goals
 
@@ -15,7 +15,7 @@ A stable ABI for rust code.
 
 use cases
 
-- rust plugin system: load rust library dynamically, easy interop
+- rust plugin system: load rust library dynamically
 - FFI: easily make insta-bindings to rust code based on ABI
 
 ## reqs / ideas
@@ -42,7 +42,7 @@ runtime
 - #[repr]s
 - canonical types e.g. libc, std types
 - dynamic linking
-  - support loading multiple modules in this style, calling into each other
+  - support loading multiple modules in this style, calling into each other?
   - rust runtime
 - handle generics through vtable ABI
   - need a vtable ABI
@@ -55,6 +55,9 @@ runtime
 - reexports
   serde?
 - capabilities?
+- allocators
+  - https://doc.rust-lang.org/1.9.0/book/custom-allocators.html#default-allocator
+  - require the system allocator
 
 * provide lowering to wasm-bindgen from rustdoc-scrape / from ABI
 
@@ -69,6 +72,134 @@ runtime
   - what setting would use this?
     - wasm embedding in tooling
     - eh
+
+compare: cffi, abi-vs-api bindings
+
+1. lower to ABI
+
+- generate rust shim implementing ABI
+  - mask ABI-less things
+- generate [target-lang] shim using ABI
+
+2. OR, generate rust code that generates API?
+
+- wasm-bindgen
+- rust-swig
+
+is there a difference?
+
+yes! -- a general rust ABI is actually very hard!
+
+- are we actually making an ABI? it's sorta in-between, right?
+  - https://en.wikipedia.org/wiki/Application_binary_interface
+  - we define a C API that's guaranteed to be ABI-backwards-compatible (to some extent) on a single target triple
+    - different target triples are incompatible
+  - we depend on the system ABI.
+- ABI:
+
+building custom bindings for each language that don't go through a particular API
+
+- use multiple rust-based libraries in something?
+
+  - rust libraries would need to be dynamically linked
+  - https://doc.rust-lang.org/reference/linkage.html
+    - dylibs exist, but don't work across compiler versions
+  - _might_ be able to instrument libraries to be dynamically linked, but: hard.
+    - patches: https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html
+
+okay, so don't need to dynamically link all rust libraries, but want efficient interchange of data through FFI?
+
+e.g. ndarray passed to rust library using ndarray without conversion:
+
+`pip install ndarray-rs arraything-rs`
+
+`arraything.arraything(ndarray.make_array())`
+
+ndarray (rust) -> python wrapper -> arraything (rust)
+
+wrapping and unwrapping stages defined to be invertible?
+
+- this is actually required for any rust-rust dynamic-calling
+
+special-case for same compiler version + lib hash?
+
+- might technically be undefined
+
+okay so then: ABI is essentially a high-performance serialization schema
+
+-> ...for data interchange only.
+
+but: we don't have serde for all types.
+
+opaque pointer design: simple to implement, but doesn't compose across libraries
+
+mix of opaque pointers + serialization?
+opaque by default + serialization where needed?
+
+is linking two libraries with the same semver major version but different compiler versions supported?
+
+what about compatible types across semver versions?
+-> must use semver trick?
+-> annotations / docs?
+-> `#[since]` annotation?
+
+two systems: ffi bindings and rust-rust calling
+
+- ffi bindings use rust ...
+
+- serializable types
+
+- want a .d.ts style system -- mixins for uncontrolled libs; but interacts weirdly w/ soundness rules
+  - impl Transgressor<NDarray> for NDArrayTransgressor
+  - we can find this because we have the whoooole API to look at, owo
+    - or just throw it in a macro to be exported idk
+      - `load_transgressors! { helpers_a, [default-loaded helper lib[s]] };`
+    - we're already breaking the rules lol
+
+```rust
+let q: Remote<Thing> = dynload().new_thing();
+
+q.method(1i32, s: serde::Serialize)
+```
+
+is serde-serializability a semver guarantee?
+
+- likely not considered breaking changes: reordering fields, adding private fields?
+- so, maybe not?
+- try anyway?
+  - best-effort cross-library integration?
+
+bincode serialization for SpEeEd
+
+- likely faster than FFI calls for every serde:: call
+
+problem is we have a lotta copies of different things floating around
+
+alt-solution: just don't solve this, lmao
+
+- across-library usage might not be very common
+- use case: plugins
+  - plugins talk to host, not much to each other?
+- use case: multiple ffi libraries
+  - can try deserialization from host data model
+  - can try tagging structs with metadata?
+    - ... hash ...
+    - repr(C) special case
+  - jitting / caching decisions at boundary
+- custom metadata for stable things
+
+use case: large API surfaces that we don't want to bind by hand
+
+sample libraries:
+
+- auto-impl coercion for some types
+  - arrays, maps
+  - numbers
+  - strings
+
+fighting things:
+
+-
 
 ## impl
 
@@ -123,3 +254,5 @@ https://rustwasm.github.io/wasm-bindgen/api/wasm_bindgen/convert/trait.IntoWasmA
 https://github.com/rustwasm/wasm-bindgen/blob/master/src/convert/impls.rs
 
 http://swig.org/Doc3.0/SWIG.html
+
+https://rustwasm.github.io/docs/wasm-bindgen/reference/arbitrary-data-with-serde.html
