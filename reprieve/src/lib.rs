@@ -1,8 +1,8 @@
 //! A dead-simple library for use
 
-mod once;
+pub mod block;
+pub mod once;
 
 pub use block::unblock;
-
-pub mod block;
+pub use once::once_future;
 mod fs;

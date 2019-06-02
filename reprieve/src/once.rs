@@ -27,7 +27,21 @@ use std::task::{Context, Poll, Waker};
 //
 // all are valid.
 
-pub fn once_future<T: Send + 'static>() -> (Sender<T>, OnceFuture<T>) {
+/// A simple one-shot future.
+///
+/// ```no_run
+/// # #![feature(async_await)]
+/// use reprieve::once::once_future;
+/// async fn demo() {
+///     let (sender, future) = once_future::<String>();
+///     sender.set("hello there".to_string()); // note: synchronous! can be called from any thread!
+///
+///     // future will now resolve to the value you send:
+///     assert_eq!(future.await, "hello there");
+/// }
+/// ```
+/// Has a few microseconds of overhead (at git revision 6a3c4bf -- measure for yourself!).
+pub fn once_future<T: Send + 'static>() -> (Sender<T>, impl Future<Output = T>) {
     let inner = Arc::new(FutureInner {
         waker: OnceCell::new(),
         result: OnceCell::new(),
@@ -45,7 +59,7 @@ pub fn once_future<T: Send + 'static>() -> (Sender<T>, OnceFuture<T>) {
     )
 }
 
-pub struct OnceFuture<T> {
+struct OnceFuture<T> {
     // required to prevent accidental aliasing if poll() is called after Ready() is returned
     returned: bool,
     inner: Arc<FutureInner>,
@@ -83,6 +97,8 @@ pub struct Sender<T> {
     phantom: PhantomData<T>,
 }
 impl<T: Send + 'static> Sender<T> {
+    /// Set the value of the future and wake it if it's sleeping.
+    /// Return false if the value was already set.
     pub fn set(&self, t: T) -> bool {
         let raw = Box::into_raw(Box::new(t)) as *mut ();
 
