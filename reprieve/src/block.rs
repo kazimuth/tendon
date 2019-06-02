@@ -1,4 +1,4 @@
-//! Runtime for the blocking thread pool.
+//! Convert blocking code into futures.
 
 use log::info;
 use parking_lot::Mutex;
@@ -12,7 +12,43 @@ lazy_static::lazy_static! {
     static ref RUNTIME: Runtime = init_runtime();
 }
 
-/// Enqueue a blocking work item to be performed some time in the future, on the blocking thread pool.
+/// Enqueue a blocking work item to be performed some time in the future, on a
+/// global thread pool for blocking work.
+///
+/// ```no_run
+/// # #![feature(async_await)]
+/// # use std::future::Future;
+/// # use std::path::PathBuf;
+/// # use std::fs::File;
+/// # use std::io::{self, Read};
+/// # use std::thread;
+/// # use std::time::Duration;
+/// /// most basic example: do something blocking without blocking the executor thread
+/// /// (note: there's no reason to actually use this function, lmao)
+/// async fn nonblocking_sleep(duration: Duration) {
+///     reprieve::unblock(move || thread::sleep(duration)).await
+/// }
+///
+/// /// Find the name of the current rust package.
+/// async fn package_name() -> io::Result<String> {
+///     let toml_path = PathBuf::from("Cargo.toml");
+///
+///     // create a future, not blocking the executor
+///     let cargo_toml = reprieve::unblock(move || -> io::Result<String> {
+///         let mut file = File::open(toml_path)?;
+///         let mut result = String::new();
+///         file.read_to_string(&mut result)?;
+///         Ok(result)
+///     });
+///
+///     // ... do some work ...
+///
+///     let cargo_toml = cargo_toml.await?;
+///     
+///     let name = cargo_toml.lines().find(|line| line.starts_with("name")).unwrap_or("unknown");
+///     Ok(name.into())
+/// }
+///
 pub fn unblock<F, T>(f: F) -> impl Future<Output = T>
 where
     T: Send + 'static,

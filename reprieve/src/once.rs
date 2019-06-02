@@ -1,3 +1,5 @@
+//! A simple one-shot future.
+
 use once_cell::sync::OnceCell;
 use std::future::Future;
 use std::marker::PhantomData;
@@ -23,7 +25,7 @@ use std::task::{Context, Poll, Waker};
 // P1 C1 P2* C2*
 // P1 C1 C2* P2*
 // C1 P1 C2* P2*
-// C1 C2 P1 P2* C2*
+// C1 C2 P1 P2* .. C2*
 //
 // all are valid.
 
@@ -31,7 +33,7 @@ use std::task::{Context, Poll, Waker};
 ///
 /// ```no_run
 /// # #![feature(async_await)]
-/// use reprieve::once::once_future;
+/// use reprieve::once_future;
 /// async fn demo() {
 ///     let (sender, future) = once_future::<String>();
 ///     sender.set("hello there".to_string()); // note: synchronous! can be called from any thread!
@@ -40,7 +42,8 @@ use std::task::{Context, Poll, Waker};
 ///     assert_eq!(future.await, "hello there");
 /// }
 /// ```
-/// Has a few microseconds of overhead (at git revision 6a3c4bf -- measure for yourself!).
+///
+/// Has a few microseconds of overhead (at git revision `6a3c4bf` -- measure for yourself!)
 pub fn once_future<T: Send + 'static>() -> (Sender<T>, impl Future<Output = T>) {
     let inner = Arc::new(FutureInner {
         waker: OnceCell::new(),
@@ -92,6 +95,7 @@ impl<T> Future for OnceFuture<T> {
     }
 }
 
+/// Handle that allows setting the value of a once future.
 pub struct Sender<T> {
     inner: Arc<FutureInner>,
     phantom: PhantomData<T>,
