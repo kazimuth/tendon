@@ -1,5 +1,8 @@
-#![feature(await_macro, async_await)]
+//! A dead-simple library for use
+
+mod once;
+
+pub use block::unblock;
 
 pub mod block;
 mod fs;
-pub(crate) mod util;
