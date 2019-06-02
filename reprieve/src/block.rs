@@ -1,41 +1,16 @@
 //! Runtime for the blocking thread pool.
 
 use log::info;
-use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use std::future::Future;
-use std::marker::PhantomData;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::task::{Context, Poll, Waker};
 use std::thread;
 use std::time::Duration;
+
+use crate::once::once_future;
 
 lazy_static::lazy_static! {
     static ref RUNTIME: Runtime = init_runtime();
 }
-
-// Correctness proof:
-// We need to guarantee that every future whose closure returns will eventually be polled.
-// Events:
-// - P1: result is set from thread pool
-// - P2: waker is called from thread pool, if extant
-// - C1: waker is set from executor
-// - C2: result is returned from executor, if extant [end state]
-//
-// P1 -> P2, C1 -> C2
-// assume executor fulfills contract of wakers (if waker is called, future will be polled later)
-//
-// requirement: P1 precedes C2
-//
-// Possible interleavings:
-// P1 P2 C1 C2*
-// P1 C1 P2* C2*
-// P1 C1 C2* P2*
-// C1 P1 C2* P2*
-// C1 C2 P1 P2* C2*
-//
-// all are valid.
 
 /// Enqueue a blocking work item to be performed some time in the future, on the blocking thread pool.
 pub fn unblock<F, T>(f: F) -> impl Future<Output = T>
@@ -43,76 +18,16 @@ where
     T: Send + 'static,
     F: FnOnce() -> T + Send + 'static,
 {
-    let inner = Arc::new(FutureInner {
-        waker: OnceCell::new(),
-        result: OnceCell::new(),
-    });
-    let inner_clone = inner.clone();
+    let (sender, future) = once_future();
 
     let op = Box::new(move || {
         let result = f();
-        let raw = Box::into_raw(Box::new(result)) as *mut ();
-
-        // EVENT P1
-        if !inner.result.set(SendPtr(raw)).is_ok() {
-            panic!("invariants violated");
-        }
-
-        // EVENT P2
-        if let Some(waker) = inner.waker.get() {
-            waker.wake_by_ref();
-        }
+        sender.set(result);
     });
 
     RUNTIME.injector.lock().push(op);
 
-    UnblockFuture {
-        returned: false,
-        inner: inner_clone,
-        phantom: PhantomData,
-    }
-}
-
-struct FutureInner {
-    waker: OnceCell<Waker>,
-    result: OnceCell<SendPtr>,
-}
-struct SendPtr(*mut ());
-unsafe impl Send for SendPtr {}
-// TODO: actually sync? why does oncecell require this?
-unsafe impl Sync for SendPtr {}
-
-struct UnblockFuture<T> {
-    // required to prevent accidental aliasing if poll() is called after Ready() is returned
-    returned: bool,
-    inner: Arc<FutureInner>,
-    phantom: PhantomData<T>,
-}
-
-impl<T> Future for UnblockFuture<T> {
-    type Output = T;
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        if self.returned {
-            panic!("UnblockFuture polled after returning")
-        }
-        {
-            // EVENT C1
-            self.inner.waker.get_or_init(|| cx.waker().clone());
-
-            // EVENT C2
-            if let Some(result) = self.inner.result.get() {
-                let boxed = unsafe { Box::from_raw((result.0) as *mut T) };
-
-                unsafe {
-                    self.get_unchecked_mut().returned = true;
-                }
-
-                Poll::Ready(*boxed)
-            } else {
-                Poll::Pending
-            }
-        }
-    }
+    future
 }
 
 fn init_runtime() -> Runtime {
@@ -155,7 +70,9 @@ struct Runtime {
 mod tests {
     use super::*;
 
+    use std::pin::Pin;
     use std::ptr;
+    use std::task::{Context, Poll, Waker};
     use std::task::{RawWaker, RawWakerVTable};
     use std::time::Instant;
 
