@@ -4,8 +4,10 @@ custom_error::custom_error! { pub Error
     Io { source: std::io::Error } = "io error: {source}",
     CargoCheckFailed = "`cargo check` failed",
     RlsFailed = "`rls` failed",
-    Other { cause: StaticStr }= "other error: {cause}",
+    Other { cause: StaticStr } = "other error: {cause}",
+    AnalysisError { source: rls_analysis::AError } = "rls-analysis error: {source}",
 }
+
 /// Workaround for custom_error having parser problems.
 pub type StaticStr = &'static str;
 
