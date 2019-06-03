@@ -6,8 +6,8 @@
 //! It is intended for projects that can benefit from the mental model of futures but don't need a high-performance network runtime;
 //! I wrote it to make work on a streaming compiler easier.
 //! Provides a function `spawn` to spawn a future on a threadpool,
-//! and `unblock` to spawn a unit of blocking work on a blocking threadpool,
-//! and `wait` to wait for any future.
+//! `unblock` to spawn a unit of blocking work on a blocking threadpool,
+//! and `wait` to wait for any future outside of a threadpool.
 //!
 //! ## Example with std::io
 //!
