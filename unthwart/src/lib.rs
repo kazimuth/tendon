@@ -1,26 +1,24 @@
-#![feature(async_await)]
+#![feature(async_await, await_macro)]
 
-//! Convert blocking code into futures.
+//! Don't block (thwart) your event loop.
 //!
 //! ## Example with std::io
 //!
 //! ```no_run
 //! # #![feature(async_await)]
 //! use std::{
-//!     io, fs, path::Path,
+//!     io, fs, path::PathBuf,
 //! };
 //!
 //! // declare the error type you want to use in this module
-//! // alternatively, `use reprieve::unblock;`
-//! reprieve::use_error!(io::Error);
+//! // alternatively, just use `unthwart` directly
+//! type Error = std::io::Error;
 //!
-//! async fn read_to_string<P: AsRef<Path>>(path: P) -> io::Result<String> {
+//! async fn read_to_string(path: PathBuf) -> io::Result<String> {
 //!     // convert blocking code to a future
-//!     let result = reprieve::unblocked! {
-//!         let path = path.as_ref().to_owned();
-//!         fs::read_to_string(path)?
-//!     };
-//!     result.await
+//!     unthwart::unthwarted! {
+//!         fs::read_to_string(&path)
+//!     }
 //! }
 //! ```
 
@@ -52,7 +50,7 @@ lazy_static::lazy_static! {
 ///     // create a future, not blocking the executor
 ///     // note: future must be Send + 'static, which means you
 ///     // should make all the inputs owned and move them into the closure
-///     let cargo_toml = reprieve::unblock(move || -> io::Result<String> {
+///     let cargo_toml = unthwart::unthwart(move || -> io::Result<String> {
 ///         let mut file = File::open(toml_path)?;
 ///         let mut result = String::new();
 ///         file.read_to_string(&mut result)?;
@@ -67,7 +65,7 @@ lazy_static::lazy_static! {
 ///     Ok(name.into())
 /// }
 /// ```
-pub fn unblock<F, T>(input: F) -> impl Future<Output = T>
+pub fn unthwart<F, T>(input: F) -> impl Future<Output = T>
 where
     T: Send + 'static,
     F: FnOnce() -> T + Send + 'static,
@@ -82,15 +80,94 @@ where
     RUNTIME.injector.lock().push(op);
 
     async {
-        future.await.expect("runtime dropped channel, should never happen")
+        future
+            .await
+            .expect("runtime dropped channel, should never happen")
     }
 }
 
+/// Unblock a bit of blocking code by running it off the executor.
+///
+/// Returns a Result<T, Error>, where Error is whatever Error is in scope.
+///
+/// ```no_run
+/// # #![feature(async_await)]
+/// use std::{fs, io::{self, Error}, path::Path};
+/// use unthwart::unthwart;
+///
+/// async fn read_to_string(path: &Path) -> io::Result<String> {
+///     let path = path.to_owned();
+///     unthwart::unthwarted! {
+///         fs::read_to_string(&path)
+///     }
+/// }
+/// ```
+///
+#[macro_export]
+macro_rules! unthwarted {
+    ($($op:tt)+) => ({
+        let f = move || -> Result<_, Error> {
+            Ok($crate::as_expr!({$($op)*}))
+        };
+        $crate::unthwart(f).await?
+    })
+}
+
+#[macro_export]
+macro_rules! unthwarted_better {
+    ($($op:tt)+) => ({
+        use parking_lot::Mutex;
+        use std::sync::Arc;
+        struct Dropper(Arc<Mutex<bool>>);
+        impl Drop for Dropper {
+            fn drop(&mut self) {
+                *self.0.lock() = false;
+            }
+        }
+        let accessible = Arc::new(Mutex::new(true));
+        let _root = Dropper(accessible.clone());
+
+        struct NoReallySafeIPromise<T>(*mut T);
+        unsafe impl<T> Send for NoReallySafeIPromise<T> {}
+
+        fn ensure_sync<T: Sync>(t: &T) {}
+
+        let mut f = || -> Result<_, Error> {Ok($crate::as_expr!({$($op)*}))};
+        ensure_sync(&f);
+
+        let addr = NoReallySafeIPromise(&mut f);
+        let z = move || {
+            if *accessible.lock() {
+                Some(unsafe { (*addr.0)() })
+            } else {
+                None
+            }
+        };
+
+        let result: Result<_, Error> = $crate::unthwart(z).await.expect("unreachable")?;
+        result
+    })
+}
+
+/// The same as `unthwarted`, but doesn't coerce errors.
+#[macro_export]
+macro_rules! unthwarted_ {
+    ($($op:tt)+) => {
+        $crate::unthwart(move || $crate::as_expr!({$($op)*}))
+    }
+}
+#[macro_export]
+macro_rules! as_expr {
+    ($e:expr) => {
+        $e
+    };
+}
+
 fn init_runtime() -> Runtime {
-    info!("starting reprieve blocking thread pool");
+    info!("starting unthwart blocking thread pool");
     for i in 0..num_cpus::get() {
         let name = format!(
-            "reprieve {} blocking worker {}",
+            "unthwart {} blocking worker {}",
             env!("CARGO_PKG_VERSION"),
             i
         );
@@ -121,74 +198,25 @@ struct Runtime {
     injector: Mutex<Vec<Box<dyn FnOnce() + Send>>>,
 }
 
-/// Set the error type to use for this module.
-///
-/// Declares a local function `unblock` like `reprieve::unblock` but that requires
-/// its input return Result<T, $err>.
-#[macro_export]
-macro_rules! use_error {
-    ($err:ty) => {
-        fn unblock<F, T>(
-            input: F,
-        ) -> impl std::future::Future<Output = std::result::Result<T, $err>>
-        where
-            T: Send + 'static,
-            F: FnOnce() -> std::result::Result<T, $err> + Send + 'static,
-        {
-            $crate::unblock(input)
-        }
-    };
-}
-
-/// Unblock a bit of blocking code by running it off the executor.
-///
-/// Calls whatever `unblock` is in scope; either `use reprieve::unblock;` or
-/// `reprieve::set_error(ErrorType);`.
-///
-/// ```no_run
-/// # #![feature(async_await)]
-/// use std::{fs, io, path::Path};
-/// use reprieve::unblock;
-/// 
-/// async fn read_to_string(path: &Path) -> io::Result<String> {
-///     (reprieve::unblocked! {
-///         // you can add 'let' bindings to make things Send
-///         let path = path.to_owned(); 
-///         // then finish with an expression:
-///         fs::read_to_string(path)?
-///      }).await
-/// }
-///
-/// ```
-/// 
-#[macro_export]
-macro_rules! unblocked {
-    ($(let $i:ident = $b:expr;)* $ex:expr) => {
-        {
-            $(let $i = $b;)*
-            unblock(move || {
-                Ok($ex)
-            })
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use futures::executor::block_on;
     use futures_timer::FutureExt;
-    use std::time::{Duration, Instant};
     use std::thread;
+    use std::time::{Duration, Instant};
 
-    crate::use_error!(std::io::Error);
+    use std::io::Error;
 
     #[test]
     fn basic() {
         let _ = pretty_env_logger::try_init();
 
-        let op = crate::unblocked! {
-            37
-        }.timeout(Duration::from_secs(1));
+        let op = async {
+            Result::<_, Error>::Ok(crate::unthwarted! {
+                37
+            })
+        }
+            .timeout(Duration::from_secs(1));
 
         let result = block_on(op).unwrap();
 
@@ -199,12 +227,16 @@ mod tests {
     fn delayed() {
         let _ = pretty_env_logger::try_init();
 
-        let op = unblocked!{
-            let _t = thread::sleep(Duration::from_millis(20));
-            0
+        let op = async {
+            unthwarted! {
+                thread::sleep(Duration::from_millis(20));
+                Result::<_, Error>::Ok(69u32)
+            }
         };
+        let before = Instant::now();
         let result = block_on(op).unwrap();
-        assert_eq!(result, 0);
+        assert_eq!(result, 69);
+        assert!(before.elapsed() > Duration::from_millis(10));
     }
 
     #[test]
@@ -213,7 +245,7 @@ mod tests {
 
         let start = Instant::now();
         let count = 10000u32;
-        let mut ops: Vec<_> = (0..count).map(move |v| crate::unblock(move || v)).collect();
+        let mut ops: Vec<_> = (0..count).map(move |v| unthwarted_!(v)).collect();
         for (i, op) in ops.drain(..).enumerate() {
             assert_eq!(block_on(op), i as u32);
         }
@@ -222,5 +254,13 @@ mod tests {
             start.elapsed(),
             start.elapsed() / count
         );
+    }
+
+    use std::{fs, io, path::Path};
+
+    async fn read_to_string(path: &Path) -> io::Result<String> {
+        crate::unthwarted_better! {
+            fs::read_to_string(&path)
+        }
     }
 }

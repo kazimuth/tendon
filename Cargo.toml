@@ -3,4 +3,5 @@ members = [
     "test-crate",
     "transgress-abi",
     "analysis-to-transgress",
+    "reprieve",
 ]

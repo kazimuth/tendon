@@ -1,5 +1,5 @@
 [package]
-name = "reprieve"
+name = "unthwart"
 version = "0.1.0"
 authors = ["James Gilles <jhgilles@mit.edu>"]
 edition = "2018"
