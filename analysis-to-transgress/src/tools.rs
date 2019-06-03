@@ -1,11 +1,10 @@
 #![allow(dead_code)]
 
-use crate::{unblock, Error, Result};
+use crate::{Error, Result};
 use futures::channel::oneshot;
 use futures_timer::FutureExt;
 use log::{info, warn};
 use rayon::prelude::*;
-use reprieve::{unblocked, unblocked_};
 use serde_json::{json, Value};
 use std::env;
 use std::ffi::OsStr;
@@ -14,11 +13,12 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
+use unthwart::{unthwarted, unthwarted_};
 
 /// Ensure that rls analysis data is available and up to date.
 pub async fn ensure_analysis(path: &Path) -> Result<()> {
     let path_ = path.to_owned();
-    let status = unblocked! {
+    let status = unthwarted! {
         Command::new("cargo")
             .args(&["check"])
             .current_dir(path_)
@@ -47,7 +47,7 @@ pub async fn ensure_analysis(path: &Path) -> Result<()> {
 
     let (sx, rx) = oneshot::channel();
 
-    let result = unblocked! {
+    let result = unthwarted! {
         let mut sx = Some(sx);
         for line in reader.lines() {
             if let Some(sx) = sx.take() {
@@ -160,6 +160,14 @@ async fn system_analysis_folder() -> Result<PathBuf> {
         .join("rustlib")
         .join(&target_triple)
         .join("analysis");
+    
+    let libs_path_ = libs_path.clone();
+
+    unthwarted!(if !libs_path_.exists() {
+        warn!("no analysis dir at sysroot: {}", libs_path_.display());
+    })
+    .await?;
+
     Ok(libs_path.into())
 }
 
@@ -180,14 +188,15 @@ async fn extract_target_triple(sys_root_path: &Path) -> Result<String> {
 
 async fn extract_rustc_host_triple() -> Option<String> {
     let rustc = env::var("RUSTC").unwrap_or_else(|_| String::from("rustc"));
-    let verbose_version = unblocked_! {
+    let verbose_version = unthwarted_! {
         Command::new(rustc)
         .arg("--verbose")
         .arg("--version")
         .output()
         .ok()
         .and_then(|out| String::from_utf8(out.stdout).ok())
-    }.await?;
+    }
+    .await?;
 
     // Extracts the triple from a line like `host: x86_64-unknown-linux-gnu`
     verbose_version
@@ -220,17 +229,17 @@ fn extract_rustup_target_triple(sys_root_path: &Path) -> Result<String> {
 }
 
 async fn sys_root_path() -> Result<PathBuf> {
-    env::var("SYSROOT")
-        .ok()
-        .map(PathBuf::from)
-        .or_else(|| unblocked! {
-            Command::new(env::var("RUSTC").unwrap_or_else(|_| String::from("rustc")))
+    let path = if let Some(path) = env::var("SYSROOT").ok() {
+        path
+    } else {
+        unthwarted!(
+            let output = Command::new(env::var("RUSTC").unwrap_or_else(|_| String::from("rustc")))
                 .arg("--print")
                 .arg("sysroot")
-                .output()
-                .ok()
-                .and_then(|out| String::from_utf8(out.stdout).ok())
-                .map(|s| PathBuf::from(s.trim()))
-        })
-        .ok_or(Error::CantResolveSysroot)
+                .output()?;
+            String::from_utf8(output.stdout)?.trim().into()
+        )
+        .await?
+    };
+    Ok(PathBuf::from(path))
 }

@@ -1,7 +1,5 @@
 #![feature(async_await)]
 
-extern crate reprieve;
-
 pub mod db;
 pub mod tools;
 
@@ -16,6 +14,7 @@ custom_error::custom_error! { pub Error
     Json { source: serde_json::Error } = "serde_json error: {source}",
     MissingSaveAnalysis { dir: String } = "missing save analysis, expected in folder: {dir}",
     Cancelled { source: futures::channel::oneshot::Canceled } = "{source}",
+    FromUtf8 { source: std::string::FromUtf8Error } = "{source}",
     Poison = "poison",
 }
 
@@ -23,10 +22,6 @@ custom_error::custom_error! { pub Error
 pub type StaticStr = &'static str;
 
 pub type Result<T> = std::result::Result<T, Error>;
-
-// define spawn, unblock, wait
-
-reprieve::use_error!(Error);
 
 #[cfg(test)]
 mod tests {

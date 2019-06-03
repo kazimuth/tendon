@@ -106,10 +106,10 @@ where
 #[macro_export]
 macro_rules! unthwarted {
     ($($op:tt)+) => ({
-        let f = move || -> Result<_, Error> {
+        let f = move || -> std::result::Result<_, Error> {
             Ok($crate::as_expr!({$($op)*}))
         };
-        $crate::unthwart(f).await?
+        $crate::unthwart(f)
     })
 }
 
