@@ -4,7 +4,6 @@ use log::info;
 use parking_lot::Mutex;
 use std::future::Future;
 use std::thread;
-use std::time::Duration;
 
 use crate::once::once_future;
 
@@ -78,16 +77,15 @@ fn init_runtime() -> Runtime {
         thread::Builder::new()
             .name(name)
             .spawn(|| {
-                let mut rest = 1; // sleep time, ms; exponential backoff
+                let mut backoff = crate::backoff::Backoff::new(1000);
 
                 loop {
                     let next = { RUNTIME.injector.lock().pop() };
                     if let Some(next) = next {
-                        rest = 1;
                         next();
+                        backoff.reset();
                     } else {
-                        rest = (rest * 2).min(1000);
-                        thread::sleep(Duration::from_millis(rest));
+                        backoff.wait();
                     }
                 }
             })
@@ -110,6 +108,7 @@ mod tests {
     use std::ptr;
     use std::task::{Context, Poll, Waker};
     use std::task::{RawWaker, RawWakerVTable};
+    use std::time::Duration;
     use std::time::Instant;
 
     lazy_static::lazy_static! {
@@ -164,13 +163,13 @@ mod tests {
         let _ = pretty_env_logger::try_init();
 
         let start = Instant::now();
-        let count = 1000u32;
+        let count = 10000u32;
         let mut ops: Vec<_> = (0..count).map(move |v| unblock(move || v)).collect();
         for (i, op) in ops.drain(..).enumerate() {
             assert_eq!(test_await(op), i as u32);
         }
         println!(
-            "stress elapsed: {:?} ({:?} per item)",
+            "block stress elapsed: {:?} ({:?} per item)",
             start.elapsed(),
             start.elapsed() / count
         );
