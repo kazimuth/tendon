@@ -113,42 +113,6 @@ macro_rules! unthwarted {
     })
 }
 
-#[macro_export]
-macro_rules! unthwarted_better {
-    ($($op:tt)+) => ({
-        use parking_lot::Mutex;
-        use std::sync::Arc;
-        struct Dropper(Arc<Mutex<bool>>);
-        impl Drop for Dropper {
-            fn drop(&mut self) {
-                *self.0.lock() = false;
-            }
-        }
-        let accessible = Arc::new(Mutex::new(true));
-        let _root = Dropper(accessible.clone());
-
-        struct NoReallySafeIPromise<T>(*mut T);
-        unsafe impl<T> Send for NoReallySafeIPromise<T> {}
-
-        fn ensure_sync<T: Sync>(t: &T) {}
-
-        let mut f = || -> Result<_, Error> {Ok($crate::as_expr!({$($op)*}))};
-        ensure_sync(&f);
-
-        let addr = NoReallySafeIPromise(&mut f);
-        let z = move || {
-            if *accessible.lock() {
-                Some(unsafe { (*addr.0)() })
-            } else {
-                None
-            }
-        };
-
-        let result: Result<_, Error> = $crate::unthwart(z).await.expect("unreachable")?;
-        result
-    })
-}
-
 /// The same as `unthwarted`, but doesn't coerce errors.
 #[macro_export]
 macro_rules! unthwarted_ {
@@ -254,13 +218,5 @@ mod tests {
             start.elapsed(),
             start.elapsed() / count
         );
-    }
-
-    use std::{fs, io, path::Path};
-
-    async fn read_to_string(path: &Path) -> io::Result<String> {
-        crate::unthwarted_better! {
-            fs::read_to_string(&path)
-        }
     }
 }
