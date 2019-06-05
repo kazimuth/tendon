@@ -4,4 +4,5 @@ members = [
     "transgress-abi",
     "analysis-to-transgress",
     "unthwart",
+    "prefab",
 ]
