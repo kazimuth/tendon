@@ -35,7 +35,9 @@ pub struct ReprC {
 }
 
 pub mod z {
-    pub struct InMod {}
+    pub struct InMod {
+        pub n: i8,
+    }
 }
 
 pub use rand_chacha::ChaChaRng as ReexportedThing;

@@ -26,8 +26,8 @@ mod backoff;
 
 use futures::channel::oneshot;
 use log::info;
-use parking_lot::Mutex;
 use std::future::Future;
+use std::sync::Mutex;
 use std::thread;
 
 lazy_static::lazy_static! {
@@ -77,7 +77,7 @@ where
         let _ = sender.send(result);
     });
 
-    RUNTIME.injector.lock().push(op);
+    RUNTIME.injector.lock().expect("poison").push(op);
 
     async {
         future
@@ -86,7 +86,7 @@ where
     }
 }
 
-/// Unblock a bit of blocking code by running it off the executor.
+/// Unblock a bit of blocking code by running it off the executor. Awaits the result of the code.
 ///
 /// Returns a Result<T, Error>, where Error is whatever Error is in scope.
 ///
@@ -109,16 +109,19 @@ macro_rules! unthwarted {
         let f = move || -> std::result::Result<_, Error> {
             Ok($crate::as_expr!({$($op)*}))
         };
-        $crate::unthwart(f)
+        $crate::unthwart(f).await?
     })
 }
 
-/// The same as `unthwarted`, but doesn't coerce errors.
+/// The same as `unthwarted`, but doesn't await the result of the code.
 #[macro_export]
-macro_rules! unthwarted_ {
-    ($($op:tt)+) => {
-        $crate::unthwart(move || $crate::as_expr!({$($op)*}))
-    }
+macro_rules! async_unthwarted {
+    ($($op:tt)+) => ({
+        let f = move || -> std::result::Result<_, Error> {
+            Ok($crate::as_expr!({$($op)*}))
+        };
+        $crate::unthwart(f)
+    })
 }
 #[macro_export]
 macro_rules! as_expr {
@@ -142,7 +145,7 @@ fn init_runtime() -> Runtime {
                 let mut backoff = backoff::Backoff::new(1000);
 
                 loop {
-                    let next = { RUNTIME.injector.lock().pop() };
+                    let next = { RUNTIME.injector.lock().expect("poison").pop() };
                     if let Some(next) = next {
                         next();
                         backoff.reset();
@@ -209,7 +212,7 @@ mod tests {
 
         let start = Instant::now();
         let count = 10000u32;
-        let mut ops: Vec<_> = (0..count).map(move |v| unthwarted_!(v)).collect();
+        let mut ops: Vec<_> = (0..count).map(move |v| crate::unthwart(move || v)).collect();
         for (i, op) in ops.drain(..).enumerate() {
             assert_eq!(block_on(op), i as u32);
         }

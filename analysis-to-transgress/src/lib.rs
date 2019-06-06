@@ -1,6 +1,7 @@
 #![feature(async_await)]
 
 pub mod db;
+pub mod inspect;
 pub mod tools;
 
 custom_error::custom_error! { pub Error
