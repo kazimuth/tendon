@@ -30,10 +30,12 @@ impl Inspect for rls_data::Def {
         };
         write!(
             out,
-            "#[{}] {} {}",
+            "#[{}] {} {} ({}) [{}]",
             self.attributes.len(),
             kind,
             self.qualname,
+            self.value,
+            self.sig.as_ref().map(|s| &s.text[..]).unwrap_or("")
         )?;
         if let Some(ref sig) = self.sig {
             write!(out, " [{}]", sig.text)?;
