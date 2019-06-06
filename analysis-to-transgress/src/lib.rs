@@ -1,5 +1,6 @@
 #![feature(async_await)]
 
+pub mod sigbuilder;
 pub mod db;
 pub mod inspect;
 pub mod tools;
