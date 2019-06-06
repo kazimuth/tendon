@@ -16,6 +16,9 @@ use unthwart::{async_unthwarted, unthwarted};
 
 /// Ensure that rls analysis data is available and up to date.
 pub async fn ensure_analysis(path: &Path) -> Result<()> {
+    info!("ensuring save-analysis data is available");
+
+    info!("$ cd {} && cargo check", path.display());
     let path_ = path.to_owned();
     let status = unthwarted! {
         Command::new("cargo")
@@ -28,9 +31,32 @@ pub async fn ensure_analysis(path: &Path) -> Result<()> {
         return Err(Error::CargoCheckFailed);
     }
 
+    let config = &r#"{
+        "output_file": null,
+        "full_docs": true,
+        "pub_only": false,
+        "reachable_only": false,
+        "distro_crate": false,
+        "signatures": true,
+        "borrow_data": true
+    }"#
+    .replace(" ", "")
+    .replace("\n", "");
+
+    info!(
+        "$ cd {} && \\
+         env RLS_SAVE_ANALYSIS_CONFIG={} \\
+         rls --cli",
+        path.display(),
+        config
+    );
+    // force rebuild? could just remove save-analysis
+    // no sigs for std?
+    // check config, btw
     let mut rls = Command::new("rls")
         .args(&["--cli"])
         .current_dir(path)
+        .env("RUST_SAVE_ANALYSIS_CONFIG", config)
         .stdout(Stdio::piped())
         .spawn()?;
 
@@ -72,6 +98,8 @@ pub async fn ensure_analysis(path: &Path) -> Result<()> {
 
     result.await?;
 
+    info!("rls finished");
+
     Ok(())
 }
 
@@ -97,7 +125,9 @@ fn is_done(value: &Value) -> Option<()> {
 struct Killer(std::process::Child);
 impl Drop for Killer {
     fn drop(&mut self) {
+        info!("killing rls...");
         let _ = self.0.kill();
+        info!("killing rls... done.");
     }
 }
 

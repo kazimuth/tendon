@@ -1,3 +1,5 @@
+#![allow(unused_must_use)]
+
 use rls_data::DefKind;
 use std::fmt;
 
@@ -30,15 +32,13 @@ impl Inspect for rls_data::Def {
         };
         write!(
             out,
-            "#[{}] {} {} ({}) [{}]",
+            "#[{}] {} {}",
             self.attributes.len(),
             kind,
             self.qualname,
-            self.value,
-            self.sig.as_ref().map(|s| &s.text[..]).unwrap_or("")
         )?;
         if let Some(ref sig) = self.sig {
-            write!(out, " [{}]", sig.text)?;
+            print_sig(sig, out);
         }
         Ok(())
     }
@@ -50,3 +50,62 @@ impl<T: Inspect> fmt::Display for Inspected<'_, T> {
         self.0.inspect(f)
     }
 }
+
+static COLORS: &'static [&'static str] =
+    &["\x1b[0m", "\x1b[34m", "\x1b[35m", "\x1b[36m", "\x1b[35m"];
+struct Colorstack(Vec<usize>, usize);
+impl Colorstack {
+    fn new() -> Self {
+        Colorstack(vec![0], 1)
+    }
+    fn last(&self) -> usize {
+        self.0[self.0.len() - 1]
+    }
+    fn push(&mut self, f: &mut fmt::Formatter) {
+        self.1 += 1;
+        if self.1 > COLORS.len() {
+            self.1 = 1;
+        }
+        self.0.push(self.1);
+        write!(f, "{}", COLORS[self.last()]);
+    }
+    fn pop(&mut self, f: &mut fmt::Formatter) {
+        self.0.pop();
+        write!(f, "{}", COLORS[self.last()]);
+    }
+}
+
+fn print_sig(sig: &rls_data::Signature, f: &mut fmt::Formatter) {
+    let mut stack = Colorstack::new();
+    write!(f, " [");
+
+    let p = format!("{} ", sig.text);
+
+    for (i, c) in p.chars().enumerate() {
+        for def in &sig.defs {
+            if def.start == i {
+                stack.push(f);
+            }
+            if def.end == i {
+                stack.pop(f);
+            }
+        }
+        for def in &sig.refs {
+            if def.start == i {
+                stack.push(f);
+                if def.id.krate != 0 {
+                    write!(f, "{}:", def.id.krate);
+                }
+            }
+            if def.end == i {
+                stack.pop(f);
+            }
+        }
+        if i < sig.text.len() {
+            write!(f, "{}", c);
+        }
+    }
+
+    write!(f, "]");
+}
+pub struct Sig {}

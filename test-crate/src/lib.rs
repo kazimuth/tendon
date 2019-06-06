@@ -2,12 +2,29 @@
 
 #![allow(unused, unused_variables)]
 
+use rand_chacha::ChaChaCore;
+
 /// thing
 pub fn x(y: i32) {}
 
+pub fn gen1(m: Vec<i32>) {}
+pub fn gen2(m: Vec<Vec<i32>>) {}
+pub fn gen3(m: Vec<Vec<ChaChaCore>>) {}
+
 /// opaque struct
 pub struct Opaque {
-    member_a: Vec<i32>,
+    member_a: Vec<rand_chacha::ChaChaCore>,
+}
+
+impl Opaque {
+    fn q<T: std::fmt::Debug>(&self, t: Vec<T>) {}
+}
+
+struct Borrows<'a>(&'a [i32]);
+impl Borrows<'_> {
+    fn new(v: &[i32]) -> Borrows {
+        Borrows(v)
+    }
 }
 
 /// non-opaque struct

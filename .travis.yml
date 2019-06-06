@@ -1,12 +1,9 @@
 language: rust
 rust:
-  - stable
   - nightly
 
-matrix:
-  allow_failures:
-    - rust: nightly
-  fast_finish: true
+before_script:
+  - rustup component add rls --toolchain nightly-x86_64-unknown-linux-gnu
 
 cache: cargo
 
