@@ -12,15 +12,17 @@ A stable ABI for rust code?
     - just embed text format in executables?
 - maximal ease of use
 - some bloat is tolerable
+- fuzz testing?
 
 use cases
 
-- rust plugin system: load rust library dynamically
+- large API surfaces that we don't want to bind by hand
 - FFI: easily make insta-bindings to rust code based on ABI
+- rust plugin system: load rust library dynamically
 
-## reqs / ideas
+## reading / ideas
 
-abi
+### general FFI
 
 - repr(C) / C-compatible types
   - pass directly?
@@ -31,16 +33,127 @@ abi
     - ThreadLocal<Option<T>>
 - catch_panic
 - auto-instantiation
+
   - default types
   - used in docs?
 
-runtime
+- runtime for support of fancy stuff
+  - traits
+  - borrows
+  - minimal-allocation iterators
+
+http://swig.org/Doc3.0/SWIG.html
+-> SWIG!
+
+https://nullprogram.com/blog/2018/05/27/
+-> indirect calls w/ dlsym is slightly faster than standard indirect linking; only .25 of a ns tho, not important
+for our purposes
+
+https://hacks.mozilla.org/2019/04/crossing-the-rust-ffi-frontier-with-protocol-buffers/
+-> protocol buffers are better than e.g. json for serializing across an ffi boundary; reasonably fast, very stable
+
+https://crates.io/crates/ffi-support
+-> https://docs.rs/ffi-support/0.3.4/ffi_support/handle_map/index.html: dynamically checked FFI pointers
+-> expose a transparent version of this by hashing returned pointers in debug mode?
+-> https://docs.rs/ffi-support/0.3.4/ffi_support/macro.static_assert.html: simple static_assert! macro
+-> macros to specify different protocols for passing things thru the FFI boundary
+-> https://docs.rs/ffi-support/0.3.4/ffi_support/struct.FfiStr.html: #[repr(transparent)] type for c-strings
+-> https://docs.rs/ffi-support/0.3.4/ffi_support/trait.IntoFfi.html: impl of through-FFI stuff as a rust trait
+
+https://github.com/mozilla/application-services/blob/master/docs/product-portal/applications/consuming-megazord-libraries.md
+-> combine lots of rust code into a single library
+
+https://blog.sentry.io/2016/10/19/fixing-python-performance-with-rust/
+
+https://gankro.github.io/blah/rust-layouts-and-abis/
+
+-> size, alignment
+
+-> offsets within type: undefined unless transparent or C
+
+-> reprs: Rust, C, transparent, packed(N), simd, align=X, int
+
+https://doc.rust-lang.org/nomicon/README.html
+
+-> all sortsa stuff
+
+https://github.com/dtolnay/semver-trick
+https://rust-lang-nursery.github.io/api-guidelines/future-proofing.html#future-proofing
+
+-> special trick for handling cross-library deps
+
+-> will be handled if we handle reexports correctly
+
+### wasm
+
+https://rustwasm.github.io/book/reference/which-crates-work-with-wasm.html
+
+-> stuff that doesn't mess with the OS will run easy under wasm
+
+https://github.com/WebAssembly/design/issues/1274
+https://rustwasm.github.io/2018/07/02/vision-for-wasm-bindgen.html
+
+-> JS / web stuff is hell and i don't want to deal with it
+
+https://github.com/rustwasm/wasm-bindgen/blob/master/crates/backend/src/ast.rs
+
+-> AST for wasm ABI
+
+-> uses syn types
+
+-> handles both incoming and outgoing FFI, and has different types for each
+
+https://rustwasm.github.io/wasm-bindgen/api/wasm_bindgen/convert/trait.IntoWasmAbi.html
+https://github.com/rustwasm/wasm-bindgen/blob/master/src/convert/impls.rs
+
+https://rustwasm.github.io/docs/wasm-bindgen/reference/arbitrary-data-with-serde.html
+-> serde to alt. object model
+
+### java / android
+
+https://docs.oracle.com/javase/7/docs/technotes/guides/jni/spec/jniTOC.html
+-> JNI spec, inc. name mangling
+
+https://github.com/jnr/jnr-ffi
+-> dead-simple JNI w/o C code
+
+https://docs.rs/jni/0.12.3/jni/
+-> good rust lib for JNI
+
+https://developer.android.com/training/articles/perf-jni
+-> JNI tips on android
+-> NDK is just JNI w/ some extra stuff
+
+https://jdk.java.net/panama/
+-> future JNI system for ffi
+
+### python
+
+just use cffi lmao
+
+https://cffi.readthedocs.io/en/latest/
+
+### rust-rust
+
+https://docs.rs/abi_stable/0.4.1/abi_stable/
+https://crates.io/crates/abi_stable
+
+-> similar idea, but way more work / boilerplate than my goal
+
+-> divides crate ABIs based on 0.x.0 and y.0.0
+
+### runtime
+
+can provide code that does optional validation
 
 - custom text format
   - serde
   - just rust signatures?
+    - in some limited form?
+    - can be an input, at least
 - #[repr]s
 - canonical types e.g. libc, std types
+
 - dynamic linking
   - support loading multiple modules in this style, calling into each other?
   - rust runtime
@@ -57,7 +170,7 @@ runtime
 - capabilities?
 - allocators
   - https://doc.rust-lang.org/1.9.0/book/custom-allocators.html#default-allocator
-  - require the system allocator
+  - require the system allocator?
 
 * provide lowering to wasm-bindgen from rustdoc-scrape / from ABI
 
@@ -88,7 +201,7 @@ compare: cffi, abi-vs-api bindings
 
 is there a difference?
 
-yes! -- a general rust ABI is actually very hard!
+yes -- a general rust ABI is actually very hard
 
 - are we actually making an ABI? it's sorta in-between, right?
   - https://en.wikipedia.org/wiki/Application_binary_interface
@@ -99,83 +212,16 @@ yes! -- a general rust ABI is actually very hard!
 
 building custom bindings for each language that don't go through a particular API
 
-- use multiple rust-based libraries in something?
+- auto-impl coercion for some types
+  - arrays, maps
+  - numbers
+  - strings
 
-  - rust libraries would need to be dynamically linked
-  - https://doc.rust-lang.org/reference/linkage.html
-    - dylibs exist, but don't work across compiler versions
-  - _might_ be able to instrument libraries to be dynamically linked, but: hard.
-    - patches: https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html
+### inter-ffi linking
 
-okay, so don't need to dynamically link all rust libraries, but want efficient interchange of data through FFI?
+use multiple rust-based libraries in something?
 
-e.g. ndarray passed to rust library using ndarray without conversion:
-
-`pip install ndarray-rs arraything-rs`
-
-`arraything.arraything(ndarray.make_array())`
-
-ndarray (rust) -> python wrapper -> arraything (rust)
-
-wrapping and unwrapping stages defined to be invertible?
-
-- this is actually required for any rust-rust dynamic-calling
-
-special-case for same compiler version + lib hash?
-
-- might technically be undefined
-
-okay so then: ABI is essentially a high-performance serialization schema
-
--> ...for data interchange only.
-
-but: we don't have serde for all types.
-
-opaque pointer design: simple to implement, but doesn't compose across libraries
-
-mix of opaque pointers + serialization?
-opaque by default + serialization where needed?
-
-is linking two libraries with the same semver major version but different compiler versions supported?
-
-what about compatible types across semver versions?
--> must use semver trick?
--> annotations / docs?
--> `#[since]` annotation?
-
-two systems: ffi bindings and rust-rust calling
-
-- ffi bindings use rust ...
-
-- serializable types
-
-- want a .d.ts style system -- mixins for uncontrolled libs; but interacts weirdly w/ soundness rules
-  - impl Transgressor<NDarray> for NDArrayTransgressor
-  - we can find this because we have the whoooole API to look at, owo
-    - or just throw it in a macro to be exported idk
-      - `load_transgressors! { helpers_a, [default-loaded helper lib[s]] };`
-    - we're already breaking the rules lol
-
-```rust
-let q: Remote<Thing> = dynload().new_thing();
-
-q.method(1i32, s: serde::Serialize)
-```
-
-is serde-serializability a semver guarantee?
-
-- likely not considered breaking changes: reordering fields, adding private fields?
-- so, maybe not?
-- try anyway?
-  - best-effort cross-library integration?
-
-bincode serialization for SpEeEd
-
-- likely faster than FFI calls for every serde:: call
-
-problem is we have a lotta copies of different things floating around
-
-alt-solution: just don't solve this, lmao
+solution: just don't solve this, lmao
 
 - across-library usage might not be very common
 - use case: plugins
@@ -186,73 +232,5 @@ alt-solution: just don't solve this, lmao
     - ... hash ...
     - repr(C) special case
   - jitting / caching decisions at boundary
-- custom metadata for stable things
-
-use case: large API surfaces that we don't want to bind by hand
-
-sample libraries:
-
-- auto-impl coercion for some types
-  - arrays, maps
-  - numbers
-  - strings
-
-fighting things:
-
--
-
-## impl
-
-fast parsing + validation of ABIs
-
-## reading
-
-https://gankro.github.io/blah/rust-layouts-and-abis/
-
--> size, alignment
-
--> offsets within type: undefined unless transparent or C
-
--> reprs: Rust, C, transparent, packed(N), simd, align=X, int
-
-https://doc.rust-lang.org/nomicon/README.html
-
--> all sortsa stuff
-
-https://github.com/dtolnay/semver-trick
-https://rust-lang-nursery.github.io/api-guidelines/future-proofing.html#future-proofing
-
--> special trick for handling cross-library
-
--> will be handled if we handle reexports correctly
-
-https://docs.rs/abi_stable/0.4.1/abi_stable/
-https://crates.io/crates/abi_stable
-
--> similar idea, but way more work / boilerplate than my goal
-
--> divides crate ABIs based on 0.x.0 and y.0.0
-
-https://rustwasm.github.io/book/reference/which-crates-work-with-wasm.html
-
--> stuff that doesn't mess with the OS will run easy under wasm
-
-https://github.com/WebAssembly/design/issues/1274
-https://rustwasm.github.io/2018/07/02/vision-for-wasm-bindgen.html
-
--> JS / web stuff is hell and i don't want to deal with it
-
-https://github.com/rustwasm/wasm-bindgen/blob/master/crates/backend/src/ast.rs
-
--> AST for wasm ABI
-
--> uses syn types
-
--> handles both incoming and outgoing FFI, and has different types for each
-
-https://rustwasm.github.io/wasm-bindgen/api/wasm_bindgen/convert/trait.IntoWasmAbi.html
-https://github.com/rustwasm/wasm-bindgen/blob/master/src/convert/impls.rs
-
-http://swig.org/Doc3.0/SWIG.html
-
-https://rustwasm.github.io/docs/wasm-bindgen/reference/arbitrary-data-with-serde.html
+- custom metadata for stable things?
+- can use via-C API from both libs

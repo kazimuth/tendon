@@ -212,7 +212,9 @@ mod tests {
 
         let start = Instant::now();
         let count = 10000u32;
-        let mut ops: Vec<_> = (0..count).map(move |v| crate::unthwart(move || v)).collect();
+        let mut ops: Vec<_> = (0..count)
+            .map(move |v| crate::unthwart(move || v))
+            .collect();
         for (i, op) in ops.drain(..).enumerate() {
             assert_eq!(block_on(op), i as u32);
         }

@@ -42,4 +42,4 @@ impl strategies:
   - other paths: rust-analyzer, rustc nightly, hand implementation, ...
     - rlibs
 
-https://github.com/rust-lang/rust/issues/25820
+https://github.com/rust-lang/rust/issues/25820 - rlib dumping

@@ -1,5 +1,5 @@
 [package]
-name = "analysis-to-transgress"
+name = "api-scrape"
 version = "0.1.0"
 authors = ["James Gilles <jhgilles@mit.edu>"]
 edition = "2018"
@@ -7,16 +7,14 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-termcolor = "1"
 serde = "1"
-serde_json = "1"
 custom_error = "1.6"
 log = "0.4"
-rls-data = { version = "0.19.0" }
 unthwart = { path = "../unthwart" }
-futures-timer = "0.2.1"
-futures-preview = { version = "0.3.0-alpha.16", features = ["nightly", "async-await"] }
 runtime = { version = "0.3.0-alpha.4" }
+cargo_metadata = "0.8"
+syn = "0.15.35"
 
 [dev-dependencies]
 pretty_env_logger = "0.3.0"
+toml = "0.5"
