@@ -1,8 +1,8 @@
 #![feature(async_await)]
 
-pub mod sigbuilder;
 pub mod db;
 pub mod inspect;
+pub mod sigbuilder;
 pub mod tools;
 
 custom_error::custom_error! { pub Error

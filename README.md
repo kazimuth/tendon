@@ -9,6 +9,9 @@ TODO:
 
 - needs MIT license
 - check parser against older rls-data formats
+- FIXMEs in https://github.com/rust-lang/rust/blob/c22ce2806c3/src/librustc_save_analysis/sig.rs are preventing good
+  signature data for types >:(
+- https://rust-lang.github.io/rustc-guide/about-this-guide.html
 
 ideally:
 
@@ -37,3 +40,6 @@ impl strategies:
     - https://github.com/servo/html5ever
 
   - other paths: rust-analyzer, rustc nightly, hand implementation, ...
+    - rlibs
+
+https://github.com/rust-lang/rust/issues/25820

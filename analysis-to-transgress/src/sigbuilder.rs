@@ -31,11 +31,9 @@ macro_rules! text {
     };
 }
 macro_rules! ref_ {
-    ($builder:expr, $id:expr, $rest:tt) => {{
+    ($builder:expr, $id:expr, $($rest:expr),+) => {{
         let start = $builder.text.len();
-        write!(&mut $builder.text, $rest)
-            .ok()
-            .ok_or("write failed")?;
+        let _ = write!(&mut $builder.text, $($rest),+);
         let end = $builder.text.len();
         $builder.refs.push(SigElement {
             start,
@@ -45,9 +43,9 @@ macro_rules! ref_ {
     }};
 }
 macro_rules! def_ {
-    ($builder:expr, $id:expr, $rest:tt) => {{
+    ($builder:expr, $id:expr, $($rest:expr),+) => {{
         let start = $builder.text.len();
-        write!(&mut $builder.text, $rest)
+        write!(&mut $builder.text, $($rest),+)
             .ok()
             .ok_or("write failed")?;
         let end = $builder.text.len();
@@ -72,7 +70,7 @@ mod tests {
         text!(&mut b, "<");
         def_!(&mut b, id, "T");
         text!(&mut b, ": ");
-        ref_!(&mut b, id, "Honey");
+        ref_!(&mut b, id, "{}", "Honey");
         text!(&mut b, "> {{}}");
         let result = b.build();
         assert_eq!(result.text, "struct Bees<T: Honey> {}");

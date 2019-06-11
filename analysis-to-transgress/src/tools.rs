@@ -45,7 +45,7 @@ pub async fn ensure_analysis(path: &Path) -> Result<()> {
 
     info!(
         "$ cd {} && \\
-         env RLS_SAVE_ANALYSIS_CONFIG={} \\
+         env RUST_SAVE_ANALYSIS_CONFIG={} \\
          rls --cli",
         path.display(),
         config
@@ -131,18 +131,20 @@ impl Drop for Killer {
     }
 }
 
-/// Fetch analysis
-pub async fn fetch_analysis(path: &Path) -> Result<Vec<rls_data::Analysis>> {
-    // TODO env / alt-target handling
-    let dir = path
+pub fn analysis_path(project: &Path) -> PathBuf {
+    project
         .join("target")
         .join("rls")
         .join("debug") // TODO?
         .join("deps")
         .join("save-analysis")
-        .into();
+        .into()
+}
 
-    let dirs = vec![dir, system_analysis_folder().await?];
+/// Fetch analysis
+pub async fn fetch_analysis(path: &Path) -> Result<Vec<rls_data::Analysis>> {
+    // TODO env / alt-target handling
+    let dirs = vec![path];
 
     let mut targets: Vec<PathBuf> = vec![];
 
@@ -183,7 +185,7 @@ pub async fn fetch_analysis(path: &Path) -> Result<Vec<rls_data::Analysis>> {
 }
 
 // get system analysis folders
-async fn system_analysis_folder() -> Result<PathBuf> {
+pub async fn system_analysis_folder() -> Result<PathBuf> {
     // based on: https://github.com/rust-lang/rls/blob/ca0456b/rls-analysis/src/loader.rs#L75-L91
 
     // TODO: libs_path and src_path both assume the default `libdir = "lib"`.

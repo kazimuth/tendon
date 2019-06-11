@@ -30,15 +30,10 @@ impl Inspect for rls_data::Def {
             DefKind::Type => "type",
             DefKind::Union => "union",
         };
-        write!(
-            out,
-            "#[{}] {} {}",
-            self.attributes.len(),
-            kind,
-            self.qualname,
-        )?;
         if let Some(ref sig) = self.sig {
             print_sig(sig, out);
+        } else {
+            //write!(out, "{} {}", kind, self.qualname)?;
         }
         Ok(())
     }
@@ -51,8 +46,7 @@ impl<T: Inspect> fmt::Display for Inspected<'_, T> {
     }
 }
 
-static COLORS: &'static [&'static str] =
-    &["\x1b[0m", "\x1b[34m", "\x1b[35m", "\x1b[36m", "\x1b[35m"];
+static COLORS: &'static [&'static str] = &["\x1b[0m", "\x1b[34m", "\x1b[35m", "\x1b[36m"];
 struct Colorstack(Vec<usize>, usize);
 impl Colorstack {
     fn new() -> Self {
@@ -63,7 +57,7 @@ impl Colorstack {
     }
     fn push(&mut self, f: &mut fmt::Formatter) {
         self.1 += 1;
-        if self.1 > COLORS.len() {
+        if self.1 >= COLORS.len() {
             self.1 = 1;
         }
         self.0.push(self.1);
@@ -77,8 +71,6 @@ impl Colorstack {
 
 fn print_sig(sig: &rls_data::Signature, f: &mut fmt::Formatter) {
     let mut stack = Colorstack::new();
-    write!(f, " [");
-
     let p = format!("{} ", sig.text);
 
     for (i, c) in p.chars().enumerate() {
@@ -93,9 +85,6 @@ fn print_sig(sig: &rls_data::Signature, f: &mut fmt::Formatter) {
         for def in &sig.refs {
             if def.start == i {
                 stack.push(f);
-                if def.id.krate != 0 {
-                    write!(f, "{}:", def.id.krate);
-                }
             }
             if def.end == i {
                 stack.pop(f);
@@ -105,7 +94,5 @@ fn print_sig(sig: &rls_data::Signature, f: &mut fmt::Formatter) {
             write!(f, "{}", c);
         }
     }
-
-    write!(f, "]");
 }
 pub struct Sig {}

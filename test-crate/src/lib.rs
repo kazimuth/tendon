@@ -60,3 +60,11 @@ pub mod z {
 pub use rand_chacha::ChaChaRng as ReexportedThing;
 
 pub fn uses_other(z: rand_chacha::ChaChaCore) {}
+
+macro_rules! expands_to_item {
+    () => {
+        pub const EXPANDED: &'static std::option::Option<i32> = &None;
+    };
+}
+
+expands_to_item!();
