@@ -4,11 +4,11 @@ extern crate api_scrape as api;
 
 #[runtime::test]
 async fn basic() -> api::Result<()> {
-    let _ = pretty_env_logger::try_init();
+    spoor::init();
 
     api::tools::check("../test-crate".as_ref()).await?;
 
-    let resolver = api::resolve::Resolver::new("../test-crate".into()).await?;
+    let _resolver = api::resolve::Resolver::new("../test-crate".into()).await?;
 
     Ok(())
 }

@@ -1,8 +1,7 @@
-
 //! Lookup... from a registry.
-//! 
+//!
 //! Note from cargo:
-//! 
+//!
 //!
 //! ```notrust
 //! # A folder under which all registry metadata is hosted (similar to

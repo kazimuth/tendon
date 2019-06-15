@@ -1,5 +1,6 @@
 #![feature(async_await)]
 
+pub mod memo;
 pub mod resolve;
 pub mod tools;
 

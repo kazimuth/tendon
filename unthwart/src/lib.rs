@@ -1,4 +1,4 @@
-#![feature(async_await, await_macro)]
+#![feature(async_await)]
 
 //! Don't block (thwart) your event loop.
 //!
@@ -25,10 +25,10 @@
 mod backoff;
 
 use futures::channel::oneshot;
-use log::info;
 use std::future::Future;
 use std::sync::Mutex;
 use std::thread;
+use tokio_trace::{debug_span, info};
 
 lazy_static::lazy_static! {
     static ref RUNTIME: Runtime = init_runtime();
@@ -72,18 +72,20 @@ where
 {
     let (sender, future) = oneshot::channel();
 
+    let span = debug_span!("unthwart_runtime_exec");
     let op = Box::new(move || {
+        let _guard = span.enter();
         let result = input();
         let _ = sender.send(result);
     });
 
     RUNTIME.injector.lock().expect("poison").push(op);
 
-    async {
+    spoor::trace(debug_span!("unthwart_await_channel"), async {
         future
             .await
             .expect("runtime dropped channel, should never happen")
-    }
+    })
 }
 
 /// Unblock a bit of blocking code by running it off the executor. Awaits the result of the code.
@@ -176,7 +178,7 @@ mod tests {
 
     #[test]
     fn basic() {
-        let _ = pretty_env_logger::try_init();
+        spoor::init();
 
         let op = async {
             Result::<_, Error>::Ok(crate::unthwarted! {
@@ -192,7 +194,7 @@ mod tests {
 
     #[test]
     fn delayed() {
-        let _ = pretty_env_logger::try_init();
+        spoor::init();
 
         let op = async {
             unthwarted! {
@@ -208,7 +210,7 @@ mod tests {
 
     #[test]
     fn stress() {
-        let _ = pretty_env_logger::try_init();
+        spoor::init();
 
         let start = Instant::now();
         let count = 10000u32;

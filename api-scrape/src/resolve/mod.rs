@@ -6,13 +6,16 @@
 
 use crate::{Error, Result};
 use cargo_metadata::{CargoOpt, Metadata, MetadataCommand, Node, Package, PackageId};
-use log::info;
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use tokio_trace::info;
 use unthwart::unthwarted;
 
 pub mod item_expand;
 pub mod registry;
+
+// TODO limit memory usage
 
 pub struct Resolver {
     /// The root of the project we're scraping.
@@ -27,6 +30,10 @@ pub struct Resolver {
     nodes: HashMap<PackageId, Node>,
     /// The root project we're examining
     root: PackageId,
+    /// Files loaded from the filesystem.
+    files: RwLock<HashMap<PathBuf, syn::File>>,
+    /// Where ResolvedPaths can be found in the filesystem.
+    modules: RwLock<HashMap<ResolvedPath, PathBuf>>,
 }
 
 impl Resolver {
@@ -57,7 +64,10 @@ impl Resolver {
             .map(|node| (node.id.clone(), node))
             .collect();
 
-        info!("root package: {:?}", root);
+        let files = RwLock::new(HashMap::new());
+        let modules = RwLock::new(HashMap::new());
+
+        info!("root package {:?}", root.repr);
 
         Ok(Resolver {
             packages,
@@ -65,6 +75,8 @@ impl Resolver {
             nodes,
             project_root,
             workspace_root,
+            files,
+            modules,
         })
     }
 
@@ -77,6 +89,7 @@ impl Resolver {
     }
 }
 
+#[derive(PartialEq, Eq, Hash, Clone)]
 pub struct ResolvedPath {
     /// The crate instantiation this path comes from.
     pub package: PackageId,
