@@ -14,6 +14,8 @@ unthwart = { path = "../unthwart" }
 runtime = { version = "0.3.0-alpha.4" }
 cargo_metadata = "0.8"
 syn = "0.15.35"
+quote = "0.6.12"
+proc-macro2 = "0.4"
 
 [dev-dependencies]
 pretty_env_logger = "0.3.0"

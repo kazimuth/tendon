@@ -144,7 +144,7 @@ https://crates.io/crates/abi_stable
 
 ### runtime
 
-can provide code that does optional validation
+can provide code that does optional validation; basically a helper crate for implementing different generators. generators can use as much or as little of it as they like
 
 - custom text format
   - serde

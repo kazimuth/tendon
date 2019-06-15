@@ -8,10 +8,15 @@ FFI API for rust crates
 TODO:
 
 - needs MIT license
-- check parser against older rls-data formats
-- FIXMEs in https://github.com/rust-lang/rust/blob/c22ce2806c3/src/librustc_save_analysis/sig.rs are preventing good
-  signature data for types >:(
 - https://rust-lang.github.io/rustc-guide/about-this-guide.html
+- whats that python package format?
+    - other package format: node, maven, nuget, ...
+- counts for unrecognized things
+    - plug into tokio-trace + metrics
+- trace-based visualizer?
+- mtime checks for safety
+    - fail if after cargo check
+    - can crate dl mtimes change? probs not right?
 
 ideally:
 

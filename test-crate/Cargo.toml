@@ -8,3 +8,4 @@ edition = "2018"
 [dependencies]
 rand_chacha = "0.1.1"
 rand = { version = "0.6", features = ["log"]}
+lazy_static = { git = "https://github.com/rust-lang-nursery/lazy-static.rs", branch = "master"}
