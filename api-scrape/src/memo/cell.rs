@@ -33,9 +33,9 @@ const FINISHED: usize = 2;
 ///     result.await; // reuses result
 /// }
 /// ```
-pub struct Memo<R> {
-    inner: Option<Arc<MemoInner<dyn Future<Output = R> + Send + Sync>>>,
-    result: MemoResult<R>,
+pub struct Memo<T: Future + ?Sized> {
+    inner: Option<Arc<MemoInner<T>>>,
+    result: MemoResult<T::Output>,
     driver: bool,
 }
 /// The result of a memoized future.
@@ -45,8 +45,8 @@ struct MemoInner<T: ?Sized> {
     future: RwLock<Pin<Box<T>>>,
     wakers: RwLock<Vec<task::Waker>>,
 }
-unsafe impl<R: Sync> Send for MemoResult<R> {}
-unsafe impl<R: Sync> Sync for MemoResult<R> {}
+unsafe impl<R: Send + Sync> Send for MemoResult<R> {}
+unsafe impl<R: Send + Sync> Sync for MemoResult<R> {}
 impl<R> Clone for MemoResult<R>
 where
     R: Send + Sync,
@@ -56,14 +56,12 @@ where
     }
 }
 
-impl<R> Memo<R>
+impl<T> Memo<T>
 where
-    R: Send + Sync,
+    T: Future + Send + Sync,
+    T::Output: Send + Sync,
 {
-    pub fn new<F>(future: F) -> Memo<R>
-    where
-        F: Future<Output = R> + Send + Sync + 'static,
-    {
+    pub fn new(future: T) -> Memo<T> {
         Memo {
             inner: Some(Arc::new(MemoInner {
                 state: AtomicUsize::new(UNSTARTED),
@@ -108,14 +106,15 @@ where
     }
 }
 
-impl<R> Future for Memo<R>
+impl<T> Future for Memo<T>
 where
-    R: Send + Sync,
+    T: Future + Send + Sync,
+    T::Output: Send + Sync,
 {
-    type Output = MemoResult<R>;
+    type Output = MemoResult<T::Output>;
 
     #[inline(never)]
-    fn poll(self: Pin<&mut Self>, cx: &mut task::Context) -> task::Poll<MemoResult<R>> {
+    fn poll(self: Pin<&mut Self>, cx: &mut task::Context) -> task::Poll<MemoResult<T::Output>> {
         let self_ = unsafe { self.get_unchecked_mut() };
         if self_.inner.is_none() {
             return task::Poll::Ready(self_.result.clone());
@@ -160,9 +159,10 @@ where
         }
     }
 }
-impl<R> Clone for Memo<R>
+impl<T> Clone for Memo<T>
 where
-    R: Send + Sync,
+    T: Future + Send + Sync,
+    T::Output: Send + Sync,
 {
     fn clone(&self) -> Self {
         Memo {
@@ -173,7 +173,7 @@ where
     }
 }
 
-impl<R: Sync> Deref for MemoResult<R> {
+impl<R: Send + Sync> Deref for MemoResult<R> {
     type Target = R;
     fn deref(&self) -> &Self::Target {
         (unsafe { &*self.0.get() })
