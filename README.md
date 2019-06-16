@@ -1,4 +1,4 @@
-# rust-swig but Worse
+# transgress-rs ![Travis (.org)](https://img.shields.io/travis/kazimuth/transgress-rs.svg?style=flat-square)
 
 this crate is a work-in-progress and currently only contains README files
 
@@ -10,13 +10,13 @@ TODO:
 - needs MIT license
 - https://rust-lang.github.io/rustc-guide/about-this-guide.html
 - whats that python package format?
-    - other package format: node, maven, nuget, ...
+  - other package format: node, maven, nuget, ...
 - counts for unrecognized things
-    - plug into tokio-trace + metrics
+  - plug into tokio-trace + metrics
 - trace-based visualizer?
 - mtime checks for safety
-    - fail if after cargo check
-    - can crate dl mtimes change? probs not right?
+  - fail if after cargo check
+  - can crate dl mtimes change? probs not right?
 
 ideally:
 
