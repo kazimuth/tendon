@@ -8,7 +8,7 @@ use std::task;
 
 use tokio_trace::Span;
 
-/// Init a basic future env-logger based logging system.
+/// Init a basic env-logger based tracing system.
 pub fn init() {
     let _ = tokio_trace_env_logger::try_init();
     let subscriber = tokio_trace_fmt::FmtSubscriber::builder()
@@ -17,6 +17,7 @@ pub fn init() {
     let _ = tokio_trace::subscriber::set_global_default(subscriber);
 }
 
+/// Trace a future.
 pub fn trace<F: Future>(span: tokio_trace::Span, future: F) -> impl Future<Output = F::Output> {
     TraceFuture { future, span }
 }
