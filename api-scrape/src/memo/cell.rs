@@ -1,5 +1,7 @@
 // TODO: rename to MemoCell?
 // TODO: check all atomic returns
+// TODO: handle drive() panics
+// TODO: handle recursion?
 
 use std::{
     cell::{Cell, UnsafeCell},
@@ -16,12 +18,14 @@ const INCOMPLETE: usize = 0;
 const STARTED: usize = 1;
 const STARTED_WAKELOCKED: usize = 2;
 const COMPLETE: usize = 3;
+const PANIC: usize = 4;
 
-pub struct Memo<T: Future + Send> {
+
+pub struct Memo<T: Future + Send + Sync> {
     inner: Arc<MemoInner<T>>,
     driver: Cell<bool>,
 }
-impl<T: Future + Send> Memo<T> {
+impl<T: Future + Send + Sync> Memo<T> {
     pub fn new(future: T) -> Memo<T> {
         Memo {
             inner: Arc::new(MemoInner {
@@ -40,15 +44,32 @@ impl<T: Future + Send> Memo<T> {
             .compare_and_swap(from, to, Ordering::SeqCst)
     }
 
-    fn drive(&'a self, cx: &mut task::Context) -> task::Poll<&T::Output> {
+    fn drive(&self, cx: &mut task::Context) -> task::Poll<&T::Output> {
         assert!(self.driver.get(), "can't drive from non-driver");
 
-        let result = unsafe {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
             (*self.inner.future.get())
                 .as_mut()
                 .expect("memo: invariant violated")
                 .as_mut()
                 .poll(cx)
+        }));
+        let result = match result {
+            Ok(result) => result,
+            Err(cause) => {
+                loop {
+                    let pre = self.transition(STARTED, PANIC);
+                    if pre == STARTED_WAKELOCKED {
+                        continue;
+                    } else if pre == STARTED_WAKELOCKED {
+                        break;
+                    } else {
+                        eprintln!("memo: weird state during panic: {}", pre);
+                        break;
+                    }
+                }
+                std::panic::resume_unwind(cause);
+            }
         };
 
         let result = match result {
@@ -82,7 +103,7 @@ impl<T: Future + Send> Memo<T> {
     }
 }
 
-impl<'a, T: Future + Send> Future for &'a Memo<T> {
+impl<'a, T: Future + Send + Sync> Future for &'a Memo<T> {
     type Output = &'a T::Output;
 
     #[inline(never)]
@@ -99,26 +120,37 @@ impl<'a, T: Future + Send> Future for &'a Memo<T> {
             STARTED | STARTED_WAKELOCKED => {
                 // we're awaiting the future.
 
-                // lock wakers:
-                // TODO: this deadlocks on completion, fix!!!
-                while self.transition(STARTED, STARTED_WAKELOCKED) != STARTED {}
+                let waker = cx.waker().clone();
 
-                unsafe { &mut *self.inner.wakers.get() }.push(cx.waker().clone());
-
-                // unlock wakers:
-                self.inner.state.store(STARTED, Ordering::SeqCst);
-
+                loop {
+                    let pre = self.transition(STARTED, STARTED_WAKELOCKED);
+                    if pre == STARTED {
+                        // add our waker to the list
+                        unsafe { &mut *self.inner.wakers.get() }.push(waker);
+                        self.inner.state.store(STARTED, Ordering::SeqCst);
+                        break;
+                    } else if pre == STARTED_WAKELOCKED {
+                        // yeah yeah wait around. this'll only happen for a few nanoseconds.
+                        continue;
+                    } else {
+                        // something else happened. try again.
+                        return self.poll(cx);
+                    }
+                }
                 task::Poll::Pending
             }
             COMPLETE => {
                 // future is already complete.
                 unsafe { self.get_result() }
             }
+            PANIC => {
+                panic!("memo: panicked")
+            }
             other => panic!("memo: impossible state: {}", other),
         }
     }
 }
-impl<T: Future + Send> Clone for Memo<T> {
+impl<T: Future + Send + Sync> Clone for Memo<T> {
     fn clone(&self) -> Self {
         Memo {
             inner: self.inner.clone(),
@@ -127,14 +159,26 @@ impl<T: Future + Send> Clone for Memo<T> {
     }
 }
 
-struct MemoInner<T: Future + Send> {
+struct MemoInner<T: Future + Send + Sync> {
     state: AtomicUsize,
     future: UnsafeCell<Option<Pin<Box<T>>>>,
     result: UnsafeCell<Option<T::Output>>,
     wakers: UnsafeCell<Vec<task::Waker>>,
 }
-unsafe impl<T: Future + Send> Send for MemoInner<T> {}
-unsafe impl<T: Future + Send> Sync for MemoInner<T> {}
+unsafe impl<T: Future + Send + Sync> Send for MemoInner<T> {}
+unsafe impl<T: Future + Send + Sync> Sync for MemoInner<T> {}
+
+pub struct MemoResult<T: Future + Send + Sync> {
+    inner: Arc<MemoInner<T>
+}
+impl<T: Future + Send + Sync> Deref for MemoResult<T> {
+    type Target = T::Output;
+    fn deref(&self) -> T::Output {
+        unsafe {
+            
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
