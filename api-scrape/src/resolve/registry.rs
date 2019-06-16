@@ -29,6 +29,13 @@
 //!         registry1-<hash>/<pkg>-<version>/...
 //!         ...
 //! ```
+//!
+//! You can override these environment variables to change Cargo's behavior on your system:
+//!
+//!     CARGO_HOME — Cargo maintains a local cache of the registry index and of git checkouts of crates. By default these are stored under $HOME/.cargo, but this variable overrides the location of this directory. Once a crate is cached it is not removed by the clean command.
+//!     CARGO_TARGET_DIR — Location of where to place all generated artifacts, relative to the current working directory.
+//!
+//!
 use crate::{Error, Result};
 use cargo_metadata::PackageId;
 use std::path::PathBuf;

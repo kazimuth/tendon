@@ -18,6 +18,8 @@ syn = "0.15.35"
 quote = "0.6.12"
 proc-macro2 = "0.4"
 parking_lot = "0.8"
+ccl = "3.5.3"
+dirs = "2.0.1"
 
 [dev-dependencies]
 toml = "0.5"

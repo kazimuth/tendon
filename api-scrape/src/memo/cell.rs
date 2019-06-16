@@ -33,14 +33,14 @@ const FINISHED: usize = 2;
 ///     result.await; // reuses result
 /// }
 /// ```
-pub struct Memo<T: Future> {
-    inner: Option<Arc<MemoInner<T>>>,
-    result: MemoResult<T::Output>,
+pub struct Memo<R> {
+    inner: Option<Arc<MemoInner<dyn Future<Output = R> + Send + Sync>>>,
+    result: MemoResult<R>,
     driver: bool,
 }
 /// The result of a memoized future.
 pub struct MemoResult<R>(Arc<UnsafeCell<Option<R>>>);
-struct MemoInner<T> {
+struct MemoInner<T: ?Sized> {
     state: AtomicUsize,
     future: RwLock<Pin<Box<T>>>,
     wakers: RwLock<Vec<task::Waker>>,
@@ -49,19 +49,21 @@ unsafe impl<R: Sync> Send for MemoResult<R> {}
 unsafe impl<R: Sync> Sync for MemoResult<R> {}
 impl<R> Clone for MemoResult<R>
 where
-    R: Sync,
+    R: Send + Sync,
 {
     fn clone(&self) -> Self {
         MemoResult(self.0.clone())
     }
 }
 
-impl<T> Memo<T>
+impl<R> Memo<R>
 where
-    T: Future + Send + Sync,
-    T::Output: Sync,
+    R: Send + Sync,
 {
-    pub fn new(future: T) -> Memo<T> {
+    pub fn new<F>(future: F) -> Memo<R>
+    where
+        F: Future<Output = R> + Send + Sync + 'static,
+    {
         Memo {
             inner: Some(Arc::new(MemoInner {
                 state: AtomicUsize::new(UNSTARTED),
@@ -106,15 +108,14 @@ where
     }
 }
 
-impl<T> Future for Memo<T>
+impl<R> Future for Memo<R>
 where
-    T: Future + Send + Sync,
-    T::Output: Sync,
+    R: Send + Sync,
 {
-    type Output = MemoResult<T::Output>;
+    type Output = MemoResult<R>;
 
     #[inline(never)]
-    fn poll(self: Pin<&mut Self>, cx: &mut task::Context) -> task::Poll<MemoResult<T::Output>> {
+    fn poll(self: Pin<&mut Self>, cx: &mut task::Context) -> task::Poll<MemoResult<R>> {
         let self_ = unsafe { self.get_unchecked_mut() };
         if self_.inner.is_none() {
             return task::Poll::Ready(self_.result.clone());
@@ -159,10 +160,9 @@ where
         }
     }
 }
-impl<T> Clone for Memo<T>
+impl<R> Clone for Memo<R>
 where
-    T: Future + Send + Sync,
-    T::Output: Sync,
+    R: Send + Sync,
 {
     fn clone(&self) -> Self {
         Memo {

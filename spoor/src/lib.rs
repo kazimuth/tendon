@@ -67,7 +67,7 @@ mod tests {
         }
 
         let result = tokio_trace::subscriber::with_default(TestSubscriber, || {
-            let f = traced(info_span!("test span"), async { 37u8 });
+            let f = trace(info_span!("test span"), async { 37u8 });
             futures::executor::block_on(f)
         });
         assert_eq!(result, 37u8);
