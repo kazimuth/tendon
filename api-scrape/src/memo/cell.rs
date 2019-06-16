@@ -18,13 +18,12 @@ const FINISHED: usize = 2;
 /// A memoized future.
 /// Can be cloned and .awaited() as many times as you'd like; only the first .await will run.
 /// Only shared references can be taken to the result. Use RwLock or Mutex if you need mutability.
-/// ```
+/// ```no_run
 /// #![feature(async_await)]
 /// # fn expensive_computation() -> usize { 3 }
 /// use api_scrape::memo::Memo;
 ///
-/// #[runtime::main]
-/// async fn main() {
+/// async fn demo() {
 ///     let result = Memo::new(async {
 ///         expensive_computation();
 ///     });
@@ -56,6 +55,27 @@ where
     }
 }
 
+impl<O> Memo<dyn Future<Output = O> + Send + Sync>
+where
+    O: Send + Sync,
+{
+    pub fn new_dyn<M, F>(maker: M) -> Self
+    where
+        M: FnOnce() -> F,
+        F: Future<Output = O> + Send + Sync + 'static,
+    {
+        Memo {
+            inner: Some(Arc::new(MemoInner {
+                state: AtomicUsize::new(UNSTARTED),
+                future: RwLock::new(Box::pin(maker())),
+                wakers: RwLock::new(Vec::new()),
+            })),
+            result: MemoResult(Arc::new(UnsafeCell::new(None))),
+            driver: false,
+        }
+    }
+}
+
 impl<T> Memo<T>
 where
     T: Future + Send + Sync,
@@ -72,7 +92,13 @@ where
             driver: false,
         }
     }
+}
 
+impl<T> Memo<T>
+where
+    T: Future + Send + Sync + ?Sized,
+    T::Output: Send + Sync,
+{
     fn drive(&mut self, cx: &mut task::Context) {
         assert!(self.driver, "memo: can't drive from non-driver");
 
@@ -108,7 +134,7 @@ where
 
 impl<T> Future for Memo<T>
 where
-    T: Future + Send + Sync,
+    T: Future + Send + Sync + ?Sized,
     T::Output: Send + Sync,
 {
     type Output = MemoResult<T::Output>;
@@ -161,7 +187,7 @@ where
 }
 impl<T> Clone for Memo<T>
 where
-    T: Future + Send + Sync,
+    T: Future + Send + Sync + ?Sized,
     T::Output: Send + Sync,
 {
     fn clone(&self) -> Self {
