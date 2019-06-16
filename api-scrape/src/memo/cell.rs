@@ -1,8 +1,3 @@
-// TODO: rename to MemoCell?
-// TODO: check all atomic returns
-// TODO: handle drive() panics
-// TODO: handle recursion?
-
 use parking_lot::RwLock;
 use std::{
     cell::UnsafeCell,
@@ -20,17 +15,36 @@ const UNSTARTED: usize = 0;
 const STARTED: usize = 1;
 const FINISHED: usize = 2;
 
+/// A memoized future.
+/// Can be cloned and .awaited() as many times as you'd like; only the first .await will run.
+/// Only shared references can be taken to the result. Use RwLock or Mutex if you need mutability.
+/// ```
+/// #![feature(async_await)]
+/// # fn expensive_computation() -> usize { 3 }
+/// use api_scrape::memo::Memo;
+///
+/// #[runtime::main]
+/// async fn main() {
+///     let result = Memo::new(async {
+///         expensive_computation();
+///     });
+///     let other = result.clone();
+///     other.await; // runs the computation
+///     result.await; // reuses result
+/// }
+/// ```
 pub struct Memo<T: Future> {
     inner: Option<Arc<MemoInner<T>>>,
     result: MemoResult<T::Output>,
     driver: bool,
 }
+/// The result of a memoized future.
+pub struct MemoResult<R>(Arc<UnsafeCell<Option<R>>>);
 struct MemoInner<T> {
     state: AtomicUsize,
     future: RwLock<Pin<Box<T>>>,
     wakers: RwLock<Vec<task::Waker>>,
 }
-pub struct MemoResult<R>(Arc<UnsafeCell<Option<R>>>);
 unsafe impl<R: Sync> Send for MemoResult<R> {}
 unsafe impl<R: Sync> Sync for MemoResult<R> {}
 impl<R> Clone for MemoResult<R>
@@ -59,7 +73,7 @@ where
         }
     }
 
-    fn drive(&mut self, cx: &mut task::Context) -> task::Poll<MemoResult<T::Output>> {
+    fn drive(&mut self, cx: &mut task::Context) {
         assert!(self.driver, "memo: can't drive from non-driver");
 
         {
@@ -67,12 +81,12 @@ where
             let result = inner
                 .future
                 .try_write()
-                .expect("memo: multiple drivers?")
+                .expect("memo: multiple drivers? or recursion")
                 .as_mut()
                 .poll(cx);
 
             let result = match result {
-                task::Poll::Pending => return task::Poll::Pending,
+                task::Poll::Pending => return, // nothing to do; future has scheduled wakening
                 task::Poll::Ready(result) => result,
             };
             unsafe {
@@ -89,10 +103,6 @@ where
                 wakers.shrink_to_fit();
             }
         };
-
-        self.inner = None;
-
-        task::Poll::Ready(self.result.clone())
     }
 }
 
@@ -116,20 +126,34 @@ where
                 // we're driver now
                 self_.driver = true;
             } else if pre == FINISHED {
+                self_.inner = None;
                 return task::Poll::Ready(self_.result.clone());
             }
         }
         if self_.driver {
-            self_.drive(cx)
-        } else {
-            let inner = self_.inner.as_ref().expect("memo: invariant violated");
-            let wakers = &mut inner.wakers.write();
-            if inner.state.load(SeqCst) == FINISHED {
+            self_.drive(cx);
+        }
+        {
+            if self_
+                .inner
+                .as_ref()
+                .expect("memo: invariant violated")
+                .state
+                .load(SeqCst)
+                == FINISHED
+            {
+                self_.inner = None;
                 // we were just blocked on the driver trying to wake us up
                 // skip it
                 task::Poll::Ready(self_.result.clone())
             } else {
-                wakers.push(cx.waker().clone());
+                self_
+                    .inner
+                    .as_ref()
+                    .expect("memo: invariant violated")
+                    .wakers
+                    .write()
+                    .push(cx.waker().clone());
                 task::Poll::Pending
             }
         }

@@ -2,7 +2,6 @@
 //!
 //! Note from cargo:
 //!
-//!
 //! ```notrust
 //! # A folder under which all registry metadata is hosted (similar to
 //! # $HOME/.cargo/git)
@@ -30,3 +29,10 @@
 //!         registry1-<hash>/<pkg>-<version>/...
 //!         ...
 //! ```
+use crate::{Error, Result};
+use cargo_metadata::PackageId;
+use std::path::PathBuf;
+
+pub async fn lookup(id: PackageId) -> Result<PathBuf> {
+    Err(Error::ResolveFailed)
+}
