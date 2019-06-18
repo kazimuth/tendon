@@ -13,6 +13,9 @@ custom_error::custom_error! { pub Error
     // can't use source: because failure
     CargoMetadataFailed { cause: cargo_metadata::Error }= "`cargo metadata` failure: {cause}",
     ResolveFailed = "`cargo metadata` failed to resolve dependencies",
+    NoCargoHome { checked: String } = "failed to locate .cargo directory, tried: {checked}; please set CARGO_HOME",
+    MalformedPackageId { id: String } = "malformed package id: `{id}`",
+    NoMacroName = "no macro name",
 }
 
 impl From<cargo_metadata::Error> for Error {

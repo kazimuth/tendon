@@ -48,3 +48,5 @@ impl strategies:
     - rlibs
 
 https://github.com/rust-lang/rust/issues/25820 - rlib dumping
+
+a testament to hubris, thinking thisl wor

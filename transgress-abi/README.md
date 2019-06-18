@@ -84,6 +84,9 @@ https://rust-lang-nursery.github.io/api-guidelines/future-proofing.html#future-p
 
 -> will be handled if we handle reexports correctly
 
+- storing data behind pointers vs storing data in-line
+  - cross-rust compatibility?
+
 ### wasm
 
 https://rustwasm.github.io/book/reference/which-crates-work-with-wasm.html
@@ -132,6 +135,9 @@ https://jdk.java.net/panama/
 just use cffi lmao
 
 https://cffi.readthedocs.io/en/latest/
+
+context managers: all objects! but particularly some
+also, implicit rwlocks around all objects (bench?)
 
 ### rust-rust
 

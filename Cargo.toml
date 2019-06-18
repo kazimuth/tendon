@@ -10,9 +10,6 @@ members = [
     "spoor",
 ]
 
-[profile.dev]
-opt-level = 2
-
 [profile.dev.overrides."*"]
 opt-level = 2
 

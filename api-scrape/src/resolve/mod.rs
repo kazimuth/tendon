@@ -4,6 +4,12 @@
 // TODO purge:
 #![allow(unused)]
 
+// TODO limit memory usage
+
+// TODO macro resolution order / scope?
+
+// TODO "macro" kw, whenever that exists
+
 use crate::{Error, Result};
 use cargo_metadata::{CargoOpt, Metadata, MetadataCommand, Node, Package, PackageId};
 use parking_lot::RwLock;
@@ -13,9 +19,6 @@ use tokio_trace::info;
 use unthwart::unthwarted;
 
 pub mod item_expand;
-pub mod registry;
-
-// TODO limit memory usage
 
 pub struct Resolver {
     /// The root of the project we're scraping.
@@ -27,11 +30,9 @@ pub struct Resolver {
     /// for the actual dependency graph.
     packages: HashMap<PackageId, Package>,
     /// The dependency graph, tracking package instantiations
-    nodes: HashMap<PackageId, Node>,
+    resolve: HashMap<PackageId, Node>,
     /// The root project we're examining
     root: PackageId,
-    /// Files loaded from the filesystem.
-    files: RwLock<HashMap<PathBuf, syn::File>>,
     /// Where ResolvedPaths can be found in the filesystem.
     modules: RwLock<HashMap<ResolvedPath, PathBuf>>,
 }
@@ -39,6 +40,7 @@ pub struct Resolver {
 impl Resolver {
     pub async fn new(project_root: PathBuf) -> Result<Resolver> {
         let project = project_root.clone();
+        info!("Collecting cargo metadata");
         let mut metadata = unthwarted! {
             MetadataCommand::new()
                 .current_dir(&project)
@@ -52,35 +54,55 @@ impl Resolver {
             workspace_root,
             ..
         } = metadata;
-        let packages = packages
+        let packages: HashMap<_, _> = packages
             .drain(..)
             .map(|package| (package.id.clone(), package))
             .collect();
         let mut resolve = resolve.ok_or(Error::ResolveFailed)?;
         let root = resolve.root.ok_or(Error::ResolveFailed)?;
-        let nodes = resolve
+        let resolve = resolve
             .nodes
             .drain(..)
             .map(|node| (node.id.clone(), node))
             .collect();
 
-        let files = RwLock::new(HashMap::new());
+        info!("root package {:?}", root.repr);
+
         let modules = RwLock::new(HashMap::new());
+
+        for package in packages.values() {
+            info!("{}", package.name);
+        }
 
         info!("root package {:?}", root.repr);
 
         Ok(Resolver {
             packages,
             root,
-            nodes,
+            resolve,
             project_root,
             workspace_root,
-            files,
             modules,
         })
     }
 
-    async fn resolve<'a>(&'a self, path: &'a syn::Path) -> Result<ResolvedPath> {
+    fn resolve<'a>(&'a self, id: &PackageId, path: &'a syn::Path) -> Result<ResolvedPath> {
+        // scope to target crate?
+
+        // look up in resolve
+
+        // https://doc.rust-lang.org/stable/reference/items/modules.html
+        // mod q; -> q/mod.rs; q.rs
+        //
+        // #[path="z.rs"] mod q -> z.rs
+        // #[path="bees"] mod wasps { mod queen; } -> bees/queen.rs, bees/queen/mod.rs
+
+        // cfg-attrs
+
+        // prelude
+
+        // check edition
+        // let count = &package.targets.iter().filter(|t| t.kind.iter().find(|k| *k == "lib").is_some()).count();
         unimplemented!();
     }
 
@@ -97,19 +119,5 @@ pub struct ResolvedPath {
     pub path: Vec<String>,
 }
 
-/// Get the source for some module.
-
-/// A scraped fn.
-struct Fn {}
-
-/// A scraped type.
-struct Type {}
-
-/// A scraped trait.
-struct Trait {}
-
-/// A scraped const.
-struct Const {}
-
-/// A scraped static.
-struct Static {}
+///
+pub struct BarePath(Box<str>);

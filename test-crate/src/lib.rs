@@ -5,7 +5,9 @@
 use rand_chacha::ChaChaCore;
 
 /// thing
-pub fn x(y: i32) {}
+pub fn x(y: i32) -> i32 {
+    y + 1
+}
 
 pub fn gen1(m: Vec<i32>) {}
 pub fn gen2(m: Vec<Vec<i32>>) {}
@@ -65,6 +67,10 @@ macro_rules! expands_to_item {
     () => {
         pub const EXPANDED: &'static std::option::Option<i32> = &None;
     };
+    ($(($x:expr)) 'f *) => {
+        pub const Z: &'static [i32] = &[$($x),+];
+    }
 }
+expands_to_item!((1) 'f (2) 'f (3));
 
 expands_to_item!();
