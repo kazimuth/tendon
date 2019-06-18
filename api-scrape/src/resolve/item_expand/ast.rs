@@ -1,4 +1,4 @@
-//! A syn parser for `macro_rules!`
+//! A syn parser for `macro_rules!`.
 //!
 //!>    MacroRulesDefinition :
 //!>       macro_rules ! IDENTIFIER MacroRulesDef
@@ -35,10 +35,12 @@ use quote::{quote, ToTokens};
 use syn::{
     self, parenthesized,
     parse::{self, Parse, ParseStream},
+    spanned::Spanned,
     token, Token,
 };
 #[derive(Debug)]
 pub struct MacroDef {
+    pub attrs: Vec<syn::Attribute>,
     pub ident: pm2::Ident,
     pub rules: Vec<MacroRule>,
 }
@@ -51,7 +53,7 @@ pub struct MacroRule {
 #[derive(Debug)]
 pub struct MatcherSeq(pub Vec<Matcher>);
 #[derive(Debug)]
-pub struct TranscriberSeq(Vec<Transcriber>);
+pub struct TranscriberSeq(pub Vec<Transcriber>);
 
 #[derive(Debug)]
 pub enum Matcher {
@@ -65,11 +67,14 @@ pub enum Matcher {
 #[derive(Debug)]
 pub struct Repetition {
     pub inner: MatcherSeq,
-    pub sep: Vec<pm2::TokenTree>,
+    pub sep: Sep,
 }
 #[derive(Debug)]
+pub struct Sep(Vec<pm2::TokenTree>);
+
+#[derive(Debug)]
 pub struct Fragment {
-    pub name: pm2::Ident,
+    pub ident: pm2::Ident,
     pub spec: FragSpec,
 }
 #[derive(Debug)]
@@ -95,34 +100,80 @@ pub enum FragSpec {
 }
 #[derive(Debug)]
 pub enum Transcriber {
-    Tokens(pm2::TokenStream),
-    Group {
-        delimiter: pm2::Delimiter,
-        inner: TranscriberSeq,
-    },
+    // TODO: can be a false match?
     Fragment(pm2::Ident),
-    Repeat {
-        sep: Vec<pm2::TokenTree>,
-        inner: TranscriberSeq,
-    },
+    Repetition(TranscribeRepetition),
+    Group(TranscribeGroup),
+    Ident(pm2::Ident),
+    Literal(pm2::Literal),
+    Punct(pm2::Punct),
+}
+#[derive(Debug)]
+pub struct TranscribeRepetition {
+    sep: Sep,
+    inner: TranscriberSeq,
+}
+
+#[derive(Debug)]
+pub struct TranscribeGroup {
+    delimiter: pm2::Delimiter,
+    inner: TranscriberSeq,
 }
 
 impl Parse for MacroDef {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let source = syn::ItemMacro::parse(input)?;
-        // let mac = &source.mac;
-        // let ident = source.ident.as_ref().ok_or(Error::NoMacroName)?.into();
+        let syn::ItemMacro {
+            ident, mac, attrs, ..
+        } = syn::ItemMacro::parse(input)?;
+        if !mac.path.is_ident("macro_rules") {
+            return Err(syn::Error::new(mac.span(), "not macro_rules"));
+        }
+        let ident = ident.ok_or(syn::Error::new(
+            mac.span(),
+            "no macro_ident in macro_rules!",
+        ))?;
 
-        // Ok(MacroDef {
-        //     ident,
-        //     rules: vec![],
-        // })
-        unimplemented!()
+        let rules = syn::parse2::<MacroRules>(mac.tts)?.0;
+
+        Ok(MacroDef {
+            ident,
+            attrs,
+            rules,
+        })
     }
 }
+// workaround for annoying syn constraints
+// (can't directly convert a TokenStream to a ParseStream, have to )
+struct MacroRules(Vec<MacroRule>);
+impl Parse for MacroRules {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut result = MacroRules(vec![]);
+        while !input.is_empty() {
+            result.0.push(input.parse::<MacroRule>()?);
+        }
+        Ok(result)
+    }
+}
+
 impl Parse for MacroRule {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        unimplemented!()
+        eprintln!("parsing match group");
+        let matcher = input.parse::<pm2::Group>()?;
+        eprintln!("{}", matcher);
+        let matcher = syn::parse2::<MatcherSeq>(matcher.stream())?;
+        input.parse::<Token![=>]>();
+
+        eprintln!("parsing transcribe group");
+        let transcriber = input.parse::<pm2::Group>()?;
+        eprintln!("{}", transcriber);
+        let transcriber = syn::parse2::<TranscriberSeq>(transcriber.stream())?;
+
+        input.parse::<Token![;]>();
+
+        Ok(MacroRule {
+            matcher,
+            transcriber,
+        })
     }
 }
 impl Parse for MatcherSeq {
@@ -162,11 +213,19 @@ impl Parse for Repetition {
         let inner;
         parenthesized!(inner in input);
         let inner = inner.parse::<MatcherSeq>()?;
-        let mut sep = vec![];
+        let sep = input.parse::<Sep>()?;
+        // absorb quantifier
+        // TODO keep? can it affect parsing?
+        input.parse::<pm2::Punct>()?;
 
+        Ok(Repetition { inner, sep })
+    }
+}
+impl Parse for Sep {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
         // there's no easy way to parse "one token" (pm2 is too low-level)
-        // so we just accept more than we should; rustc should already have weeded out incorrect things
-        // for us
+        // so we just accept more than we should; rustc should already have weeded out incorrect seps
+        let mut sep = vec![];
         while !input.peek(Token![*]) && !input.peek(Token![+]) && !input.peek(Token![?]) {
             let tt = input.parse::<pm2::TokenTree>()?;
             if let pm2::TokenTree::Group(ref group) = tt {
@@ -174,53 +233,53 @@ impl Parse for Repetition {
             }
             sep.push(tt);
         }
-        input.parse::<pm2::Punct>()?;
-        Ok(Repetition { inner, sep })
+
+        Ok(Sep(sep))
     }
 }
 impl Parse for Fragment {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         input.parse::<token::Dollar>()?; // $
-        let name = input.parse::<pm2::Ident>()?;
+        let ident = input.parse::<pm2::Ident>()?;
         input.parse::<Token![:]>()?;
         let spec = input.parse::<FragSpec>()?;
 
-        Ok(Fragment { name, spec })
+        Ok(Fragment { ident, spec })
     }
 }
 impl Parse for FragSpec {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let name = input.parse::<pm2::Ident>()?;
-        if name == "block" {
+        let ident = input.parse::<pm2::Ident>()?;
+        if ident == "block" {
             Ok(FragSpec::Block)
-        } else if name == "expr" {
+        } else if ident == "expr" {
             Ok(FragSpec::Expr)
-        } else if name == "ident" {
+        } else if ident == "ident" {
             Ok(FragSpec::Ident)
-        } else if name == "item" {
+        } else if ident == "item" {
             Ok(FragSpec::Item)
-        } else if name == "lifetime" {
+        } else if ident == "lifetime" {
             Ok(FragSpec::Lifetime)
-        } else if name == "literal" {
+        } else if ident == "literal" {
             Ok(FragSpec::Literal)
-        } else if name == "meta" {
+        } else if ident == "meta" {
             Ok(FragSpec::Meta)
-        } else if name == "pat" {
+        } else if ident == "pat" {
             Ok(FragSpec::Pat)
-        } else if name == "path" {
+        } else if ident == "path" {
             Ok(FragSpec::Path)
-        } else if name == "stmt" {
+        } else if ident == "stmt" {
             Ok(FragSpec::Stmt)
-        } else if name == "tt" {
+        } else if ident == "tt" {
             Ok(FragSpec::Tt)
-        } else if name == "ty" {
+        } else if ident == "ty" {
             Ok(FragSpec::Ty)
-        } else if name == "vis" {
+        } else if ident == "vis" {
             Ok(FragSpec::Vis)
         } else {
             Err(syn::Error::new(
-                name.span(),
-                format!("unknown fragment specifier: {}", name),
+                ident.span(),
+                format!("unknown fragment specifier: {}", ident),
             ))
         }
     }
@@ -228,13 +287,48 @@ impl Parse for FragSpec {
 
 impl Parse for Transcriber {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        unimplemented!()
+        if input.peek(token::Dollar) && input.peek2(token::Paren) {
+            Ok(Transcriber::Repetition(
+                input.parse::<TranscribeRepetition>()?,
+            ))
+        } else if input.peek(token::Dollar) && input.peek2(syn::Ident) {
+            input.parse::<token::Dollar>();
+            Ok(Transcriber::Fragment(input.parse::<pm2::Ident>()?))
+        } else {
+            let tt = input.parse::<pm2::TokenTree>()?;
+            match tt {
+                pm2::TokenTree::Ident(ident) => Ok(Transcriber::Ident(ident)),
+                pm2::TokenTree::Literal(literal) => Ok(Transcriber::Literal(literal)),
+                pm2::TokenTree::Punct(punct) => Ok(Transcriber::Punct(punct)),
+                pm2::TokenTree::Group(group) => Ok(Transcriber::Group(TranscribeGroup {
+                    delimiter: group.delimiter(),
+                    inner: syn::parse2::<TranscriberSeq>(group.stream())?,
+                })),
+            }
+        }
+    }
+}
+
+impl Parse for TranscribeRepetition {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        input.parse::<token::Dollar>()?; // $
+        let inner;
+        parenthesized!(inner in input);
+        let inner = inner.parse::<TranscriberSeq>()?;
+        let sep = input.parse::<Sep>()?;
+        // absorb quantifier
+        input.parse::<pm2::Punct>()?;
+        Ok(TranscribeRepetition { inner, sep })
     }
 }
 
 impl Parse for TranscriberSeq {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        unimplemented!()
+        let mut result = TranscriberSeq(vec![]);
+        while !input.is_empty() {
+            result.0.push(input.parse::<Transcriber>()?);
+        }
+        Ok(result)
     }
 }
 
@@ -244,9 +338,9 @@ mod tests {
     use pm2::{Delimiter, Ident, Punct, Spacing, TokenTree};
 
     macro_rules! assert_match {
-        ($(($input:expr) $($type:ident::$variant:ident $(($binding:ident))?)? $($v:literal)? => $then:expr),+) => {{
-            $(match $input {
-                $($type::$variant$((ref $binding))?)? $($v)? => $then,
+        ($(($input:expr) $binding:pat => $then:expr),+) => {{
+            $(match &$input {
+                $binding => $then,
                 ref other => panic!("unexpected: {:?}", other),
             })+
         }};
@@ -256,9 +350,10 @@ mod tests {
     fn frag() -> syn::Result<()> {
         let frag = syn::parse_str::<Fragment>("$elem:block")?;
         assert_eq!(frag.spec, FragSpec::Block);
-        assert_eq!(frag.name, "elem");
+        assert_eq!(frag.ident, "elem");
         Ok(())
     }
+
     #[test]
     fn frag_spec() -> syn::Result<()> {
         assert_eq!(syn::parse_str::<FragSpec>("block")?, FragSpec::Block);
@@ -277,10 +372,12 @@ mod tests {
         assert!(syn::parse_str::<FragSpec>("bees").is_err());
         Ok(())
     }
+
     #[test]
     fn matcher() -> syn::Result<()> {
-        let seq =
-            syn::parse_str::<MatcherSeq>("ocelot + => $bees:ty { frog } $(tapir *)=>+ $(*)coati*")?;
+        let seq = syn::parse_str::<MatcherSeq>(
+            "ocelot + => $bees:ty { frog [] } $(tapir *)=>+ $(*)coati*",
+        )?;
 
         assert_match! {
             (seq.0[0]) Matcher::Ident(ident) => assert_eq!(ident, "ocelot"),
@@ -297,33 +394,129 @@ mod tests {
                 assert_eq!(punct.spacing(), Spacing::Alone);
             },
             (seq.0[4]) Matcher::Fragment(frag) => {
-                assert_eq!(frag.name, "bees");
+                assert_eq!(frag.ident, "bees");
                 assert_eq!(frag.spec, FragSpec::Ty);
             },
             (seq.0[5]) Matcher::Group(group) => {
                 assert_eq!(group.delimiter, Delimiter::Brace);
-                assert_match!((group.inner.0[0]) Matcher::Ident(ident) => {
-                    assert_eq!(ident, "frog");
-                });
+                assert_match!(
+                    (group.inner.0[0]) Matcher::Ident(ident) => assert_eq!(ident, "frog"),
+                    (group.inner.0[1]) Matcher::Group(group) => {
+                        assert_eq!(group.delimiter, Delimiter::Bracket);
+                        assert_eq!(group.inner.0.len(), 0);
+                    }
+                );
             },
             (seq.0[6]) Matcher::Repetition(rep) => assert_match! {
                 (rep.inner.0[0]) Matcher::Ident(ident) => assert_eq!(ident, "tapir"),
                 (rep.inner.0[1]) Matcher::Punct(punct) => assert_eq!(punct.as_char(), '*'),
-                (rep.sep[0]) TokenTree::Punct(punct) => {
+                (rep.sep.0[0]) TokenTree::Punct(punct) => {
                     assert_eq!(punct.as_char(), '=');
                     assert_eq!(punct.spacing(), Spacing::Joint);
                 },
-                (rep.sep[1]) TokenTree::Punct(punct) => {
+                (rep.sep.0[1]) TokenTree::Punct(punct) => {
                     assert_eq!(punct.as_char(), '>');
                     assert_eq!(punct.spacing(), Spacing::Joint);
                 }
             },
             (seq.0[7]) Matcher::Repetition(rep) => assert_match! {
                 (rep.inner.0[0]) Matcher::Punct(punct) => assert_eq!(punct.as_char(), '*'),
-                (rep.sep[0]) TokenTree::Ident(ident) => assert_eq!(ident, "coati")
+                (rep.sep.0[0]) TokenTree::Ident(ident) => assert_eq!(ident, "coati")
             }
         }
 
         Ok(())
     }
+
+    #[test]
+    fn transcriber() -> syn::Result<()> {
+        let seq = syn::parse_str::<TranscriberSeq>(
+            "ocelot + => $bees { frog [] } $(tapir *)=>+ $(*)coati*",
+        )?;
+
+        assert_match! {
+            (seq.0[0]) Transcriber::Ident(ident) => assert_eq!(ident, "ocelot"),
+            (seq.0[1]) Transcriber::Punct(punct) => {
+                assert_eq!(punct.as_char(), '+');
+                assert_eq!(punct.spacing(), Spacing::Alone);
+            },
+            (seq.0[2]) Transcriber::Punct(punct) => {
+                assert_eq!(punct.as_char(), '=');
+                assert_eq!(punct.spacing(), Spacing::Joint);
+            },
+            (seq.0[3]) Transcriber::Punct(punct) => {
+                assert_eq!(punct.as_char(), '>');
+                assert_eq!(punct.spacing(), Spacing::Alone);
+            },
+            (seq.0[4]) Transcriber::Fragment(frag) => assert_eq!(frag, "bees"),
+            (seq.0[5]) Transcriber::Group(group) => {
+                assert_eq!(group.delimiter, Delimiter::Brace);
+                assert_match!(
+                    (group.inner.0[0]) Transcriber::Ident(ident) => assert_eq!(ident, "frog"),
+                    (group.inner.0[1]) Transcriber::Group(group) => {
+                        assert_eq!(group.delimiter, Delimiter::Bracket);
+                        assert_eq!(group.inner.0.len(), 0);
+                    }
+                );
+            },
+            (seq.0[6]) Transcriber::Repetition(rep) => assert_match! {
+                (rep.inner.0[0]) Transcriber::Ident(ident) => assert_eq!(ident, "tapir"),
+                (rep.inner.0[1]) Transcriber::Punct(punct) => assert_eq!(punct.as_char(), '*'),
+                (rep.sep.0[0]) TokenTree::Punct(punct) => {
+                    assert_eq!(punct.as_char(), '=');
+                    assert_eq!(punct.spacing(), Spacing::Joint);
+                },
+                (rep.sep.0[1]) TokenTree::Punct(punct) => {
+                    assert_eq!(punct.as_char(), '>');
+                    assert_eq!(punct.spacing(), Spacing::Joint);
+                }
+            },
+            (seq.0[7]) Transcriber::Repetition(rep) => assert_match! {
+                (rep.inner.0[0]) Transcriber::Punct(punct) => assert_eq!(punct.as_char(), '*'),
+                (rep.sep.0[0]) TokenTree::Ident(ident) => assert_eq!(ident, "coati")
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn full() -> syn::Result<()> {
+        // let's get meta
+        let mac = syn::parse_str::<MacroDef>(
+            r#"
+            macro_rules! assert_match {
+                ($(($input:expr) $binding:pat => $then:expr),+) => {{
+                    $(match &$input {
+                        $binding => $then,
+                        ref other => panic!("unexpected: {:?}", other),
+                    })+
+                }};
+            }
+        "#,
+        );
+        let mac = match mac {
+            Err(e) => panic!("{}", e),
+            Ok(mac) => mac,
+        };
+        assert_eq!(mac.ident, "assert_match");
+        assert_eq!(mac.attrs.len(), 0);
+        assert_eq!(mac.rules.len(), 1);
+        assert_match!((mac.rules[0].matcher.0[0]) Matcher::Repetition(rep) => {
+            assert_match!(
+                (rep.sep.0[0]) TokenTree::Punct(punct) => {
+                    assert_eq!(punct.as_char(), ',');
+                },
+                (rep.inner.0[0]) Matcher::Group(group) => {
+                    assert_eq!(group.delimiter, Delimiter::Parenthesis);
+                    assert_match!((group.inner.0[0]) Matcher::Fragment(frag) => {
+                        assert_eq!(frag.ident, "input");
+                        assert_eq!(frag.spec, FragSpec::Expr);
+                    });
+                }
+            );
+        });
+        Ok(())
+    }
+
 }
