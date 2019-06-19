@@ -4,7 +4,7 @@
 //!>       macro_rules ! IDENTIFIER MacroRulesDef
 //!>    MacroRulesDef :
 //!>          ( MacroRules ) ;
-//!>       , [ MacroRules ] ;
+//!>       , \[ MacroRules \] ;
 //!>       , { MacroRules }
 //!>    MacroRules :
 //!>       MacroRule ( ; MacroRule )\* ;\?
@@ -29,12 +29,10 @@
 //!>    MacroTranscriber :
 //!>       DelimTokenTree
 
-use crate::{Error, Result};
 use proc_macro2 as pm2;
-use quote::{quote, ToTokens};
 use syn::{
     self, parenthesized,
-    parse::{self, Parse, ParseStream},
+    parse::{Parse, ParseStream},
     spanned::Spanned,
     token, Token,
 };
@@ -70,7 +68,7 @@ pub struct Repetition {
     pub sep: Sep,
 }
 #[derive(Debug)]
-pub struct Sep(Vec<pm2::TokenTree>);
+pub struct Sep(pub Vec<pm2::TokenTree>);
 
 #[derive(Debug)]
 pub struct Fragment {
@@ -91,12 +89,12 @@ pub enum FragSpec {
     Lifetime,
     Literal,
     Meta,
-    Pat,
+    Pattern,
     Path,
-    Stmt,
-    Tt,
-    Ty,
-    Vis,
+    Statement,
+    TokenTree,
+    Type,
+    Visibility,
 }
 #[derive(Debug)]
 pub enum Transcriber {
@@ -157,18 +155,14 @@ impl Parse for MacroRules {
 
 impl Parse for MacroRule {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        eprintln!("parsing match group");
         let matcher = input.parse::<pm2::Group>()?;
-        eprintln!("{}", matcher);
         let matcher = syn::parse2::<MatcherSeq>(matcher.stream())?;
-        input.parse::<Token![=>]>();
+        input.parse::<Token![=>]>()?;
 
-        eprintln!("parsing transcribe group");
         let transcriber = input.parse::<pm2::Group>()?;
-        eprintln!("{}", transcriber);
         let transcriber = syn::parse2::<TranscriberSeq>(transcriber.stream())?;
 
-        input.parse::<Token![;]>();
+        input.parse::<Token![;]>()?;
 
         Ok(MacroRule {
             matcher,
@@ -265,17 +259,17 @@ impl Parse for FragSpec {
         } else if ident == "meta" {
             Ok(FragSpec::Meta)
         } else if ident == "pat" {
-            Ok(FragSpec::Pat)
+            Ok(FragSpec::Pattern)
         } else if ident == "path" {
             Ok(FragSpec::Path)
         } else if ident == "stmt" {
-            Ok(FragSpec::Stmt)
+            Ok(FragSpec::Statement)
         } else if ident == "tt" {
-            Ok(FragSpec::Tt)
+            Ok(FragSpec::TokenTree)
         } else if ident == "ty" {
-            Ok(FragSpec::Ty)
+            Ok(FragSpec::Type)
         } else if ident == "vis" {
-            Ok(FragSpec::Vis)
+            Ok(FragSpec::Visibility)
         } else {
             Err(syn::Error::new(
                 ident.span(),
@@ -292,7 +286,7 @@ impl Parse for Transcriber {
                 input.parse::<TranscribeRepetition>()?,
             ))
         } else if input.peek(token::Dollar) && input.peek2(syn::Ident) {
-            input.parse::<token::Dollar>();
+            input.parse::<token::Dollar>()?;
             Ok(Transcriber::Fragment(input.parse::<pm2::Ident>()?))
         } else {
             let tt = input.parse::<pm2::TokenTree>()?;
@@ -335,7 +329,7 @@ impl Parse for TranscriberSeq {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pm2::{Delimiter, Ident, Punct, Spacing, TokenTree};
+    use pm2::{Delimiter, Spacing, TokenTree};
 
     macro_rules! assert_match {
         ($(($input:expr) $binding:pat => $then:expr),+) => {{
@@ -348,6 +342,8 @@ mod tests {
 
     #[test]
     fn frag() -> syn::Result<()> {
+        spoor::init();
+
         let frag = syn::parse_str::<Fragment>("$elem:block")?;
         assert_eq!(frag.spec, FragSpec::Block);
         assert_eq!(frag.ident, "elem");
@@ -356,6 +352,8 @@ mod tests {
 
     #[test]
     fn frag_spec() -> syn::Result<()> {
+        spoor::init();
+
         assert_eq!(syn::parse_str::<FragSpec>("block")?, FragSpec::Block);
         assert_eq!(syn::parse_str::<FragSpec>("expr")?, FragSpec::Expr);
         assert_eq!(syn::parse_str::<FragSpec>("ident")?, FragSpec::Ident);
@@ -363,18 +361,20 @@ mod tests {
         assert_eq!(syn::parse_str::<FragSpec>("lifetime")?, FragSpec::Lifetime);
         assert_eq!(syn::parse_str::<FragSpec>("literal")?, FragSpec::Literal);
         assert_eq!(syn::parse_str::<FragSpec>("meta")?, FragSpec::Meta);
-        assert_eq!(syn::parse_str::<FragSpec>("pat")?, FragSpec::Pat);
+        assert_eq!(syn::parse_str::<FragSpec>("pat")?, FragSpec::Pattern);
         assert_eq!(syn::parse_str::<FragSpec>("path")?, FragSpec::Path);
-        assert_eq!(syn::parse_str::<FragSpec>("stmt")?, FragSpec::Stmt);
-        assert_eq!(syn::parse_str::<FragSpec>("tt")?, FragSpec::Tt);
-        assert_eq!(syn::parse_str::<FragSpec>("ty")?, FragSpec::Ty);
-        assert_eq!(syn::parse_str::<FragSpec>("vis")?, FragSpec::Vis);
+        assert_eq!(syn::parse_str::<FragSpec>("stmt")?, FragSpec::Statement);
+        assert_eq!(syn::parse_str::<FragSpec>("tt")?, FragSpec::TokenTree);
+        assert_eq!(syn::parse_str::<FragSpec>("ty")?, FragSpec::Type);
+        assert_eq!(syn::parse_str::<FragSpec>("vis")?, FragSpec::Visibility);
         assert!(syn::parse_str::<FragSpec>("bees").is_err());
         Ok(())
     }
 
     #[test]
     fn matcher() -> syn::Result<()> {
+        spoor::init();
+
         let seq = syn::parse_str::<MatcherSeq>(
             "ocelot + => $bees:ty { frog [] } $(tapir *)=>+ $(*)coati*",
         )?;
@@ -395,7 +395,7 @@ mod tests {
             },
             (seq.0[4]) Matcher::Fragment(frag) => {
                 assert_eq!(frag.ident, "bees");
-                assert_eq!(frag.spec, FragSpec::Ty);
+                assert_eq!(frag.spec, FragSpec::Type);
             },
             (seq.0[5]) Matcher::Group(group) => {
                 assert_eq!(group.delimiter, Delimiter::Brace);
@@ -430,6 +430,8 @@ mod tests {
 
     #[test]
     fn transcriber() -> syn::Result<()> {
+        spoor::init();
+
         let seq = syn::parse_str::<TranscriberSeq>(
             "ocelot + => $bees { frog [] } $(tapir *)=>+ $(*)coati*",
         )?;
@@ -482,6 +484,8 @@ mod tests {
 
     #[test]
     fn full() -> syn::Result<()> {
+        spoor::init();
+
         // let's get meta
         let mac = syn::parse_str::<MacroDef>(
             r#"

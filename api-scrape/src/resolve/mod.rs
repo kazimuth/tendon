@@ -2,7 +2,6 @@
 //! Works asynchronously and memoizes as it goes in order to achieve MAXIMUM HARDWARE EXPLOITATION.
 
 // TODO purge:
-#![allow(unused)]
 
 // TODO limit memory usage
 
@@ -22,26 +21,26 @@ pub mod item_expand;
 
 pub struct Resolver {
     /// The root of the project we're scraping.
-    project_root: PathBuf,
+    pub project_root: PathBuf,
     /// The workspace root of the project; same as project_root unless we're in a workspace.
-    workspace_root: PathBuf,
+    pub workspace_root: PathBuf,
     /// The list of all dependencies of this project.
     /// Note that each dependency may be instantiated multiple times with different feature sets; see nodes
     /// for the actual dependency graph.
-    packages: HashMap<PackageId, Package>,
+    pub packages: HashMap<PackageId, Package>,
     /// The dependency graph, tracking package instantiations
-    resolve: HashMap<PackageId, Node>,
+    pub resolve: HashMap<PackageId, Node>,
     /// The root project we're examining
-    root: PackageId,
+    pub root: PackageId,
     /// Where ResolvedPaths can be found in the filesystem.
-    modules: RwLock<HashMap<ResolvedPath, PathBuf>>,
+    pub modules: RwLock<HashMap<ResolvedPath, PathBuf>>,
 }
 
 impl Resolver {
     pub async fn new(project_root: PathBuf) -> Result<Resolver> {
         let project = project_root.clone();
         info!("Collecting cargo metadata");
-        let mut metadata = unthwarted! {
+        let metadata = unthwarted! {
             MetadataCommand::new()
                 .current_dir(&project)
                 .manifest_path(&project.join("Cargo.toml"))
@@ -86,7 +85,7 @@ impl Resolver {
         })
     }
 
-    fn resolve<'a>(&'a self, id: &PackageId, path: &'a syn::Path) -> Result<ResolvedPath> {
+    pub fn resolve<'a>(&'a self, _id: &PackageId, _path: &'a syn::Path) -> Result<ResolvedPath> {
         // scope to target crate?
 
         // look up in resolve
@@ -106,7 +105,7 @@ impl Resolver {
         unimplemented!();
     }
 
-    async fn get_module(path: &ResolvedPath) -> Result<(Vec<syn::Attribute>, Vec<syn::Item>)> {
+    pub async fn get_module(_path: &ResolvedPath) -> Result<(Vec<syn::Attribute>, Vec<syn::Item>)> {
         unimplemented!()
     }
 }

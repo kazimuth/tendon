@@ -8,6 +8,7 @@ members = [
     "unthwart",
     "prefab",
     "spoor",
+    "trace-err",
 ]
 
 [profile.dev.overrides."*"]

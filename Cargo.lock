@@ -1226,6 +1226,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "trace-err"
+version = "0.1.0"
+
+[[package]]
 name = "transgress-abi"
 version = "0.1.0"
 dependencies = [

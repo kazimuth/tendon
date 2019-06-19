@@ -16,6 +16,8 @@ custom_error::custom_error! { pub Error
     NoCargoHome { checked: String } = "failed to locate .cargo directory, tried: {checked}; please set CARGO_HOME",
     MalformedPackageId { id: String } = "malformed package id: `{id}`",
     NoMacroName = "no macro name",
+    UnexpectedEndOfMacro = "unexpected end of macro invocation",
+    ParseError { source: syn::Error } = "syn error: {source}",
 }
 
 impl From<cargo_metadata::Error> for Error {

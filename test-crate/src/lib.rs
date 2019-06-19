@@ -74,3 +74,12 @@ macro_rules! expands_to_item {
 expands_to_item!((1) 'f (2) 'f (3));
 
 expands_to_item!();
+
+macro_rules! wacky_levels {
+    ($($name:ident),+ | $($type:ty),+ | $($expr:expr),+) => {
+        $(
+            pub const $name: $type = $expr;
+        )+
+    }
+}
+wacky_levels!(M, N, O | i8, i32, i16 | 0, 1, 2);
