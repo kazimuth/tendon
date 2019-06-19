@@ -27,7 +27,7 @@ use quote::{quote, ToTokens};
 use std::collections::HashMap;
 use std::fmt::{Display, Write};
 use syn::{self, parse::ParseStream};
-use tokio_trace::{info, info_span, warn};
+use tokio_trace::{trace, trace_span, warn};
 
 pub mod ast;
 
@@ -90,15 +90,15 @@ impl Invocation {
     }
 
     fn speculate<T, F: FnOnce(&mut Invocation) -> T>(&mut self, f: F) -> T {
-        let span = info_span!("SPEC");
+        let span = trace_span!("SPEC");
         let entered = span.enter();
-        info!("--->");
+        trace!("--->");
 
         let prev = self.speculating;
         self.speculating = true;
         let result = f(self);
         drop(entered);
-        info!("<---");
+        trace!("<---");
         self.speculating = prev;
         result
     }
@@ -142,12 +142,12 @@ trait Producer {
 }
 impl Consumer for ast::MatcherSeq {
     fn consume(&self, inv: &mut Invocation, stream: ParseStream) -> syn::Result<()> {
-        let span = info_span!("MS");
+        let span = trace_span!("MS");
         let entered = span.enter();
-        info!(">");
+        trace!(">");
 
         for (i, matcher) in self.0.iter().enumerate() {
-            info!("{}", i);
+            trace!("{}", i);
             matcher.consume(inv, stream)?;
         }
         if !stream.is_empty() {
@@ -158,7 +158,7 @@ impl Consumer for ast::MatcherSeq {
             ))?;
         }
         drop(entered);
-        info!("<");
+        trace!("<");
         Ok(())
     }
     fn peek(&self, inv: &mut Invocation, stream: ParseStream) -> bool {
@@ -167,9 +167,9 @@ impl Consumer for ast::MatcherSeq {
 }
 impl Consumer for ast::Matcher {
     fn consume(&self, inv: &mut Invocation, stream: ParseStream) -> syn::Result<()> {
-        //let span = info_span!("Matcher");
+        //let span = trace_span!("Matcher");
         //let _entered = span.enter();
-        //info!(">");
+        //trace!(">");
 
         let result = match self {
             ast::Matcher::Group(ref i) => i.consume(inv, stream),
@@ -179,7 +179,7 @@ impl Consumer for ast::Matcher {
             ast::Matcher::Fragment(ref i) => i.consume(inv, stream),
             ast::Matcher::Repetition(ref i) => i.consume(inv, stream),
         };
-        //info!("<");
+        //trace!("<");
         result
     }
 }
@@ -214,16 +214,16 @@ impl Consumer for ast::Fragment {
                 quote!({ _ })
             }
         };
-        info!("Fragment ${}: `{}`", self.ident, tokens);
+        trace!("Fragment ${}: `{}`", self.ident, tokens);
         inv.bind(&self.ident, tokens);
         Ok(())
     }
 }
 impl Consumer for ast::Group {
     fn consume(&self, inv: &mut Invocation, stream: ParseStream) -> syn::Result<()> {
-        let span = info_span!("GRP");
+        let span = trace_span!("GRP");
         let entered = span.enter();
-        info!(">");
+        trace!(">");
 
         let group = stream.parse::<pm2::Group>()?;
         if group.delimiter() != self.delimiter {
@@ -244,7 +244,7 @@ impl Consumer for ast::Group {
             group.stream(),
         );
         drop(entered);
-        info!("<");
+        trace!("<");
         result
     }
     // fast peek: don't parse our insides
@@ -259,9 +259,9 @@ impl Consumer for ast::Group {
 }
 impl Consumer for ast::Repetition {
     fn consume(&self, inv: &mut Invocation, stream: ParseStream) -> syn::Result<()> {
-        let span = info_span!("REP");
+        let span = trace_span!("REP");
         let entered = span.enter();
-        info!(">");
+        trace!(">");
 
         let result = inv.raise_level(|inv| {
             let mut first = true;
@@ -284,7 +284,7 @@ impl Consumer for ast::Repetition {
         });
 
         drop(entered);
-        info!("<");
+        trace!("<");
         result
     }
     fn peek(&self, inv: &mut Invocation, stream: ParseStream) -> bool {
@@ -293,7 +293,7 @@ impl Consumer for ast::Repetition {
 }
 impl Consumer for ast::Sep {
     fn consume(&self, inv: &mut Invocation, stream: ParseStream) -> syn::Result<()> {
-        info!("Sep");
+        trace!("Sep");
 
         for c in &self.0 {
             match c {
@@ -319,13 +319,13 @@ impl Consumer for pm2::Ident {
             ))?;
         }
 
-        info!("Ident `{}`", self);
+        trace!("Ident `{}`", self);
         Ok(())
     }
 }
 impl Consumer for pm2::Literal {
     fn consume(&self, inv: &mut Invocation, stream: ParseStream) -> syn::Result<()> {
-        info!("Literal");
+        trace!("Literal");
 
         let actual = &stream.parse::<pm2::Literal>()?;
         if !inv.disp_eq(self, actual) {
@@ -349,7 +349,7 @@ impl Consumer for pm2::Punct {
             ))?;
         }
 
-        info!("Punct `{}`", self.as_char());
+        trace!("Punct `{}`", self.as_char());
         Ok(())
     }
 }
@@ -384,20 +384,17 @@ mod tests {
     fn consume() -> syn::Result<()> {
         spoor::init();
 
-        info!("running test");
         let matchers =
             syn::parse_str::<ast::MatcherSeq>("$(($input:expr) $binding:pat => $then:expr),+")?;
-        info!("{:#?}", matchers);
 
         let mut inv = Invocation::new(parse_quote! { test_macro });
         let to_parse = &quote! {
             (seq.0[0]) Matcher::Ident(ident) => assert_eq!(ident, "ocelot")
         };
-        info!("{}", to_parse);
         inv.consume(to_parse, &matchers)?;
-        assert_eq!(inv.levels[1].bindings[&parse_quote! { input }].len(), 1);
-        assert_eq!(inv.levels[1].bindings[&parse_quote! { binding }].len(), 1);
-        assert_eq!(inv.levels[1].bindings[&parse_quote! { then }].len(), 1);
+        assert_eq!(inv.levels[1].bindings[&parse_quote! { input }].len(), 2);
+        assert_eq!(inv.levels[1].bindings[&parse_quote! { binding }].len(), 2);
+        assert_eq!(inv.levels[1].bindings[&parse_quote! { then }].len(), 2);
 
         Ok(())
     }
