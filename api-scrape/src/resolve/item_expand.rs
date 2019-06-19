@@ -27,7 +27,7 @@ use quote::{quote, ToTokens};
 use std::collections::HashMap;
 use std::fmt::{Display, Write};
 use syn::{self, parse::ParseStream};
-use tokio_trace::{trace, trace_span, warn};
+use tokio_trace::{trace, warn};
 
 pub mod ast;
 
@@ -90,14 +90,11 @@ impl Invocation {
     }
 
     fn speculate<T, F: FnOnce(&mut Invocation) -> T>(&mut self, f: F) -> T {
-        let span = trace_span!("SPEC");
-        let entered = span.enter();
         trace!("--->");
 
         let prev = self.speculating;
         self.speculating = true;
         let result = f(self);
-        drop(entered);
         trace!("<---");
         self.speculating = prev;
         result
@@ -142,22 +139,12 @@ trait Producer {
 }
 impl Consumer for ast::MatcherSeq {
     fn consume(&self, inv: &mut Invocation, stream: ParseStream) -> syn::Result<()> {
-        let span = trace_span!("MS");
-        let entered = span.enter();
         trace!(">");
 
         for (i, matcher) in self.0.iter().enumerate() {
             trace!("{}", i);
             matcher.consume(inv, stream)?;
         }
-        if !stream.is_empty() {
-            let item = stream.parse::<pm2::TokenTree>()?;
-            Err(syn::Error::new(
-                item.span(),
-                format!("ast::MatcherSeq: unexpected token, should be EOS: {}", item),
-            ))?;
-        }
-        drop(entered);
         trace!("<");
         Ok(())
     }
@@ -167,10 +154,6 @@ impl Consumer for ast::MatcherSeq {
 }
 impl Consumer for ast::Matcher {
     fn consume(&self, inv: &mut Invocation, stream: ParseStream) -> syn::Result<()> {
-        //let span = trace_span!("Matcher");
-        //let _entered = span.enter();
-        //trace!(">");
-
         let result = match self {
             ast::Matcher::Group(ref i) => i.consume(inv, stream),
             ast::Matcher::Ident(ref i) => i.consume(inv, stream),
@@ -179,7 +162,6 @@ impl Consumer for ast::Matcher {
             ast::Matcher::Fragment(ref i) => i.consume(inv, stream),
             ast::Matcher::Repetition(ref i) => i.consume(inv, stream),
         };
-        //trace!("<");
         result
     }
 }
@@ -221,8 +203,6 @@ impl Consumer for ast::Fragment {
 }
 impl Consumer for ast::Group {
     fn consume(&self, inv: &mut Invocation, stream: ParseStream) -> syn::Result<()> {
-        let span = trace_span!("GRP");
-        let entered = span.enter();
         trace!(">");
 
         let group = stream.parse::<pm2::Group>()?;
@@ -243,7 +223,6 @@ impl Consumer for ast::Group {
             },
             group.stream(),
         );
-        drop(entered);
         trace!("<");
         result
     }
@@ -259,8 +238,6 @@ impl Consumer for ast::Group {
 }
 impl Consumer for ast::Repetition {
     fn consume(&self, inv: &mut Invocation, stream: ParseStream) -> syn::Result<()> {
-        let span = trace_span!("REP");
-        let entered = span.enter();
         trace!(">");
 
         let result = inv.raise_level(|inv| {
@@ -283,7 +260,6 @@ impl Consumer for ast::Repetition {
             Ok(())
         });
 
-        drop(entered);
         trace!("<");
         result
     }
@@ -392,9 +368,21 @@ mod tests {
             (seq.0[0]) Matcher::Ident(ident) => assert_eq!(ident, "ocelot")
         };
         inv.consume(to_parse, &matchers)?;
-        assert_eq!(inv.levels[1].bindings[&parse_quote! { input }].len(), 2);
-        assert_eq!(inv.levels[1].bindings[&parse_quote! { binding }].len(), 2);
-        assert_eq!(inv.levels[1].bindings[&parse_quote! { then }].len(), 2);
+        assert_eq!(inv.levels[1].bindings[&parse_quote! { input }].len(), 1);
+        assert_eq!(inv.levels[1].bindings[&parse_quote! { binding }].len(), 1);
+        assert_eq!(inv.levels[1].bindings[&parse_quote! { then }].len(), 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn repetition() -> syn::Result<()> {
+        spoor::init();
+
+        let matchers = syn::parse_str::<ast::MatcherSeq>("$(bees)+")?;
+        let to_parse = &quote! { bees bees bees bees bees };
+        let mut inv = Invocation::new(parse_quote!(beehive));
+        inv.consume(to_parse, &matchers)?;
 
         Ok(())
     }
