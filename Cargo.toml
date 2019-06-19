@@ -7,8 +7,7 @@ members = [
     "api-scrape",
     "unthwart",
     "prefab",
-    "spoor",
-    "trace-err",
+    "spoor"
 ]
 
 [profile.dev.overrides."*"]
