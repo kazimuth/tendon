@@ -1,5 +1,4 @@
 //! Name resolution and macro expansion.
-//! Works asynchronously and memoizes as it goes in order to achieve MAXIMUM HARDWARE EXPLOITATION.
 // https://rust-lang.github.io/rustc-guide/name-resolution.html
 
 // TODO purge:
@@ -19,8 +18,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 use syn;
-use tokio_trace::{info_span, info};
-use unthwart::unthwarted;
+use tokio_trace::{info, info_span};
 
 pub mod ident;
 pub mod item_expand;
@@ -41,16 +39,15 @@ pub struct Resolver {
 }
 
 impl Resolver {
-    pub async fn new(project_root: PathBuf) -> Result<Resolver> {
+    pub fn new(project_root: PathBuf) -> Result<Resolver> {
         let project = project_root.clone();
         info!("Collecting cargo metadata");
-        let metadata = unthwarted! {
-            MetadataCommand::new()
-                .current_dir(&project)
-                .manifest_path(&project.join("Cargo.toml"))
-                .features(CargoOpt::AllFeatures)
-                .exec()?
-        };
+        let metadata = MetadataCommand::new()
+            .current_dir(&project)
+            .manifest_path(&project.join("Cargo.toml"))
+            .features(CargoOpt::AllFeatures)
+            .exec()?;
+
         let Metadata {
             mut packages,
             resolve,
@@ -80,39 +77,32 @@ impl Resolver {
         })
     }
 
-    pub async fn parse_crate(&self, id: PackageId) -> Result<()> {
+    pub fn parse_crate(&self, id: PackageId) -> Result<()> {
         // look up in resolve?
-        spoor::trace(info_span!("parse_crate", crate_=&id.repr.split(" ").next().unwrap()), async {
-            info!("parsing crate {}", id.repr);
-            let package = &self.packages[&id];
-            let lib_target = &package
-                .targets
-                .iter()
-                .find(|t| t.kind.iter().find(|k| *k == "lib").is_some())
-                .ok_or(Error::Other {
-                    cause: "no lib target in crate",
-                })?;
-            let root = lib_target.src_path.clone();
-            self.parse_module(root, ResolvedPath::new(&id, ""))
-                .await
-        }).await
+        let span = info_span!("parse_crate", crate_ = &id.repr.split(" ").next().unwrap());
+        let _entered = span.enter();
+
+        info!("parsing crate {}", id.repr);
+        let package = &self.packages[&id];
+        let lib_target = &package
+            .targets
+            .iter()
+            .find(|t| t.kind.iter().find(|k| *k == "lib").is_some())
+            .ok_or(Error::Other {
+                cause: "no lib target in crate",
+            })?;
+        let root = lib_target.src_path.clone();
+        self.parse_module(root, ResolvedPath::new(&id, ""))
     }
 
-    pub async fn parse_module(
-        &self,
-        root: PathBuf,
-        path: ResolvedPath
-    ) -> Result<()> {
+    pub fn parse_module(&self, root: PathBuf, path: ResolvedPath) -> Result<()> {
         let package = &self.packages[&path.id];
 
         info!("parsing {} (`{}`)", pretty(&path), root.display());
 
-        let source = unthwarted! {
-            let mut file = File::open(root)?;
-            let mut source = String::new();
-            file.read_to_string(&mut source)?;
-            source
-        };
+        let mut file = File::open(root)?;
+        let mut source = String::new();
+        file.read_to_string(&mut source)?;
 
         let source = syn::parse_str::<syn::File>(&source)?;
 

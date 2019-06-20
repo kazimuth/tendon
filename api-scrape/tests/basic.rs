@@ -1,16 +1,14 @@
-#![feature(async_await)]
-
 extern crate api_scrape as api;
 
-#[runtime::test]
-async fn basic() -> api::Result<()> {
+#[test]
+fn basic() -> api::Result<()> {
     spoor::init();
 
-    api::tools::check("../test-crate".as_ref()).await?;
+    api::tools::check("../test-crate".as_ref())?;
 
-    let resolver = api::resolve::Resolver::new("../test-crate".into()).await?;
+    let resolver = api::resolve::Resolver::new("../test-crate".into())?;
 
-    resolver.parse_crate(resolver.root.clone()).await?;
+    resolver.parse_crate(resolver.root.clone())?;
 
     Ok(())
 }

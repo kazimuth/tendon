@@ -5,7 +5,6 @@ members = [
     "test-crate",
     "transgress-abi",
     "api-scrape",
-    "unthwart",
     "prefab",
     "spoor"
 ]
