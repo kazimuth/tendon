@@ -8,6 +8,7 @@ edition = "2018"
 
 [dependencies]
 serde = "1"
+serde_derive = "1"
 custom_error = "1.6"
 tokio-trace = "0.1"
 spoor = { path = "../spoor" }
@@ -15,8 +16,8 @@ unthwart = { path = "../unthwart" }
 runtime = { version = "0.3.0-alpha.4" }
 cargo_metadata = "0.8"
 syn = "0.15.35"
-quote = "0.6.12"
-proc-macro2 = "0.4"
+quote = { version = "0.6.12", default-features = false }
+proc-macro2 = { version = "0.4", default-features = false }
 parking_lot = "0.8"
 ccl = "3.5.3"
 dirs = "2.0.1"

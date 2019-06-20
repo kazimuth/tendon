@@ -8,7 +8,9 @@ async fn basic() -> api::Result<()> {
 
     api::tools::check("../test-crate".as_ref()).await?;
 
-    let _resolver = api::resolve::Resolver::new("../test-crate".into()).await?;
+    let resolver = api::resolve::Resolver::new("../test-crate".into()).await?;
+
+    resolver.parse_crate(resolver.root.clone()).await?;
 
     Ok(())
 }

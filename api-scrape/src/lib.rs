@@ -1,5 +1,7 @@
 #![feature(async_await)]
 
+extern crate proc_macro;
+
 pub mod memo;
 pub mod resolve;
 pub mod tools;

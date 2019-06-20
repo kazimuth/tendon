@@ -4,6 +4,7 @@ random notes and tidbits on the project as I go
 
 TODO:
 
+- purge proc_macro2 stuff
 - needs MIT license
 - https://rust-lang.github.io/rustc-guide/about-this-guide.html
 - whats that python package format?
