@@ -140,8 +140,6 @@ impl Parse for MacroDef {
         })
     }
 }
-// workaround for annoying syn constraints
-// (can't directly convert a TokenStream to a ParseStream, have to )
 struct MacroRules(Vec<MacroRule>);
 impl Parse for MacroRules {
     fn parse(input: ParseStream) -> syn::Result<Self> {

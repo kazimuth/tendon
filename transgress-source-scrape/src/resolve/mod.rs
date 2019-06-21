@@ -11,7 +11,6 @@
 
 use crate::{Error, Result};
 use cargo_metadata::{CargoOpt, Metadata, MetadataCommand, Node, Package, PackageId};
-use ident::Ident;
 use quote::ToTokens;
 use std::collections::HashMap;
 use std::fs::File;
@@ -19,8 +18,8 @@ use std::io::Read;
 use std::path::PathBuf;
 use syn;
 use tokio_trace::{info, info_span};
+use transgress_api::Ident;
 
-pub mod ident;
 pub mod item_expand;
 
 pub struct Resolver {

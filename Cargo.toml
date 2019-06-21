@@ -4,7 +4,8 @@ cargo-features = ["profile-overrides"]
 members = [
     "test-crate",
     "transgress-abi",
-    "api-scrape",
+    "transgress-api",
+    "transgress-source-scrape",
     "prefab",
     "spoor"
 ]

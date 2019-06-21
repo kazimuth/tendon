@@ -17,27 +17,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "api-scrape"
-version = "0.1.0"
-dependencies = [
- "cargo_metadata 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "ccl 3.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "custom_error 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "dirs 2.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "lazy_static 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "parking_lot 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "proc-macro2 0.4.30 (registry+https://github.com/rust-lang/crates.io-index)",
- "quote 0.6.12 (registry+https://github.com/rust-lang/crates.io-index)",
- "regex 1.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde 1.0.92 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde_derive 1.0.92 (registry+https://github.com/rust-lang/crates.io-index)",
- "spoor 0.1.0",
- "syn 0.15.36 (registry+https://github.com/rust-lang/crates.io-index)",
- "tokio-trace 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "toml 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
 name = "argon2rs"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -925,6 +904,36 @@ version = "0.1.0"
 dependencies = [
  "serde 1.0.92 (registry+https://github.com/rust-lang/crates.io-index)",
  "slotmap 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "transgress-api"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2 0.4.30 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde 1.0.92 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "transgress-source-scrape"
+version = "0.1.0"
+dependencies = [
+ "cargo_metadata 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ccl 3.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "custom_error 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "dirs 2.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "lazy_static 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parking_lot 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "proc-macro2 0.4.30 (registry+https://github.com/rust-lang/crates.io-index)",
+ "quote 0.6.12 (registry+https://github.com/rust-lang/crates.io-index)",
+ "regex 1.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde 1.0.92 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_derive 1.0.92 (registry+https://github.com/rust-lang/crates.io-index)",
+ "spoor 0.1.0",
+ "syn 0.15.36 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio-trace 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "toml 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "transgress-api 0.1.0",
 ]
 
 [[package]]

@@ -1,7 +1,7 @@
 # api-scrape
 
 Looks at a crate's source and Cargo.toml to find the crate's public API.
-Best-effort: proc-macros may not work?
+Best-effort: proc-macros don't work without nightly.
 
 - only resolve public items as-needed until you have the full tree of things needed to access an API
 - propagate resolution failures upwards to minimize the damage they do to an API

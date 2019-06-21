@@ -1,8 +1,9 @@
+use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 
 /// An identifier.
 /// TODO: intern
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Ident(Box<str>);
 
 impl From<&str> for Ident {
