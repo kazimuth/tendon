@@ -95,8 +95,6 @@ impl Resolver {
     }
 
     pub fn parse_module(&self, root: PathBuf, path: ResolvedPath) -> Result<()> {
-        let package = &self.packages[&path.id];
-
         info!("parsing {} (`{}`)", pretty(&path), root.display());
 
         let mut file = File::open(root)?;

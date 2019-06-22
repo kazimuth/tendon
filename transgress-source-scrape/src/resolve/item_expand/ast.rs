@@ -66,7 +66,15 @@ pub enum Matcher {
 pub struct Repetition {
     pub inner: MatcherSeq,
     pub sep: Sep,
+    pub kind: RepeatKind,
 }
+#[derive(Debug)]
+pub enum RepeatKind {
+    Plus,
+    Star,
+    Question,
+}
+
 #[derive(Debug)]
 pub struct Sep(pub Vec<pm2::TokenTree>);
 
@@ -206,11 +214,21 @@ impl Parse for Repetition {
         parenthesized!(inner in input);
         let inner = inner.parse::<MatcherSeq>()?;
         let sep = input.parse::<Sep>()?;
-        // absorb quantifier
-        // TODO keep? can it affect parsing?
-        input.parse::<pm2::Punct>()?;
+        let lookahead = input.lookahead1();
+        let kind = if lookahead.peek(Token![?]) {
+            input.parse::<Token![?]>()?;
+            RepeatKind::Question
+        } else if lookahead.peek(Token![*]) {
+            input.parse::<Token![*]>()?;
+            RepeatKind::Star
+        } else if lookahead.peek(Token![+]) {
+            input.parse::<Token![+]>()?;
+            RepeatKind::Plus
+        } else {
+            return Err(lookahead.error());
+        };
 
-        Ok(Repetition { inner, sep })
+        Ok(Repetition { inner, sep, kind })
     }
 }
 impl Parse for Sep {
