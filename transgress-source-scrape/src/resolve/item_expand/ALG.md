@@ -38,3 +38,7 @@ struct Bindings(HashMap<Ident, NamedMatch>);
 ```
 
 https://github.com/rust-lang/rust/blob/master/src/libsyntax/ext/tt/transcribe.rs
+
+transcribe:
+
+walk to find fragments; count in lockstep?

@@ -365,7 +365,7 @@ mod tests {
         ($inv:ident [$name:expr] $([$idx:expr])+ == $target:expr) => {
             match &$inv.bindings[$name] $(. seq_()[$idx])+ {
                 Binding::Leaf(l) => assert_eq!(syn::parse2::<pm2::Ident>(l.clone())?, $target),
-                _ => (),
+                _ => panic!("not a leaf, should be"),
             }
         }
     }
@@ -437,6 +437,7 @@ mod tests {
 
         Ok(())
     }
+
     /*
     #[test]
     fn macro_expansion() {
