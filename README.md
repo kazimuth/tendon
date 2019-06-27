@@ -2,5 +2,6 @@
 
 this crate is a work-in-progress and currently only contains README files
 
-automatically generate an [ABI](https://github.com/kazimuth/transgress-rs/tree/master/transgress-abi) /
-FFI API for rust crates
+instantly generate safe bindings for any rust code, with minimal user intervention required
+
+[random design notes](./DESIGN.md)

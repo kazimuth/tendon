@@ -1,9 +1,0 @@
-[package]
-name = "transgress-abi"
-version = "0.1.0"
-authors = ["James Gilles <jhgilles@mit.edu>"]
-edition = "2018"
-
-[dependencies]
-serde = "1.0.91"
-slotmap = { version = "0.3.0", features = ["serde"] }

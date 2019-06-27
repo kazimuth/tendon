@@ -3,7 +3,6 @@ cargo-features = ["profile-overrides"]
 [workspace]
 members = [
     "test-crate",
-    "transgress-abi",
     "transgress-api",
     "transgress-source-scrape",
     "prefab",
