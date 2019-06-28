@@ -110,6 +110,10 @@ determine send + sync from composition:
 
 ### general FFI
 
+see also: [runtime](#runtime)
+can provide a lot of this as reusable components between impls
+per-language impls can do stuff via whatever and use whatever components they need, keep it lightweight + invisible to end user
+
 - repr(C) / C-compatible types
   - pass directly?
     - optionally?
@@ -135,7 +139,6 @@ http://swig.org/Doc3.0/SWIG.html
 
 https://nullprogram.com/blog/2018/05/27/
 -> indirect calls w/ dlsym is slightly faster than standard indirect linking; only .25 of a ns tho, not important
-for our purposes
 
 https://hacks.mozilla.org/2019/04/crossing-the-rust-ffi-frontier-with-protocol-buffers/
 -> protocol buffers are better than e.g. json for serializing across an ffi boundary; reasonably fast, very stable
@@ -174,8 +177,82 @@ https://rust-lang-nursery.github.io/api-guidelines/future-proofing.html#future-p
 
 - storing data behind pointers vs storing data in-line
   - cross-rust compatibility?
+    - note: you must re-generate header files whenever you run this code!
+      any versions of compiled with a different rustc are NOT abi-compatible!! this crate provides no ABI compatibility guarantees for generated code!!!!!!!!!!
+  - see notes on opaque bytes from bindgen? going the other way tho
 
 convert consts to statics
+
+### pitch
+Instantly bind your rust code from 7 languages
+- no unsafe code
+- no ffi
+- no writing your own crazy buildsystem (unless you want to)
+
+example: let's bind the excellent [uuid](https://crates.io/crates/uuid) library from python. [rust parsers good fast raggum fraggum]
+
+`lib.rs`:
+```rust
+pub use uuid;
+```
+
+`test.py`:
+```python
+from test_crate import uuid
+
+try:
+    uuid = uuid.Uuid.parse_str("936DA01F9ABD4d9d80C702AF85C822A8")
+    print(uuid.to_urn())
+except uuid.ParseError as e:
+    print("UUID parse error:", e)
+except uuid.BytesError as e:
+    print("UUID byte count error: expected {} bytes, found {}".format(e.expected(), e.found()))
+```
+
+```sh
+$ transgress generate test_crate python-poetry ...
+$ python test.py
+```
+
+alright that's nice but now i need to parse UUIDs from my android app. No problem:
+
+`test.java`
+```java
+import test_crate.uuid.Uuid;
+
+public class UuidTest {
+    public static void main(String[] args) {
+        try {
+            Uuid uuid = Uuid.parseStr("936DA01F9ABD4d9d80C702AF85C822A8");
+            System.out.println(uuid.toUrn())
+        } catch (Exception e) {
+            System.out.println("Uuid parse error", e);
+        }
+    }
+}
+```
+
+and c, ...
+
+The language you want not supported? Write your own integration:
+
+- a simple integration can be written in a few hundred lines of code.
+- implement fancier transgress-rs binding features at your leisure. the more you implement, the better the generated API.
+
+features:
+- support for nearly all rust-language features
+- ...
+- ...
+
+differences from:
+- cbindgen: does a lot more
+- language binding systems: manual
+- wasm-bindgen: this'll call it for you
+
+...
+
+distribution notes:
+- users need rust compiler, or need to distribute binaries
 
 ### wasm
 
@@ -220,6 +297,10 @@ https://developer.android.com/training/articles/perf-jni
 https://jdk.java.net/panama/
 -> future JNI system for ffi
 
+maven: https://www.mojohaus.org/maven-native/native-maven-plugin/
+
+gradle: https://docs.gradle.org/current/userguide/native_software.html
+
 ### python
 
 just use cffi lmao
@@ -227,12 +308,15 @@ just use cffi lmao
 https://cffi.readthedocs.io/en/latest/
 
 context managers: all objects! but particularly some
-also, implicit rwlocks around all objects (bench?)
+also, implicit rwlocks around all objects (bench? safety / footgun?)
 
 https://github.com/getsentry/milksnake
 -> builds?
 
 how to reacharound from cffi
+    e.g. rust code runs python script via cpython api calls back into rust from transgress: how do we make this work?
+
+poetry: https://poetry.eustace.io/
 
 ### rust-rust
 

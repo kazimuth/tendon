@@ -1,14 +1,38 @@
-use serde::{Deserialize, Serialize};
+//!  Simple datastructures describing a rust program's interface: types, function signatures, consts, etc.
+//! Produced and consumed by other `transgress` crates.
+
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use smol_str::SmolStr;
 use std::ops::Deref;
 
-/// An identifier.
-/// TODO: intern
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Ident(Box<str>);
+/// A rust identifier.
+/// Represented using a small-string optimization.
+/// TODO: make sure raw idents work.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Ident(SmolStr);
+
+impl Serialize for Ident {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let s: &str = &self.0;
+        s.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Ident {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(Ident(<&str>::deserialize(deserializer)?.into()))
+    }
+}
 
 impl From<&str> for Ident {
     fn from(s: &str) -> Self {
-        Ident(s.to_string().into())
+        Ident(s.into())
     }
 }
 impl From<String> for Ident {
@@ -18,6 +42,7 @@ impl From<String> for Ident {
 }
 impl From<&proc_macro2::Ident> for Ident {
     fn from(s: &proc_macro2::Ident) -> Ident {
+        // TODO: could optimize this w/ a thread-local string buffer
         Ident(s.to_string().into())
     }
 }

@@ -1,3 +1,8 @@
+//! Algorithm to consume a macro input stream, saving matched fragments to `Binding`s as we go.
+//!
+//! Based heavily on libsyntax_ext's
+//! [macro transcription code](https://github.com/rust-lang/rust/blob/12806b7/src/libsyntax/ext/tt/transcribe.rs).
+
 use proc_macro2 as pm2;
 use quote::{quote, ToTokens};
 use std::collections::HashMap;
@@ -6,7 +11,31 @@ use syn::{self, ext::IdentExt, parse::ParseStream};
 
 use crate::resolve::item_expand::ast;
 
-enum Binding {
+/// A fragment binding.
+///
+/// Every fragment in a matcher is mapped to a tree of bindings.
+///
+/// For example, if we have:
+///
+/// `$({$($value:expr),+})+`
+///
+/// We can match:
+/// `{1,2,3} {4,5} {6,7,8,9}`
+///
+/// Which will set `$value`'s `Binding` to:
+///
+/// ```no_build
+/// [
+///     [
+///         [`1`, `2`, `3`],
+///         [`4`, `5`],
+///         [`6`, `7`, `8`, `9`],
+///     ]
+/// ]
+/// ```
+/// Note that there's always an extra single-level Seq at the bottom for implementation convenience.
+/// TODO: remove that, lol
+pub enum Binding {
     Seq(Vec<Binding>),
     Leaf(pm2::TokenStream),
 }
@@ -44,10 +73,9 @@ impl Binding {
 }
 
 #[derive(Debug)]
-/// Tools used during consumption.
+/// Tools used during macro consumption consumption.
 pub struct Stomach {
     /// Where we currently are within the stack of bindings.
-    /// See the comment for the `item_expand` module.
     /// This is always rooted within a single frame with index 0.
     stack: Vec<usize>,
 
@@ -64,6 +92,7 @@ pub struct Stomach {
 }
 
 impl Stomach {
+    /// Create a new Stomach.
     pub fn new() -> Self {
         Stomach {
             stack: vec![0],
@@ -74,6 +103,8 @@ impl Stomach {
         }
     }
 
+    /// Consume an input token stream.
+    ///
     pub fn consume(
         &mut self,
         input: &pm2::TokenStream,
@@ -110,10 +141,12 @@ impl Stomach {
         *self.stack.last_mut().unwrap() += 1;
     }
 
+    /// If we are within the first repetition of a sequence of repetitions.
     fn is_first_repetition(&self) -> bool {
         *self.stack.last().expect("stack can't be empty") == 0
     }
 
+    /// Set our mode to speculatively parsing (for figuring out if we should exit a repetition).
     fn speculate<T, F: FnOnce(&mut Stomach) -> T>(&mut self, f: F) -> T {
         let prev = self.speculating;
         self.speculating = true;
@@ -122,6 +155,7 @@ impl Stomach {
         result
     }
 
+    /// Bind a consumed fragment to a name.
     fn bind(&mut self, name: &pm2::Ident, value: pm2::TokenStream) {
         if self.speculating {
             return;
@@ -211,12 +245,7 @@ impl Consumer for ast::Fragment {
             ast::FragSpec::TokenTree => stream.parse::<pm2::TokenTree>()?.into_token_stream(),
             ast::FragSpec::Type => stream.parse::<syn::Type>()?.into_token_stream(),
             ast::FragSpec::Visibility => stream.parse::<syn::Visibility>()?.into_token_stream(),
-
-            // note: unneeded for item parsing; we throw these out 'cause there's no hygiene anyway
-            ast::FragSpec::Expr => {
-                stream.parse::<syn::Expr>()?;
-                quote!(_)
-            }
+            ast::FragSpec::Expr => stream.parse::<syn::Expr>()?.into_token_stream(),
             ast::FragSpec::Literal => {
                 stream.parse::<syn::Lit>()?;
                 quote!(_)

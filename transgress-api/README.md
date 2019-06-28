@@ -1,5 +1,5 @@
 # transgress-api
 
-Simple datastructures describing a rust program's interface: types, function signatures, consts, etc. All names and types are resolved.
+Simple datastructures describing a rust program's interface: types, function signatures, consts, etc.
 
 Produced and consumed by other `transgress` crates.

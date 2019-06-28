@@ -36,23 +36,31 @@ use syn::{
     spanned::Spanned,
     token, Token,
 };
+
+/// A full `macro_rules!` definition.
 #[derive(Debug)]
 pub struct MacroDef {
     pub attrs: Vec<syn::Attribute>,
     pub ident: pm2::Ident,
     pub rules: Vec<MacroRule>,
 }
+
+/// An individual macro_rule, consisting of a matcher and a transcriber.
 #[derive(Debug)]
 pub struct MacroRule {
     pub matcher: MatcherSeq,
     pub transcriber: TranscriberSeq,
 }
 
+/// A sequence of matchers.
 #[derive(Debug)]
 pub struct MatcherSeq(pub Vec<Matcher>);
+
+/// A sequence of transcribers.
 #[derive(Debug)]
 pub struct TranscriberSeq(pub Vec<Transcriber>);
 
+/// All of the possible elements that can be matched in a macro.
 #[derive(Debug)]
 pub enum Matcher {
     Repetition(Repetition),
@@ -62,12 +70,16 @@ pub enum Matcher {
     Literal(pm2::Literal),
     Punct(pm2::Punct),
 }
+
+/// A macro repetition `$(...),+`.
 #[derive(Debug)]
 pub struct Repetition {
     pub inner: MatcherSeq,
     pub sep: Sep,
     pub kind: RepeatKind,
 }
+
+/// Kind of macro repetition: `+`, `*`, or `?`.
 #[derive(Debug)]
 pub enum RepeatKind {
     Plus,
@@ -75,19 +87,20 @@ pub enum RepeatKind {
     Question,
 }
 
+/// A macro repetition separator.
+/// Strictly speaking this can be any individual rust token, but there's
+/// no easy way to represent that with syn / pm2, so we just have a vec of
+/// pm2::TokenTrees.
 #[derive(Debug)]
 pub struct Sep(pub Vec<pm2::TokenTree>);
 
+/// A binding fragment: `$x:ident`, `$type:ty`, `$next:tt`, etc.
 #[derive(Debug)]
 pub struct Fragment {
     pub ident: pm2::Ident,
     pub spec: FragSpec,
 }
-#[derive(Debug)]
-pub struct Group {
-    pub delimiter: pm2::Delimiter,
-    pub inner: MatcherSeq,
-}
+/// A fragment specifier: `expr`, `stmt`, `block`, `tt`, etc.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FragSpec {
     Block,
@@ -104,6 +117,16 @@ pub enum FragSpec {
     Type,
     Visibility,
 }
+
+/// A group delimited by some delimiter: (...), {...}, [...].
+/// Note: NOT a `Repetition`!
+#[derive(Debug)]
+pub struct Group {
+    pub delimiter: pm2::Delimiter,
+    pub inner: MatcherSeq,
+}
+
+/// Everything that a macro can transcribe.
 #[derive(Debug)]
 pub enum Transcriber {
     // TODO: can be a false match?
@@ -114,12 +137,14 @@ pub enum Transcriber {
     Literal(pm2::Literal),
     Punct(pm2::Punct),
 }
+/// A repeated transcription, $(...)+.
 #[derive(Debug)]
 pub struct TranscribeRepetition {
     sep: Sep,
     inner: TranscriberSeq,
 }
 
+/// A transcription of a delimited token tree, `(...)`, `[...]`, `{...}`.
 #[derive(Debug)]
 pub struct TranscribeGroup {
     delimiter: pm2::Delimiter,

@@ -1,5 +1,4 @@
-//! Simplified macro expansion for items. Does not handle expressions at all (expands them to ()),
-//! since we only need the result for its signature.
+//! Macro expansion. Does not implement hygiene, since we only need to parse items.
 //! Implemented as an interpreter on top of syn.
 //!
 //! ## Expansion algorithm
