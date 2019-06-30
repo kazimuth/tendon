@@ -3,82 +3,47 @@
 //!
 //! Some inspiration taken from https://github.com/rust-lang/rls/tree/master/rls-data, although we represent
 //! a significantly smaller subset of rust program metadata.
+//!
+//! ### Why not just use syn?
+//! Syn is a syntax tree which includes all the information needed to reconstruct the textual program input;
+//! we don't need that. We include a streamlined set of data designed to be used by binding generators.
+//! In addition, syn's types aren't Send or Serialize which is a pain.
+//!
+//! N.B.: There are a couple places where we just include strings here designed to be parsed by syn.
+//!
+//! ### References
+//! - [Rust attributes](https://doc.rust-lang.org/reference/attributes.html)
+//! - [Name resolution](https://rust-lang.github.io/rustc-guide/name-resolution.html)
+
+// TODO: impls on non-local types??
+//       can do custom handling for e.g. IntoIterator for now
+// TODO: constexprs grumble grumble
+
+//
+use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-mod ident;
+pub mod attributes;
+pub mod expr;
+pub mod ident;
+pub mod items;
+pub mod paths;
+pub mod traits;
+pub mod types;
 
+pub use expr::{ConstExpr, Expr};
 pub use ident::Ident;
+pub use paths::Path;
+pub use traits::Trait;
+pub use types::Type;
+
+use items::helpers::ItemMetadata;
 
 /// A single crate.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Crate {
-    pub root_module: Module,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct Module {
     pub item_metadata: ItemMetadata,
-    pub submodules: Vec<Module>,
-    pub enums: Vec<Enum>,
-    pub structs: Vec<Struct>,
-    pub free_functions: Vec<Function>,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct ItemMetadata {
-    pub docs: String,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct Struct {
-    pub item_metadata: ItemMetadata,
-    pub type_properties: TypeProperties,
-    pub inherent_impl: InherentImpl,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct Enum {
-    pub item_metadata: ItemMetadata,
-    pub type_properties: TypeProperties,
-    pub inherent_impl: InherentImpl,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct Function {
-    pub ident: Ident,
-    pub full_path: Path,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct InherentImpl {
-    pub methods: Vec<Function>,
-}
-
-/// A path.
-/// TODO: resolution?: what guarantees do we provide about resolved paths?
-/// - [multiple] reexports of inaccessible items? maybe create a "fake" module where they're accessible?
-#[derive(Clone, Serialize, Deserialize)]
-pub struct Path {
-    pub path: Vec<Ident>,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct TypeProperties {
-    pub copy: bool,
-    pub clone: bool,
-    pub send: bool,
-    pub sync: bool,
-    pub sized: bool,
-    pub unpin: bool,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub enum StructRepr {
-    Rust,
-    C,
-    Transparent,
-    Packed,
 }
 
 #[cfg(test)]

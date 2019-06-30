@@ -12,3 +12,9 @@ fn basic() -> scrape::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn syn_stuff() -> scrape::Result<()> {
+    println!("{:?}", syn::parse_str::<syn::Type>("bees<str>::Vec<i32>")?);
+    Ok(())
+}

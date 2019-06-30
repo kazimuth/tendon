@@ -53,11 +53,16 @@ pub struct ReprC {
     pub w: i64,
 }
 
+#[path = "renamed.rs"]
+pub mod x;
+
 pub mod z {
     pub struct InMod {
         pub n: i8,
     }
 }
+
+pub struct WackyTupleStruct(i32, pub i32);
 
 pub use rand_chacha::ChaChaRng as ReexportedThing;
 

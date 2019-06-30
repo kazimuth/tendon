@@ -9,6 +9,7 @@ use std::ops::Deref;
 /// Represented using a small-string optimization.
 /// TODO: make sure raw idents work.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[repr(transparent)]
 pub struct Ident(SmolStr);
 
 impl Serialize for Ident {

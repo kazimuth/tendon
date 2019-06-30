@@ -9,6 +9,8 @@
 
 // TODO "macro" kw, whenever that exists
 
+// TODO handle no_link,no_std,no_prelude
+
 use crate::{Error, Result};
 use cargo_metadata::{CargoOpt, Metadata, MetadataCommand, Node, Package, PackageId};
 use quote::ToTokens;

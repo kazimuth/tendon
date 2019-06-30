@@ -10,15 +10,20 @@ goals
 - some bloat is tolerable
 
 ### usage / user API ideas
+
 - parse .d.rs-style definitions for missing things
+  - maybe just a macro `transgress_metadata!` that can be invoked wherever, will be auto-harvested from dependent crates
+  - makes it easy to make e.g. `transgress-uuid` crates or whatever to help out, ...
+  - also, custom things in doc comments?
 - build system integrations
-    - automatically generate build files for multiple build systems
-    - generate code for invoking cargo / transgress-rs from other build systems
-        - bootstrap problem: write the minimum amount of code in all xyz languages to start executing rust
-    - separate crates for different build systems (transgress-gradle, transgress-b
+  - automatically generate build files for multiple build systems
+  - generate code for invoking cargo / transgress-rs from other build systems
+    - bootstrap problem: write the minimum amount of code in all xyz languages to start executing rust
+  - separate crates for different build systems (transgress-gradle, transgress-b
 - custom conversions (convert numpy array to ndarray automatically?)
 
 ### [source-scrape](../transgress-source-scrape)
+
 - only resolve public items as-needed until you have the full tree of things needed to access an API
 - propagate resolution failures upwards to minimize the damage they do to an API
   - blacklists
@@ -27,19 +32,27 @@ goals
 - lower APIs to simplified [format](#transgress-api) that's easy to serialize / parse
 
 - metadata from closures can only leak to the typesystem through the automatic borrows + send + sync on impl Trait
+
   - solution: treat impl Trait as non-send + non-sync
     - can get fancier later, talk to analysis or sth
   - impl Trait borrows?
+
+- stupid rustc query system
+
+  - build a program that asks the compiler a bunch of questions and prints the answers
+    - type sizes and alignments
+    - constexpr resolution
+
 - coherence rules?
   - https://github.com/rust-lang/rfcs/blob/master/text/1023-rebalancing-coherence.md
 - chalk:
   - https://rust-lang.github.io/rustc-guide/traits/chalk-overview.html
   - https://github.com/rust-analyzer/rust-analyzer/search?q=chalk&unscoped_q=chalk
-- proc-macro-expander: https://github.com/fedochet/rust-proc-macro-expander 
-  - can be distributed w/ prefab? 
-      assuming 
+- proc-macro-expander: https://github.com/fedochet/rust-proc-macro-expander
+  - can be distributed w/ prefab?
+    assuming
   - use a recent required rust version to solve API compat issues?
-      - or just disable on older rust
+    - or just disable on older rust
 
 algorithm:
 
@@ -100,13 +113,13 @@ determine send + sync from composition:
 ```
 
 ### [transgress-api](../transgress-api)
+
 - Rust API description format
   - text format for tool consumption
   - C API for usage in C
   - conversion between above
     - fully reversible?
     - just embed text format in executables?
-
 
 ### general FFI
 
@@ -128,11 +141,17 @@ per-language impls can do stuff via whatever and use whatever components they ne
   - used in docs?
 
 - runtime for support of fancy stuff
+
   - traits
   - borrows
   - minimal-allocation iterators
 
 - fuzz testing?
+
+- auto-flattening of passed structs to primitives to avoid buffer allocations
+
+- representation of different sides of the data?
+- C FFI representation that can be lowered to rust OR C (or other stuff...)
 
 http://swig.org/Doc3.0/SWIG.html
 -> SWIG!
@@ -179,12 +198,15 @@ https://rust-lang-nursery.github.io/api-guidelines/future-proofing.html#future-p
   - cross-rust compatibility?
     - note: you must re-generate header files whenever you run this code!
       any versions of compiled with a different rustc are NOT abi-compatible!! this crate provides no ABI compatibility guarantees for generated code!!!!!!!!!!
+    - or, opt-in generated code
   - see notes on opaque bytes from bindgen? going the other way tho
 
 convert consts to statics
 
 ### pitch
+
 Instantly bind your rust code from 7 languages
+
 - no unsafe code
 - no ffi
 - no writing your own crazy buildsystem (unless you want to)
@@ -192,11 +214,13 @@ Instantly bind your rust code from 7 languages
 example: let's bind the excellent [uuid](https://crates.io/crates/uuid) library from python. [rust parsers good fast raggum fraggum]
 
 `lib.rs`:
+
 ```rust
 pub use uuid;
 ```
 
 `test.py`:
+
 ```python
 from test_crate import uuid
 
@@ -217,6 +241,7 @@ $ python test.py
 alright that's nice but now i need to parse UUIDs from my android app. No problem:
 
 `test.java`
+
 ```java
 import test_crate.uuid.Uuid;
 
@@ -240,11 +265,13 @@ The language you want not supported? Write your own integration:
 - implement fancier transgress-rs binding features at your leisure. the more you implement, the better the generated API.
 
 features:
+
 - support for nearly all rust-language features
 - ...
 - ...
 
 differences from:
+
 - cbindgen: does a lot more
 - language binding systems: manual
 - wasm-bindgen: this'll call it for you
@@ -252,6 +279,7 @@ differences from:
 ...
 
 distribution notes:
+
 - users need rust compiler, or need to distribute binaries
 
 ### wasm
@@ -314,7 +342,7 @@ https://github.com/getsentry/milksnake
 -> builds?
 
 how to reacharound from cffi
-    e.g. rust code runs python script via cpython api calls back into rust from transgress: how do we make this work?
+e.g. rust code runs python script via cpython api calls back into rust from transgress: how do we make this work?
 
 poetry: https://poetry.eustace.io/
 
@@ -330,7 +358,7 @@ https://crates.io/crates/abi_stable
 https://github.com/rust-lang/rust/tree/master/src/libproc_macro/bridge
 
 basically this but hand-implemented to allow cross-compiler proc-macro invocations
-    (why did they even do this? whatever, it's cool)
+(why did they even do this? whatever, it's cool)
 
 ### runtime
 
@@ -426,49 +454,53 @@ solution: just don't solve this, lmao
 - can use via-C API from both libs
 
 ### C/C++
+
 see cbindgen notes for how they did this (only for ffi stuff tho, not general code)
 
-option to only generate ffi-code, "cbindgen" 
+option to only generate ffi-code, "cbindgen"
 
 ### bindgen notes
+
 https://github.com/rust-lang/rust-bindgen
 
 > When `bindgen` finds a type that is too difficult or impossible to translate
 > into Rust, it will automatically treat it as an opaque blob of bytes. The
 > philosophy is that
-> 
+>
 > 1. we should always get layout, size, and alignment correct, and
-> 
+>
 > 2. just because one type uses specialization, that shouldn't cause `bindgen` to
 >    give up on everything else.
-> 
+>
 > Without further ado, here are C++ features that `bindgen` does not support or
 > cannot translate into Rust:
-> 
-> * Inline functions and methods: see
-> ["Why isn't `bindgen` generating bindings to inline functions?"](./faq.md#why-isnt-bindgen-generating-bindings-to-inline-functions)
-> 
-> * Template functions, methods of template classes and structs. We don't know
+>
+> - Inline functions and methods: see
+>   ["Why isn't `bindgen` generating bindings to inline functions?"](./faq.md#why-isnt-bindgen-generating-bindings-to-inline-functions)
+>
+> - Template functions, methods of template classes and structs. We don't know
 >   which monomorphizations exist, and can't create new ones because we aren't a
 >   C++ compiler.
-> 
-> * Anything related to template specialization:
->   * Partial template specialization
->   * Traits templates
->   * Specialization Failure Is Not An Error (SFINAE)
-> 
-> * Cross language inheritance, for example inheriting from a Rust struct in C++.
-> 
-> * Automatically calling copy and/or move constructors or destructors. Supporting
+>
+> - Anything related to template specialization:
+>
+>   - Partial template specialization
+>   - Traits templates
+>   - Specialization Failure Is Not An Error (SFINAE)
+>
+> - Cross language inheritance, for example inheriting from a Rust struct in C++.
+>
+> - Automatically calling copy and/or move constructors or destructors. Supporting
 >   this isn't possible with Rust's move semantics.
-> 
-> * Exceptions: if a function called through a `bindgen`-generated interface
+>
+> - Exceptions: if a function called through a `bindgen`-generated interface
 >   raises an exception that is not caught by the function itself, this will
 >   generate undefined behaviour. See
 >   [the tracking issue for exceptions](https://github.com/rust-lang/rust-bindgen/issues/1208)
 >   for more details.
 
 ### cbindgen notes
+
 https://github.com/eqrion/cbindgen
 https://blog.eqrion.net/future-directions-for-cbindgen/
 
@@ -484,86 +516,107 @@ https://github.com/eqrion/cbindgen/blob/master/docs.md
 
 > While modules within a crate form a tree with uniquely defined paths to each item, and therefore uniquely defined cfgs for those items, dependencies do not. If you depend on a crate in multiple ways, and those ways produce different cfgs, one of them will be arbitrarily chosen for any types found in that crate.
 
-
 https://github.com/eqrion/cbindgen/blob/master/docs.md#supported-types :
+
 > Most things in Rust don't have a guaranteed layout by default. In most cases this is nice because it enables layout to be optimized in the majority of cases where type layout isn't that interesting. However this is problematic for our purposes. Thankfully Rust lets us opt into guaranteed layouts with the `repr` attribute.
-> 
+>
 > You can learn about all of the different repr attributes [by reading Rust's reference][reference], but here's a quick summary:
-> 
-> * `#[repr(C)]`: give this struct/union/enum the same layout and ABI C would
-> * `#[repr(u8, u16, ... etc)]`: give this enum the same layout and ABI as the given integer type
-> * `#[repr(transparent)]`: give this single-field struct the same ABI as its field (useful for newtyping integers but keeping the integer ABI)
-> 
+>
+> - `#[repr(C)]`: give this struct/union/enum the same layout and ABI C would
+> - `#[repr(u8, u16, ... etc)]`: give this enum the same layout and ABI as the given integer type
+> - `#[repr(transparent)]`: give this single-field struct the same ABI as its field (useful for newtyping integers but keeping the integer ABI)
+>
 > cbindgen does not currently support the align or packed reprs.
-> 
-> However it *does* support using `repr(C)`/`repr(u8)` on non-C-like enums (enums with fields). This gives a C-compatible tagged union layout, as [defined by this RFC 2195][https://github.com/rust-lang/rfcs/blob/master/text/2195-really-tagged-unions.md]. `repr(C)` will give a simpler layout that is perhaps more intuitive, while `repr(u8)` will produce a more compact layout.
-> 
+>
+> However it _does_ support using `repr(C)`/`repr(u8)` on non-C-like enums (enums with fields). This gives a C-compatible tagged union layout, as [defined by this RFC 2195][https://github.com/rust-lang/rfcs/blob/master/text/2195-really-tagged-unions.md]. `repr(C)` will give a simpler layout that is perhaps more intuitive, while `repr(u8)` will produce a more compact layout.
+>
 > If you ensure everything has a guaranteed repr, then cbindgen will generate definitions for:
-> 
-> * struct (named-style or tuple-style)
-> * enum (fieldless or with fields)
-> * union
-> * type
-> * `[T; n]` (arrays always have a guaranteed C-compatible layout)
-> * `&T`, `&mut T`, `*const T`, `*mut T`, `Option<&T>`, `Option<&mut T>` (all have the same pointer ABI)
-> * `fn()` (as an actual function pointer)
-> * `bitflags! { ... }` (if macro_expansion.bitflags is enabled)
-> 
+>
+> - struct (named-style or tuple-style)
+> - enum (fieldless or with fields)
+> - union
+> - type
+> - `[T; n]` (arrays always have a guaranteed C-compatible layout)
+> - `&T`, `&mut T`, `*const T`, `*mut T`, `Option<&T>`, `Option<&mut T>` (all have the same pointer ABI)
+> - `fn()` (as an actual function pointer)
+> - `bitflags! { ... }` (if macro_expansion.bitflags is enabled)
+>
 > structs, enums, unions, and type aliases may be generic, although certain generic substitutions may fail to resolve under certain configurations. In C mode generics are resolved through monomorphization and mangling, while in C++ mode generics are resolved with templates. cbindgen cannot support generic functions, as they do not actually have a single defined symbol.
-> 
+>
 > cbindgen sadly cannot ever support anonymous tuples `(A, B, ...)`, as there is no way to guarantee their layout. You must use a tuple struct.
-> 
+>
 > cbindgen also cannot support wide pointers like `&dyn Trait` or `&[T]`, as their layout and ABI is not guaranteed. In the case of slices you can at least decompose them into a pointer and length, and reconstruct them with `slice::from_raw_parts`.
-> 
+>
 > If cbindgen determines that a type is zero-sized, it will erase all references to that type (so fields of that type simply won't be emitted). This won't work if that type appears as a function argument because C, C++, and Rust all have different definitions of what it means for a type to be empty.
-> 
+>
 > Don't use the `[u64; 0]` trick to over-align a struct, we don't support this.
-> 
+>
 > cbindgen contains the following hardcoded mappings (again completely ignoring namespacing, literally just looking at the name of the type):
-> 
-> * bool => bool
-> * char => wchar_t
-> * u8 => uint8_t
-> * u16 => uint16_t
-> * u32 => uint32_t
-> * u64 => uint64_t
-> * usize => uintptr_t
-> * i8 => int8_t
-> * i16 => int16_t
-> * i32 => int32_t
-> * i64 => int64_t
-> * isize => intptr_t
-> * f32 => float
-> * f64 => double
-> * VaList => va_list
-> * PhantomData => *evaporates*, can only appear as the field of a type
-> * () => *evaporates*, can only appear as the field of a type
-> 
-> * c_void => void
-> * c_char => char
-> * c_schar => signed char
-> * c_uchar => unsigned char
-> * c_float => float
-> * c_double => double
-> * c_short => short
-> * c_int => int
-> * c_long => long
-> * c_longlong => long long
-> * c_ushort => unsigned short
-> * c_uint => unsigned int
-> * c_ulong => unsigned long
-> * c_ulonglong => unsigned long long
-> 
-> * uint8_t => uint8_t
-> * uint16_t => uint16_t
-> * uint32_t => uint32_t
-> * uint64_t => uint64_t
-> * uintptr_t => uintptr_t
-> * size_t => size_t
-> * int8_t => int8_t
-> * int16_t => int16_t
-> * int32_t => int32_t
-> * int64_t => int64_t
-> * intptr_t => intptr_t
-> * ssize_t => ssize_t
-> * ptrdiff_t => ptrdiff_t
+>
+> - bool => bool
+> - char => wchar_t
+> - u8 => uint8_t
+> - u16 => uint16_t
+> - u32 => uint32_t
+> - u64 => uint64_t
+> - usize => uintptr_t
+> - i8 => int8_t
+> - i16 => int16_t
+> - i32 => int32_t
+> - i64 => int64_t
+> - isize => intptr_t
+> - f32 => float
+> - f64 => double
+> - VaList => va_list
+> - PhantomData => _evaporates_, can only appear as the field of a type
+> - () => _evaporates_, can only appear as the field of a type
+>
+> - c_void => void
+> - c_char => char
+> - c_schar => signed char
+> - c_uchar => unsigned char
+> - c_float => float
+> - c_double => double
+> - c_short => short
+> - c_int => int
+> - c_long => long
+> - c_longlong => long long
+> - c_ushort => unsigned short
+> - c_uint => unsigned int
+> - c_ulong => unsigned long
+> - c_ulonglong => unsigned long long
+>
+> - uint8_t => uint8_t
+> - uint16_t => uint16_t
+> - uint32_t => uint32_t
+> - uint64_t => uint64_t
+> - uintptr_t => uintptr_t
+> - size_t => size_t
+> - int8_t => int8_t
+> - int16_t => int16_t
+> - int32_t => int32_t
+> - int64_t => int64_t
+> - intptr_t => intptr_t
+> - ssize_t => ssize_t
+> - ptrdiff_t => ptrdiff_t
+
+### libffi notes
+
+https://github.com/libffi/libffi
+
+### julia
+
+Best option: c lib wrapper generator: https://github.com/JuliaInterop/Clang.jl
+
+Other options:
+https://docs.julialang.org/en/v1/manual/calling-c-and-fortran-code/index.html
+https://github.com/JuliaInterop/CxxWrap.jl
+https://github.com/JuliaInterop/Cxx.jl
+
+### cargo resolution
+
+https://github.com/rust-lang/cargo/blob/37cb9bbe2428e8d591d42673ef5562ca3ca92c55/src/cargo/core/resolver/mod.rs
+
+### erlang
+
+https://github.com/rusterlium/rustler
