@@ -36,24 +36,3 @@ impl MetaItem {
         }
     }
 }
-
-/// Metadata for exported symbols (functions and statics).
-#[derive(Clone, Serialize, Deserialize)]
-pub struct SymbolMetadata {
-    /// If this symbol has the #[no_mangle] attribute
-    pub no_mangle: bool,
-    /// The #[export_name] of this symbol, if present.
-    pub export_name: Option<String>,
-    /// The #[link_section] of this symbol, if present.
-    pub link_section: Option<String>,
-}
-
-/// Deprecation metadata.
-#[derive(Clone, Serialize, Deserialize)]
-pub struct Deprecation {
-    /// Version deprecated since, if present.
-    /// TODO: format?
-    pub since: Option<String>,
-    /// Deprecation reason, if present.
-    pub reason: Option<String>,
-}

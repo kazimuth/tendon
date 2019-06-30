@@ -53,7 +53,7 @@ pub struct ReprC {
     pub w: i64,
 }
 
-#[path = "renamed.rs"]
+#[path = "./renamed.rs"]
 pub mod x;
 
 pub mod z {
