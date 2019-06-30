@@ -61,7 +61,7 @@ algorithm:
 by hand.]
 
 load base crate in full. find paths to cargo and rust-src.
-for each item-macro in crate:
+for each macro in crate:
     expand macro
 for each exported item in crate:
     resolve all contained paths.
@@ -109,6 +109,23 @@ determine send + sync from composition:
 
 [how to handle no-having-multiple-deps-with-same-version req?]
     [generate sub-wrapper crates for every version, lomarf]
+
+```
+
+data structures:
+
+```
+DepGraph {
+    // crate locations, dep graphs, features, etc.
+}
+
+Crates [
+    id: api::CrateRef => Crate {
+        macros,
+        types,
+        symbols,
+    }
+]
 
 ```
 
@@ -203,6 +220,33 @@ https://rust-lang-nursery.github.io/api-guidelines/future-proofing.html#future-p
 
 convert consts to statics
 
+### ffi generation implementation
+
+have a couple layers of IR:
+
+```
+          .rs
+           |
+          syn
+           |
+    transgress-api
+    /      |      \
+binding<->abi<->rust backend
+|          |        |
+.py        .h     .impl.rs
+.java
+.hpp
+.swig >:)
+```
+
+can insert synthetic code at the transgress-api level (simple helpers for enums, etc.)
+can scan transgress-api for bindable patterns (error enums, etc.)
+can check abi for backwards-compatibility
+
+ideally, binding implementors only need to look at api and abi -- rust backend is already done?
+
+can also ignore abi layer / define your own: java <-> rust
+
 ### pitch
 
 Instantly bind your rust code from 7 languages
@@ -213,10 +257,18 @@ Instantly bind your rust code from 7 languages
 
 example: let's bind the excellent [uuid](https://crates.io/crates/uuid) library from python. [rust parsers good fast raggum fraggum]
 
+```sh
+$ transgress generate test_crate python-poetry ...
+```
+
 `lib.rs`:
 
 ```rust
 pub use uuid;
+```
+
+```sh
+$ poetry build
 ```
 
 `test.py`:
@@ -234,7 +286,6 @@ except uuid.BytesError as e:
 ```
 
 ```sh
-$ transgress generate test_crate python-poetry ...
 $ python test.py
 ```
 
@@ -272,8 +323,8 @@ features:
 
 differences from:
 
-- cbindgen: does a lot more
-- language binding systems: manual
+- cbindgen: this does a lot more
+- language binding systems: this isn't manual
 - wasm-bindgen: this'll call it for you
 
 ...

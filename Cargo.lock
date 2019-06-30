@@ -899,6 +899,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "transgress"
+version = "0.1.0"
+
+[[package]]
 name = "transgress-api"
 version = "0.1.0"
 dependencies = [

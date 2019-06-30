@@ -1,0 +1,12 @@
+[package]
+name = "transgress"
+version = "0.1.0"
+authors = ["James Gilles <jhgilles@mit.edu>"]
+edition = "2018"
+readme = "README.md"
+description = "placeholder"
+
+[badges]
+travis-ci = { repository = "kazimuth/transgress-rs", branch = "master" }
+
+[dependencies]
