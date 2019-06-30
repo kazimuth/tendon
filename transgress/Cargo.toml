@@ -5,6 +5,8 @@ authors = ["James Gilles <jhgilles@mit.edu>"]
 edition = "2018"
 readme = "README.md"
 description = "placeholder"
+license = "MIT"
+repository = "https://github.com/kazimuth/transgress-rs"
 
 [badges]
 travis-ci = { repository = "kazimuth/transgress-rs", branch = "master" }
