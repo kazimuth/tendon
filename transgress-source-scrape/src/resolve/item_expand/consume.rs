@@ -4,7 +4,7 @@
 //! [macro transcription code](https://github.com/rust-lang/rust/blob/12806b7/src/libsyntax/ext/tt/transcribe.rs).
 
 use proc_macro2 as pm2;
-use quote::{quote, ToTokens};
+use quote::ToTokens;
 use std::collections::HashMap;
 use std::fmt::{Display, Write};
 use syn::{self, ext::IdentExt, parse::ParseStream};
@@ -191,12 +191,13 @@ impl Stomach {
 
     /// non-allocating comparison for two types that only impl Display, like Literal in syn
     fn disp_eq(&mut self, a: &impl Display, b: &impl Display) -> bool {
-        self.scratch_a.clear();
-        self.scratch_b.clear();
         // can't fail
         let _ = write!(&mut self.scratch_a, "{}", a);
         let _ = write!(&mut self.scratch_b, "{}", b);
-        self.scratch_a == self.scratch_b
+        let result = self.scratch_a == self.scratch_b;
+        self.scratch_a.clear();
+        self.scratch_b.clear();
+        result
     }
 }
 trait Consumer {
@@ -246,18 +247,9 @@ impl Consumer for ast::Fragment {
             ast::FragSpec::Type => stream.parse::<syn::Type>()?.into_token_stream(),
             ast::FragSpec::Visibility => stream.parse::<syn::Visibility>()?.into_token_stream(),
             ast::FragSpec::Expr => stream.parse::<syn::Expr>()?.into_token_stream(),
-            ast::FragSpec::Literal => {
-                stream.parse::<syn::Lit>()?;
-                quote!(_)
-            }
-            ast::FragSpec::Statement => {
-                stream.parse::<syn::Stmt>()?;
-                quote!({ _ })
-            }
-            ast::FragSpec::Block => {
-                stream.parse::<syn::Block>()?;
-                quote!({ _ })
-            }
+            ast::FragSpec::Literal => stream.parse::<syn::Lit>()?.into_token_stream(),
+            ast::FragSpec::Statement => stream.parse::<syn::Stmt>()?.into_token_stream(),
+            ast::FragSpec::Block => stream.parse::<syn::Block>()?.into_token_stream(),
         };
         inv.bind(&self.ident, tokens);
         Ok(())
@@ -389,6 +381,7 @@ impl Consumer for pm2::Punct {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use quote::quote;
 
     macro_rules! assert_binding {
         ($inv:ident [$name:expr] $([$idx:expr])+ == $target:expr) => {

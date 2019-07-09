@@ -26,3 +26,10 @@ symbols:
 map from path to symbol
 
 track changes?
+
+# Design 3
+
+everything gets an int ID
+on that ID we hang:
+full path
+unresolved dependencies

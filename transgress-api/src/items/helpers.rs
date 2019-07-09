@@ -1,4 +1,4 @@
-use crate::{attributes::ExtraAttributes, Ident, Path, Trait, Type};
+use crate::attributes::ExtraAttributes;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -36,4 +36,53 @@ pub struct Deprecation {
     pub since: Option<String>,
     /// Deprecation reason, if present.
     pub reason: Option<String>,
+}
+
+/// Selected struct representation.
+#[derive(Clone, Serialize, Deserialize)]
+pub enum StructRepr {
+    Rust,
+    C,
+    Transparent,
+    Packed,
+}
+impl Default for StructRepr {
+    fn default() -> Self {
+        StructRepr::Rust
+    }
+}
+
+/// Selected enum representation.
+#[derive(Clone, Serialize, Deserialize)]
+pub enum EnumRepr {
+    /// Default.
+    Rust,
+    /// `#[repr(C)]`
+    C,
+    /// `#[repr(i8)]`, etc.
+    Int(Int),
+    /// `#[repr(C, i8)]`, etc.
+    /// See https://github.com/rust-lang/rfcs/blob/master/text/2195-really-tagged-unions.md
+    IntOuterTag(Int),
+}
+impl Default for EnumRepr {
+    fn default() -> Self {
+        EnumRepr::Rust
+    }
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize)]
+pub enum Int {
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    USize,
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    Isize,
 }

@@ -1,9 +1,17 @@
-use crate::{expr::ConstExpr, Ident, Path, Trait, Type};
+use crate::{expr::ConstExpr, paths::AbsoluteCrate, Ident, Path, Trait, Type};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 pub mod helpers;
 
 pub use helpers::{InherentImpl, ItemMetadata};
+
+/// A single crate.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Crate {
+    pub item_metadata: ItemMetadata,
+    pub imports: HashMap<Ident, AbsoluteCrate>,
+}
 
 /// An item in the symbol namespace - a const, static, function, or reexport of the same.
 #[derive(Clone, Serialize, Deserialize)]
@@ -41,10 +49,8 @@ pub struct StaticItem {
 
 /// A standalone function, `fn f(x: i32) -> i32 { ... }`
 #[derive(Clone, Serialize, Deserialize)]
-pub struct FunctionItem {
-    pub ident: Ident,
-    pub full_path: Path,
-}
+pub struct FunctionItem {}
+
 /// A Reexport, `pub use other_location::Thing;`
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ReexportItem {

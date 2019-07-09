@@ -14,6 +14,7 @@
 //! ### References
 //! - [Rust attributes](https://doc.rust-lang.org/reference/attributes.html)
 //! - [Name resolution](https://rust-lang.github.io/rustc-guide/name-resolution.html)
+//! - [Paths](https://doc.rust-lang.org/stable/reference/paths.html)
 
 // TODO: impls on non-local types??
 //       can do custom handling for e.g. IntoIterator for now
@@ -37,14 +38,3 @@ pub use ident::Ident;
 pub use paths::Path;
 pub use traits::Trait;
 pub use types::Type;
-
-use items::helpers::ItemMetadata;
-
-/// A single crate.
-#[derive(Clone, Serialize, Deserialize)]
-pub struct Crate {
-    pub item_metadata: ItemMetadata,
-}
-
-#[cfg(test)]
-mod tests {}

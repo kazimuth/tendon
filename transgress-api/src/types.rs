@@ -40,7 +40,6 @@ pub enum Type {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ArrayType {
     pub type_: Box<Type>,
-    ///
     pub len: ConstExpr,
 }
 
@@ -79,64 +78,33 @@ pub struct NeverType {}
 /// A type `<T as Trait>::Output`
 #[derive(Clone, Serialize, Deserialize)]
 pub struct QSelfType {
-    self_: Box<Type>,
-    trait_: Box<Trait>,
-    output_: Ident,
+    /// `T`
+    pub self_: Box<Type>,
+    /// `as Trait`
+    pub trait_: Box<Trait>,
+    /// `::Output`
+    pub output_: Ident,
 }
+
 #[derive(Clone, Serialize, Deserialize)]
-pub struct PathType {}
+pub struct PathType {
+    /// A path, without generic arguments.
+    pub path: Path,
+}
 
 /// A type with generic arguments.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ReifiedType {
     pub type_: Path,
+    pub args: GenericArgs,
 }
 
-/// Selected struct representation.
+/// A lifetime.
 #[derive(Clone, Serialize, Deserialize)]
-pub enum StructRepr {
-    Rust,
-    C,
-    Transparent,
-    Packed,
-}
-impl Default for StructRepr {
-    fn default() -> Self {
-        StructRepr::Rust
-    }
-}
+pub struct Lifetime(pub smol_str::SmolStr);
 
-/// Selected enum representation.
+/// Generic arguments to a type or trait.
 #[derive(Clone, Serialize, Deserialize)]
-pub enum EnumRepr {
-    /// Default.
-    Rust,
-    /// `#[repr(C)]`
-    C,
-    /// `#[repr(i8)]`, etc.
-    Int(Int),
-    /// `#[repr(C, i8)]`, etc.
-    /// See https://github.com/rust-lang/rfcs/blob/master/text/2195-really-tagged-unions.md
-    IntOuterTag(Int),
-}
-impl Default for EnumRepr {
-    fn default() -> Self {
-        EnumRepr::Rust
-    }
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize)]
-pub enum Int {
-    U8,
-    U16,
-    U32,
-    U64,
-    U128,
-    USize,
-    I8,
-    I16,
-    I32,
-    I64,
-    I128,
-    Isize,
+pub struct GenericArgs {
+    pub lifetimes: Vec<Lifetime>,
 }

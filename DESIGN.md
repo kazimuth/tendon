@@ -54,6 +54,8 @@ goals
   - use a recent required rust version to solve API compat issues?
     - or just disable on older rust
 
+https://doc.rust-lang.org/stable/reference/lifetime-elision.html
+
 algorithm:
 
 ```
@@ -109,6 +111,7 @@ determine send + sync from composition:
 
 [how to handle no-having-multiple-deps-with-same-version req?]
     [generate sub-wrapper crates for every version, lomarf]
+    [disable lower versions]
 
 ```
 
@@ -119,13 +122,49 @@ DepGraph {
     // crate locations, dep graphs, features, etc.
 }
 
-Crates [
-    id: api::CrateRef => Crate {
-        macros,
-        types,
-        symbols,
+Ctx {
+    path: api::Path => Element {
+        resolved: bool,
+        item: Item {
+            MacroDef {}
+            MacroCall {}
+            StructDef {}
+            TraitDef {}
+            EnumDef {}
+            ReexportDef {}
+            ...
+        }
     }
 ]
+
+CrateQueue [ api::CrateRef ]
+
+Scope {
+    parent: Option<Arc<Scope>>>
+    globs: [Glob { path }]
+    entries: [Ident => Path]
+}
+
+loop {
+    for crate in ctx.crateQueue.take().par_drain() {
+        crate.parse(ctx);
+    }
+    for macro in unexpanded_macros.take().par_drain() {
+        macro.expand(ctx);
+    }
+    for element in unresolved_elements.take().par_drain() {
+        element.resolve(ctx)
+    }
+}
+
+how do attribute macros get threaded through?
+
+this is just futures still
+
+scope.await
+
+i don't know what interface the codegen crates will want to consume yet...
+
 
 ```
 
@@ -150,7 +189,7 @@ per-language impls can do stuff via whatever and use whatever components they ne
     - struct / nostruct versions of API?
 - send+sync handling
   - thread locals wrappers?
-    - ThreadLocal<Option<T>>
+    - ThreadLocal<Option<T>>, fails if accessed from another thread; TODO benchmark thread.current().id()
 - catch_panic
 - auto-instantiation
 
@@ -161,7 +200,19 @@ per-language impls can do stuff via whatever and use whatever components they ne
 
   - traits
   - borrows
+    - implicit locks
+      - context managers
+      - locks last until GC
+      - locks last until force-unlocked, after they're invalidated
+        - requires a list of items using lock tho, since their destructors can do arbitrary things & need access to borrow state
+        - yeesh
   - minimal-allocation iterators
+
+- fast binding mode
+
+  - skip:
+    - utf-8 well-formedness checks, since the source language spec'd utf-8
+    -
 
 - fuzz testing?
 
@@ -169,6 +220,8 @@ per-language impls can do stuff via whatever and use whatever components they ne
 
 - representation of different sides of the data?
 - C FFI representation that can be lowered to rust OR C (or other stuff...)
+
+- LTO: https://doc.rust-lang.org/rustc/linker-plugin-lto.html
 
 http://swig.org/Doc3.0/SWIG.html
 -> SWIG!
@@ -220,6 +273,8 @@ https://rust-lang-nursery.github.io/api-guidelines/future-proofing.html#future-p
 
 convert consts to statics
 
+TODO: just don't have impls in functions, that ISN'T handled!!!!! why would you even do that anyway
+
 ### ffi generation implementation
 
 have a couple layers of IR:
@@ -246,6 +301,12 @@ can check abi for backwards-compatibility
 ideally, binding implementors only need to look at api and abi -- rust backend is already done?
 
 can also ignore abi layer / define your own: java <-> rust
+
+idea: some sort of rule-based API rewriting system?
+
+- self->self methods can be refactored to not move ownership (just reassign to target slot)
+- Builder pattern can be converted to kwargs in some cases
+- borrows that auto-drop
 
 ### pitch
 
@@ -397,6 +458,8 @@ e.g. rust code runs python script via cpython api calls back into rust from tran
 
 poetry: https://poetry.eustace.io/
 
+https://eev.ee/blog/2013/09/13/cython-versus-cffi/
+
 ### rust-rust
 
 https://docs.rs/abi_stable/0.4.1/abi_stable/
@@ -485,6 +548,8 @@ building custom bindings for each language that don't go through a particular AP
   - arrays, maps
   - numbers
   - strings
+
+could use cargo to replace all lib dependencies w/ ABI-level things
 
 ### inter-ffi linking
 
