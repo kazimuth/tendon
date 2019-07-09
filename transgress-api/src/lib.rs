@@ -14,18 +14,15 @@
 //! ### References
 //! - [Rust attributes](https://doc.rust-lang.org/reference/attributes.html)
 //! - [Name resolution](https://rust-lang.github.io/rustc-guide/name-resolution.html)
+//! - [Name resolution impl](https://github.com/rust-lang/rust/blob/master/src/librustc_resolve/lib.rs)
 //! - [Paths](https://doc.rust-lang.org/stable/reference/paths.html)
 
 // TODO: impls on non-local types??
 //       can do custom handling for e.g. IntoIterator for now
 // TODO: constexprs grumble grumble
 
-//
-use std::collections::HashMap;
-
-use serde::{Deserialize, Serialize};
-
 pub mod attributes;
+pub mod db;
 pub mod expr;
 pub mod ident;
 pub mod items;
@@ -38,3 +35,5 @@ pub use ident::Ident;
 pub use paths::Path;
 pub use traits::Trait;
 pub use types::Type;
+
+pub use db::Db;

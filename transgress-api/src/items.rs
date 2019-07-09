@@ -1,4 +1,4 @@
-use crate::{expr::ConstExpr, paths::AbsoluteCrate, Ident, Path, Trait, Type};
+use crate::{expr::ConstExpr, paths::AbsoluteCrate, Ident, Path, Type};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -14,6 +14,14 @@ pub struct Crate {
 }
 
 /// An item in the symbol namespace - a const, static, function, or reexport of the same.
+pub enum MacroItem {
+    Declarative(DeclarativeMacroItem),
+    Procedural(ProceduralMacroItem),
+}
+
+/// An item in the symbol namespace - a const, static, function, or reexport of the same.
+/// (Strictly speaking consts aren't "symbols" as they're not visible to the linker [I think??], but
+/// they live in the namespace, so whatever.)
 #[derive(Clone, Serialize, Deserialize)]
 pub enum SymbolItem {
     Const(ConstItem),
@@ -100,5 +108,15 @@ pub struct TraitItem {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ModuleItem {
+    pub item_metadata: ItemMetadata,
+}
+
+/// A declarative macro, `macro_rules!`.
+pub struct DeclarativeMacroItem {
+    pub item_metadata: ItemMetadata,
+    // TODO: for each rule include link to defn'ing crate
+}
+
+pub struct ProceduralMacroItem {
     pub item_metadata: ItemMetadata,
 }

@@ -1,5 +1,13 @@
-use super::consume::Binding;
+/*use super::{
+    consume::Binding,
+    ast
+};
 use proc_macro2 as pm2;
+
+fn q(ast::MatcherSeq) {
+
+}
+*/
 
 /*struct Ctx {}
 

@@ -1,3 +1,5 @@
+//! Expressions. This module is fairly emaciated since we mostly don't handle these.
+
 pub use serde::{Deserialize, Serialize};
 
 /// A constant expression.

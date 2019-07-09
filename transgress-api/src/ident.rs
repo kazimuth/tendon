@@ -1,14 +1,14 @@
-//!  Simple datastructures describing a rust program's interface: types, function signatures, consts, etc.
-//! Produced and consumed by other `transgress` crates.
+//! Fast `Ident` type currently implemented using the `SmolStr` crate.
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use smol_str::SmolStr;
+use std::fmt;
 use std::ops::Deref;
 
 /// A rust identifier.
 /// Represented using a small-string optimization.
 /// TODO: make sure raw idents work.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct Ident(SmolStr);
 
@@ -55,8 +55,21 @@ impl Deref for Ident {
         &self.0
     }
 }
+
 impl std::borrow::Borrow<str> for Ident {
     fn borrow(&self) -> &str {
         &*self
+    }
+}
+
+impl std::fmt::Debug for Ident {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::fmt::Display for Ident {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(&self.0)
     }
 }

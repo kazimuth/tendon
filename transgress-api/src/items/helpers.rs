@@ -1,3 +1,5 @@
+//! Extra data held in multiple diffferent items.
+
 use crate::attributes::ExtraAttributes;
 use serde::{Deserialize, Serialize};
 
@@ -38,7 +40,7 @@ pub struct Deprecation {
     pub reason: Option<String>,
 }
 
-/// Selected struct representation.
+/// A struct representation.
 #[derive(Clone, Serialize, Deserialize)]
 pub enum StructRepr {
     Rust,
@@ -52,7 +54,7 @@ impl Default for StructRepr {
     }
 }
 
-/// Selected enum representation.
+/// An enum representation.
 #[derive(Clone, Serialize, Deserialize)]
 pub enum EnumRepr {
     /// Default.
@@ -71,6 +73,7 @@ impl Default for EnumRepr {
     }
 }
 
+/// An Int, used in an `EnumRepr`.
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub enum Int {
     U8,
