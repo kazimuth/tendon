@@ -3,7 +3,7 @@
 use crate::{Error, Result};
 use std::path::Path;
 use std::process::Command;
-use tokio_trace::info;
+use tracing::info;
 
 /// Ensure that rls analysis data is available and up to date.
 pub fn check(path: &Path) -> Result<()> {

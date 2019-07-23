@@ -5,7 +5,7 @@ use crate::{
 };
 // TODO: faster hashmap
 use std::collections::{HashMap, HashSet};
-use tokio_trace::warn;
+use tracing::warn;
 
 // ops:
 // - purge: remove all entries w/ some property

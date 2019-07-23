@@ -10,7 +10,7 @@ edition = "2018"
 serde = "1"
 serde_derive = "1"
 custom_error = "1.6"
-tokio-trace = "0.1"
+tracing = "0.1"
 cargo_metadata = "0.8"
 syn = { version = "0.15.36", features = ["full"] }
 quote = { version = "0.6.12" }

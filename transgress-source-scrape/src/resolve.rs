@@ -19,7 +19,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 use syn;
-use tokio_trace::{info, info_span};
+use tracing::{info, info_span};
 use transgress_api::Ident;
 
 pub mod item_expand;

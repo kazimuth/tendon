@@ -12,7 +12,3 @@ members = [
 
 [profile.dev.overrides."*"]
 opt-level = 2
-
-[replace]
-"tokio-trace:0.1.0" = { git = "https://github.com/kazimuth/tokio", branch = "global_dispatch" }
-"tokio-trace-core:0.2.0" = { git = "https://github.com/kazimuth/tokio", branch = "global_dispatch" }
