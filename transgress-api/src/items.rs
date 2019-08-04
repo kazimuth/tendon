@@ -1,13 +1,9 @@
-use crate::{expr::ConstExpr, Ident, Path, Type};
+use crate::{expr::ConstExpr, Ident, Path, Type, attributes::{InherentImpl, ItemMetadata}};
 use serde::{Deserialize, Serialize};
-
-pub mod helpers;
-
-pub use helpers::{InherentImpl, ItemMetadata};
 
 /// A module.
 pub struct ModuleItem {
-    item_metadata: ItemMetadata,
+    pub item_metadata: ItemMetadata,
 }
 
 /// An item in the symbol namespace - a const, static, function, or reexport of the same.
@@ -40,18 +36,18 @@ pub enum TypeItem {
 /// A constant `const x: T = expr`, known at compile time,
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ConstItem {
-    name: Ident,
-    type_: Box<Type>,
-    value: ConstExpr,
+    pub name: Ident,
+    pub type_: Box<Type>,
+    pub value: ConstExpr,
 }
 
 /// A static value `static x: T = expr`, stored at a location in memory.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct StaticItem {
-    mut_: bool,
-    name: Ident,
-    type_: Box<Type>,
-    value: String,
+    pub mut_: bool,
+    pub name: Ident,
+    pub type_: Box<Type>,
+    pub value: String,
 }
 
 /// A standalone function, `fn f(x: i32) -> i32 { ... }`

@@ -21,6 +21,7 @@
 //       can do custom handling for e.g. IntoIterator for now
 // TODO: constexprs grumble grumble
 
+pub mod attributes;
 pub mod expr;
 pub mod ident;
 pub mod items;

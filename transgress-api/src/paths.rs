@@ -68,7 +68,7 @@ impl AbsolutePath {
     pub fn parent(&self) -> Self {
         debug_assert!(self.path.len() > 0, "no parent of crate root");
         let crate_ = self.crate_.clone();
-        let mut path = self.path[0..self.path.len() - 1].iter().cloned().collect();
+        let path = self.path[0..self.path.len() - 1].iter().cloned().collect();
         AbsolutePath { crate_, path }
     }
 }
