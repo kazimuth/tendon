@@ -1,6 +1,6 @@
 //! Extra data held in multiple diffferent items.
 
-use crate::attributes::ExtraAttributes;
+use crate::Path;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -16,7 +16,39 @@ pub struct ItemMetadata {
     /// If this item is deprecated, the deprecation reason.
     pub deprecated: Option<Deprecation>,
     /// Other attributes on the item, unhandled by transgress-rs.
-    pub extra_attributes: ExtraAttributes,
+    pub extra_attributes: Vec<Attribute>,
+}
+
+
+
+
+/// An attribute on an item.
+///
+/// Note that most built-in attributes are already handled for you, incl. derive a; this is for the ones
+/// Transgress doesn't know about.
+#[derive(Clone, Serialize, Deserialize)]
+pub enum Attribute {
+    MetaItem(MetaItem),
+    /// An attribute not in the format understood by the `m` format.
+    Other(String)
+}
+
+/// The syntax used by most, but not all, attributes, and the `meta` fragment specifier.
+#[derive(Clone, Serialize, Deserialize)]
+pub enum MetaItem {
+    /// A path attribute, e.g. #[thing]
+    Path(Path),
+    /// An equals attribute, e.g. #[thing = "bananas"]
+    /// Note that the `literal` here can be parsed into a `proc_macro2::Literal`.
+    Eq { target: Path, literal: String },
+    /// An call attribute, e.g. #[thing(thinga, "bees", thingb = 3, thing4(2))]
+    Call { target: Path, args: Vec<MetaItem> },
+}
+
+/// The visibility of an item.
+pub enum Visibility {
+    PubCrate,
+
 }
 
 /// Metadata for exported symbols (functions, statics).

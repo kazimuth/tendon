@@ -21,8 +21,6 @@
 //       can do custom handling for e.g. IntoIterator for now
 // TODO: constexprs grumble grumble
 
-pub mod attributes;
-pub mod db;
 pub mod expr;
 pub mod ident;
 pub mod items;
@@ -36,4 +34,3 @@ pub use paths::Path;
 pub use traits::Trait;
 pub use types::Type;
 
-pub use db::Db;

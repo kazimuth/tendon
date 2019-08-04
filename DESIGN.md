@@ -122,10 +122,8 @@ DepGraph {
     // crate locations, dep graphs, features, etc.
 }
 
-Ctx {
-    path: api::Path => Element {
-        resolved: bool,
-        item: Item {
+Db {
+    path: api::Path => Item {
             MacroDef {}
             MacroCall {}
             StructDef {}
@@ -153,7 +151,8 @@ loop {
         macro.expand(ctx);
     }
     for element in unresolved_elements.take().par_drain() {
-        element.resolve(ctx)
+        // puts elt back if it's not used
+        element.resolve(ctx);
     }
 }
 
@@ -164,6 +163,8 @@ this is just futures still
 scope.await
 
 i don't know what interface the codegen crates will want to consume yet...
+
+each module has a list of imports, glob-imports
 
 
 ```
@@ -225,6 +226,7 @@ per-language impls can do stuff via whatever and use whatever components they ne
 
 http://swig.org/Doc3.0/SWIG.html
 -> SWIG!
+- works similarly to this, a full c++ compiler, with "typemaps" generating code for individual c++ types
 
 https://nullprogram.com/blog/2018/05/27/
 -> indirect calls w/ dlsym is slightly faster than standard indirect linking; only .25 of a ns tho, not important
@@ -274,6 +276,9 @@ https://rust-lang-nursery.github.io/api-guidelines/future-proofing.html#future-p
 convert consts to statics
 
 TODO: just don't have impls in functions, that ISN'T handled!!!!! why would you even do that anyway
+    or do it later
+
+TODO: investigate how rust handles multiple runtimes floating around, e.g. rust code loading python .so statically linked to rust
 
 ### ffi generation implementation
 
@@ -312,9 +317,10 @@ idea: some sort of rule-based API rewriting system?
 
 Instantly bind your rust code from 7 languages
 
-- no unsafe code
-- no ffi
-- no writing your own crazy buildsystem (unless you want to)
+- no handwritten unsafe ffi code
+- no listing every type and function to bind by hand: just `transgress` and you're done*
+- generates code, not binaries, to keep your IDE and documentation tools working
+- simple integrations with build systems
 
 example: let's bind the excellent [uuid](https://crates.io/crates/uuid) library from python. [rust parsers good fast raggum fraggum]
 
@@ -394,6 +400,11 @@ distribution notes:
 
 - users need rust compiler, or need to distribute binaries
 
+faq:
+is it fast?
+    faster than whatever language you're using lmao. unless you're using c/c++, in which case, about the same speed,
+    but safer. ffi calls involve a function call whatever lang you're using (unless you use lto).
+    
 ### wasm
 
 https://rustwasm.github.io/book/reference/which-crates-work-with-wasm.html

@@ -5,7 +5,7 @@ members = [
     "test-crate",
     "transgress",
     "transgress-api",
-    "transgress-source-scrape",
+    "transgress-resolve",
     "prefab",
     "spoor"
 ]

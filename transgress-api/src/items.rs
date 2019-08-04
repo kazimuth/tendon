@@ -1,22 +1,21 @@
-use crate::{expr::ConstExpr, paths::AbsoluteCrate, Ident, Path, Type};
+use crate::{expr::ConstExpr, Ident, Path, Type};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 pub mod helpers;
 
 pub use helpers::{InherentImpl, ItemMetadata};
 
-/// A single crate.
-#[derive(Clone, Serialize, Deserialize)]
-pub struct Crate {
-    pub item_metadata: ItemMetadata,
-    pub imports: HashMap<Ident, AbsoluteCrate>,
+/// A module.
+pub struct ModuleItem {
+    item_metadata: ItemMetadata,
 }
 
 /// An item in the symbol namespace - a const, static, function, or reexport of the same.
 pub enum MacroItem {
     Declarative(DeclarativeMacroItem),
     Procedural(ProceduralMacroItem),
+    Derive(DeriveMacroItem),
+    Attribute(AttributeMacroItem),
 }
 
 /// An item in the symbol namespace - a const, static, function, or reexport of the same.
@@ -106,17 +105,22 @@ pub struct TraitItem {
     pub inherent_impl: InherentImpl,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-pub struct ModuleItem {
-    pub item_metadata: ItemMetadata,
-}
-
 /// A declarative macro, `macro_rules!`.
 pub struct DeclarativeMacroItem {
     pub item_metadata: ItemMetadata,
-    // TODO: for each rule include link to defn'ing crate
 }
 
+/// A procedural macro (invoked via bang).
 pub struct ProceduralMacroItem {
+    pub item_metadata: ItemMetadata,
+}
+
+/// A procedural derive macro.
+pub struct DeriveMacroItem {
+    pub item_metadata: ItemMetadata,
+}
+
+/// A procedural attribute macro.
+pub struct AttributeMacroItem {
     pub item_metadata: ItemMetadata,
 }

@@ -15,6 +15,12 @@ pub enum Path {
 }
 
 /// An unresolved path.
+/// Note: segments of this path don't include arguments,
+/// like in rust proper.
+/// That's because paths in signatures can only have types
+/// at the ends, e.g. there's no such thing as a T<X>::Y.
+/// (there is such a thing as a <T<X> as Q>::Y but that's
+/// handled at the type level, see the `types` module.)
 #[derive(Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct UnresolvedPath {
     /// The components of the path.
@@ -23,13 +29,48 @@ pub struct UnresolvedPath {
     pub is_absolute: bool,
 }
 
+impl From<&syn::Path> for UnresolvedPath {
+    fn from(p: &syn::Path) -> Self {
+        let is_absolute = p.leading_colon.is_some();
+        // note: we strip path arguments, those need to be handled
+        // outside of here
+        let path = p.segments.iter().map(
+            |seg| (&seg.ident).into()
+        ).collect();
+        UnresolvedPath {is_absolute, path}
+    }
+}
+
+
+
 /// A path resolved within an absolute crate.
 #[derive(Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct AbsolutePath {
-    /// The path within the crate.
-    pub path: Vec<Ident>,
     /// The containing crate.
     pub crate_: AbsoluteCrate,
+    /// The path within the crate.
+    pub path: Vec<Ident>,
+}
+
+impl AbsolutePath {
+    /// Add another component to the path.
+    pub fn join(&self, elem: impl Into<Ident>) -> Self {
+        let elem = elem.into();
+        assert!(!elem.contains("::"));
+
+        let crate_ = self.crate_.clone();
+        let mut path = self.path.clone();
+        path.push(elem.into());
+
+        AbsolutePath { crate_, path }
+    }
+    /// The parent of this path.
+    pub fn parent(&self) -> Self {
+        debug_assert!(self.path.len() > 0, "no parent of crate root");
+        let crate_ = self.crate_.clone();
+        let mut path = self.path[0..self.path.len() - 1].iter().cloned().collect();
+        AbsolutePath { crate_, path }
+    }
 }
 
 /// A path resolved to a generic argument in the current context.
@@ -41,6 +82,7 @@ pub struct GenericPath {
 
 /// A crate, absolutely resolved within a crate graph.
 /// Each AbsoluteCrate in a crate graph maps to a single crate.
+/// TODO: intern, def worth it for these
 #[derive(Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct AbsoluteCrate {
     /// The name of the crate.
