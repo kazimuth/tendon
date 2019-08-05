@@ -1,10 +1,10 @@
-use crate::{expr::ConstExpr, Ident, Path, Type, attributes::{ItemMetadata}};
+use crate::{expr::ConstExpr, Ident, Path, Type, attributes::{Metadata}};
 use serde::{Deserialize, Serialize};
 use crate::attributes::TypeMetadata;
 
 /// A module.
 pub struct ModuleItem {
-    pub item_metadata: ItemMetadata,
+    pub item_metadata: Metadata,
 }
 
 /// An item in the macro namespace.
@@ -64,13 +64,13 @@ pub struct ReexportItem {
 /// A module.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Module {
-    pub item_metadata: ItemMetadata,
+    pub item_metadata: Metadata,
 }
 
 /// A non-tuple struct, `struct Point { x: f32, y: f32 }`
 #[derive(Clone, Serialize, Deserialize)]
 pub struct StructItem {
-    pub item_metadata: ItemMetadata,
+    pub item_metadata: Metadata,
     pub type_metadata: TypeMetadata,
     pub inherent_impl: InherentImpl,
 }
@@ -78,7 +78,7 @@ pub struct StructItem {
 /// A field of a non-tuple struct.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct StructField {
-    pub item_metadata: ItemMetadata,
+    pub item_metadata: Metadata,
     pub name: Ident,
     pub type_: Path,
 }
@@ -86,7 +86,7 @@ pub struct StructField {
 /// A tuple struct, `struct Point(f32, f32);`
 #[derive(Clone, Serialize, Deserialize)]
 pub struct TupleStructItem {
-    pub item_metadata: ItemMetadata,
+    pub item_metadata: Metadata,
     pub inherent_impl: InherentImpl,
 }
 
@@ -94,52 +94,52 @@ pub struct TupleStructItem {
 /// Note: this does not include unit structs with braces, like `struct UnitBraces {}`; those are
 /// represented as fieldless StructItems.
 pub struct UnitStructItem {
-    pub item_metadata: ItemMetadata,
+    pub item_metadata: Metadata,
     pub inherent_impl: InherentImpl,
 }
 
 /// An enum, `enum Planet { Earth, Mars, Jupiter }`
 #[derive(Clone, Serialize, Deserialize)]
 pub struct EnumItem {
-    pub item_metadata: ItemMetadata,
+    pub item_metadata: Metadata,
     pub inherent_impl: InherentImpl,
 }
 
 /// A union, `union Planet { Earth, Mars, Jupiter }`
 #[derive(Clone, Serialize, Deserialize)]
 pub struct UnionItem {
-    pub item_metadata: ItemMetadata,
+    pub item_metadata: Metadata,
     pub inherent_impl: InherentImpl,
 }
 
 /// A trait declaration.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct TraitItem {
-    pub item_metadata: ItemMetadata,
+    pub item_metadata: Metadata,
     pub inherent_impl: InherentImpl,
 }
 
 /// A declarative macro, `macro_rules!`.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct DeclarativeMacroItem {
-    pub item_metadata: ItemMetadata,
+    pub item_metadata: Metadata,
 }
 
 /// A procedural macro (invoked via bang).
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ProceduralMacroItem {
-    pub item_metadata: ItemMetadata,
+    pub item_metadata: Metadata,
 }
 /// A procedural attribute macro.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct AttributeMacroItem {
-    pub item_metadata: ItemMetadata,
+    pub item_metadata: Metadata,
 }
 
 /// A (procedural) derive macro.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct DeriveMacroItem {
-    pub item_metadata: ItemMetadata,
+    pub item_metadata: Metadata,
 }
 
 /// The inherent implementation of a type: all methods implemented directly on that type.
