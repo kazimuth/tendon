@@ -13,6 +13,22 @@ pub enum Path {
     /// This resolves to a nearby generic argument.
     Generic(GenericPath),
 }
+impl Path {
+    /// Make a fake path for testing.
+    pub fn fake(s: &str) -> Self {
+        let syn_path = &syn::parse_str::<syn::Path>(s).expect("failed to parse fake path");
+        Path::Unresolved(syn_path.into())
+    }
+    /// Make a non-absolute path from a single ident.
+    pub fn ident(i: Ident) -> Self {
+        Path::Unresolved(UnresolvedPath { path: vec![i], is_absolute: false})
+    }
+}
+impl From<&syn::Path> for Path {
+    fn from(p: &syn::Path) -> Self {
+        Path::Unresolved(p.into())
+    }
+}
 
 /// An unresolved path.
 /// Note: segments of this path don't include arguments,
@@ -40,8 +56,6 @@ impl From<&syn::Path> for UnresolvedPath {
         UnresolvedPath {is_absolute, path}
     }
 }
-
-
 
 /// A path resolved within an absolute crate.
 #[derive(Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]

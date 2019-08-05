@@ -9,6 +9,15 @@ goals
 - maximal ease of use
 - some bloat is tolerable
 
+###
+
+TODO:
+full parse crates for traits
+double parse strings
+doc comment custom annotations / shim macros
+proc_macro shim shim
+dynamic lifetime checker: break cycles?
+
 ### usage / user API ideas
 
 - parse .d.rs-style definitions for missing things
