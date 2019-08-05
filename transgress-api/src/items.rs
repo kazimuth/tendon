@@ -1,4 +1,4 @@
-use crate::{expr::ConstExpr, Ident, Path, Type, attributes::{InherentImpl, ItemMetadata}};
+use crate::{expr::ConstExpr, Ident, Path, Type, attributes::{ItemMetadata}};
 use serde::{Deserialize, Serialize};
 
 /// A module.
@@ -6,7 +6,7 @@ pub struct ModuleItem {
     pub item_metadata: ItemMetadata,
 }
 
-/// An item in the symbol namespace - a const, static, function, or reexport of the same.
+/// An item in the macro namespace.
 pub enum MacroItem {
     Declarative(DeclarativeMacroItem),
     Procedural(ProceduralMacroItem),
@@ -102,21 +102,27 @@ pub struct TraitItem {
 }
 
 /// A declarative macro, `macro_rules!`.
+#[derive(Clone, Serialize, Deserialize)]
 pub struct DeclarativeMacroItem {
     pub item_metadata: ItemMetadata,
 }
 
 /// A procedural macro (invoked via bang).
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ProceduralMacroItem {
     pub item_metadata: ItemMetadata,
 }
+/// A procedural attribute macro.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct AttributeMacroItem {
+    pub item_metadata: ItemMetadata,
+}
 
-/// A procedural derive macro.
+/// A (procedural) derive macro.
+#[derive(Clone, Serialize, Deserialize)]
 pub struct DeriveMacroItem {
     pub item_metadata: ItemMetadata,
 }
 
-/// A procedural attribute macro.
-pub struct AttributeMacroItem {
-    pub item_metadata: ItemMetadata,
-}
+#[derive(Clone, Serialize, Deserialize)]
+pub struct InherentImpl {}
