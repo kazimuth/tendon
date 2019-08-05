@@ -1,5 +1,6 @@
 use crate::{expr::ConstExpr, Ident, Path, Type, attributes::{ItemMetadata}};
 use serde::{Deserialize, Serialize};
+use crate::attributes::TypeMetadata;
 
 /// A module.
 pub struct ModuleItem {
@@ -70,12 +71,29 @@ pub struct Module {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct StructItem {
     pub item_metadata: ItemMetadata,
+    pub type_metadata: TypeMetadata,
     pub inherent_impl: InherentImpl,
+}
+
+/// A field of a non-tuple struct.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct StructField {
+    pub item_metadata: ItemMetadata,
+    pub name: Ident,
+    pub type_: Path,
 }
 
 /// A tuple struct, `struct Point(f32, f32);`
 #[derive(Clone, Serialize, Deserialize)]
 pub struct TupleStructItem {
+    pub item_metadata: ItemMetadata,
+    pub inherent_impl: InherentImpl,
+}
+
+/// A unit struct, `struct Unit;`.
+/// Note: this does not include unit structs with braces, like `struct UnitBraces {}`; those are
+/// represented as fieldless StructItems.
+pub struct UnitStructItem {
     pub item_metadata: ItemMetadata,
     pub inherent_impl: InherentImpl,
 }
@@ -124,5 +142,7 @@ pub struct DeriveMacroItem {
     pub item_metadata: ItemMetadata,
 }
 
+/// The inherent implementation of a type: all methods implemented directly on that type.
+/// TODO: how to handle references &ct?
 #[derive(Clone, Serialize, Deserialize)]
 pub struct InherentImpl {}
