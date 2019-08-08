@@ -1,7 +1,7 @@
 //! Data representing types.
-use std::fmt;
 use crate::{expressions::ConstExpr, idents::Ident, paths::Path, traits::Trait};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /*
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -170,7 +170,6 @@ impl fmt::Debug for Lifetime {
     }
 }
 
-
 /// Generic arguments to a type or trait.
 /// https://doc.rust-lang.org/reference/paths.html#paths-in-expressions
 /// Doesn't include constraints.
@@ -188,5 +187,3 @@ pub struct GenericArgs {
     /// in the pipeline.
     pub consts: Vec<ConstExpr>,
 }
-
-
