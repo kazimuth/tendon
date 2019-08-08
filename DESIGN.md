@@ -18,6 +18,7 @@ doc comment custom annotations / shim macros
 proc_macro shim shim
 dynamic lifetime checker: break cycles?
 resolve qself traits where arguments aren't generic
+resolve default trait args
 
 ### usage / user API ideas
 
@@ -591,6 +592,12 @@ solution: just don't solve this, lmao
   - jitting / caching decisions at boundary
 - custom metadata for stable things?
 - can use via-C API from both libs
+
+solution: enforced same-compiler
+- do simple checks, and also
+- hash all type layouts & function signatures in interface, and compare when loading plugin
+    - it's the only way to be sure
+    - is "rust-call" stable?
 
 ### C/C++
 

@@ -52,16 +52,20 @@ pub enum Type {
     Pointer(PointerType),
     Tuple(TupleType),
     Never(NeverType),
-    Reified(ReifiedType),
     QSelf(QSelfType),
     BareFn(BareFnType),
     ImplTrait(ImplTraitType),
     TraitObject(TraitObjectType),
 }
 
-/// A simple path, without generic arguments.
+/// A path, possibly with generic arguments `Type<T1, T2, Assoc=T3>`
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PathType(pub Path);
+pub struct PathType {
+    /// The path to this type.
+    pub path: Path,
+    /// The applied generics.
+    pub generics: GenericArgs,
+}
 
 /// An array, `[i32; n]`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -122,13 +126,6 @@ pub struct QSelfType {
     pub trait_: Box<Trait>,
     /// `::Output`
     pub output_: Ident,
-}
-
-/// A type with generic arguments `Type<T1, T2, Assoc=T3>`
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ReifiedType {
-    pub type_: Path,
-    pub args: GenericArgs,
 }
 
 /// `fn(i32, String) -> usize`
