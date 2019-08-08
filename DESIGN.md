@@ -17,6 +17,7 @@ double parse strings
 doc comment custom annotations / shim macros
 proc_macro shim shim
 dynamic lifetime checker: break cycles?
+resolve qself traits where arguments aren't generic
 
 ### usage / user API ideas
 
@@ -177,6 +178,8 @@ each module has a list of imports, glob-imports
 
 
 ```
+
+https://doc.rust-lang.org/nomicon/hrtb.html
 
 ### [transgress-api](../transgress-api)
 

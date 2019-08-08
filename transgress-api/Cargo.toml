@@ -12,3 +12,4 @@ proc-macro2 = { version = "0.4", features = ["span-locations"] }
 smol_str = { version = "0.1.11", features = ["serde"] }
 tracing = "0.1"
 syn = { version = "0.15.36", features = ["full"] }
+quote = "0.6.13"
