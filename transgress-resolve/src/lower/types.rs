@@ -56,7 +56,7 @@ pub fn lower_type(type_: &syn::Type) -> Result<Type, LowerError> {
             }))
         },
         syn::Type::BareFn(bare_fn) => {
-            if bare_fn.inputs.is_empty() {
+            if bare_fn.lifetimes.is_none() {
                 Ok(Type::BareFn(BareFnType {
                     args: bare_fn
                         .inputs
@@ -72,7 +72,6 @@ pub fn lower_type(type_: &syn::Type) -> Result<Type, LowerError> {
             }
         }
         syn::Type::Paren(paren) => lower_type(&paren.elem),
-        syn::Type::Group(group) => lower_type(&group.elem),
         other => Err(LowerError::UnhandledType(Tokens::from(&other))),
     }
 }
@@ -241,6 +240,7 @@ mod tests {
 
     #[test]
     fn simple() {
+        spoor::init();
         //println!("{:#?}", syn::parse_str::<syn::TypePath>("<BANANA as OCELOT>::RHODODENDRON").unwrap());
         assert_match!(lower("!"), Ok(Type::Never(_)));
         assert_match!(lower("()"), Ok(Type::Tuple(TupleType {types})) => {
@@ -250,6 +250,7 @@ mod tests {
 
     #[test]
     fn impl_dyn_trait() {
+        spoor::init();
         assert_match!(lower("dyn Banana<'a, X> + Copy + ?Sized + 'b"), Ok(Type::TraitObject(TraitObjectType { traits, lifetimes })) => {
             assert_eq!(traits.len(), 3);
             assert_eq!(lifetimes.len(), 1);
@@ -276,10 +277,13 @@ mod tests {
             assert_eq!(traits[2].is_maybe, true);
             assert_eq!(lifetimes[0].0, Ident::from("b"));
         });
+        // no HRTBs yet
+        assert_match!(lower("impl for<'a> Banana<'a>"), Err(..));
     }
 
     #[test]
     fn qself() {
+        spoor::init();
         // TODO is this actually legal?
         assert_match!(lower("<P>::Q"), Err(..));
 
@@ -300,6 +304,7 @@ mod tests {
 
     #[test]
     fn lower_path() {
+        spoor::init();
         assert_match!(lower("::some::Thing<'a, 'b, A, B, C=D, 1>"), Ok(Type::Path(PathType { path, generics })) => {
             assert_eq!(path, &Path::fake("::some::Thing"));
 
@@ -322,10 +327,24 @@ mod tests {
             });
             assert_eq!(generics.consts[0].0, Tokens::new("1").unwrap());
         });
+        assert_match!(lower("::some<A>::thing<B>::Weird<D>"), Err(..));
     }
 
     #[test]
     fn malformed_path() {
+        spoor::init();
         assert_match!(path_to_parts(&parse_quote!(::bees<A, B>::dog<A, B>)), Err(LowerError::UnexpectedGenericInPath(..)));
+    }
+
+    #[test]
+    fn lower_others() {
+        spoor::init();
+        assert_match!(lower("[i32]"), Ok(Type::Slice(..)));
+        assert_match!(lower("[i32; 2]"), Ok(Type::Array(..)));
+        assert_match!(lower("*const i32"), Ok(Type::Pointer(..)));
+        assert_match!(lower("&'a mut i32"), Ok(Type::Reference(..)));
+        assert_match!(lower("fn(i32) -> i32"), Ok(Type::BareFn(..)));
+        assert_match!(lower("Fn(i32) -> i32"), Ok(Type::Path(..)));
+        assert_match!(lower("Macro![Thing]"), Err(..));
     }
 }
