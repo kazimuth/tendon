@@ -186,3 +186,19 @@ pub struct GenericArgs {
     /// in the pipeline.
     pub consts: Vec<ConstExpr>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lifetime_debug() {
+        assert_eq!(&format!("{:?}", Lifetime(Ident::from("test"))), "'test");
+    }
+
+    #[test]
+    fn is_void() {
+        assert!(TupleType {types: vec![] }.is_void());
+        assert!(!TupleType {types: vec![Type::Never(NeverType)] }.is_void());
+    }
+}

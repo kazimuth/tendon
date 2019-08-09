@@ -233,6 +233,7 @@ fn extract_bounds(bounds: &syn::punctuated::Punctuated<syn::TypeParamBound, syn:
 mod tests {
     use super::*;
     use std::error::Error;
+    use syn::parse_quote;
 
     fn lower(s: &str) -> Result<Type, Box<dyn Error>> {
         Ok(lower_type(&syn::parse_str(s)?)?)
@@ -321,5 +322,10 @@ mod tests {
             });
             assert_eq!(generics.consts[0].0, Tokens::new("1").unwrap());
         });
+    }
+
+    #[test]
+    fn malformed_path() {
+        assert_match!(path_to_parts(&parse_quote!(::bees<A, B>::dog<A, B>)), Err(LowerError::UnexpectedGenericInPath(..)));
     }
 }

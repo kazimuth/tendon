@@ -199,3 +199,20 @@ pub enum Int {
     I128,
     Isize,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_span() {
+        let span = super::Span {
+            source_file: PathBuf::from("fake_file.rs"),
+            start_line: 0,
+            start_column: 1,
+            end_line: 2,
+            end_column: 3,
+        };
+        assert_eq!(&format!("{}", span), "fake_file.rs[0:1-2:3]")
+    }
+}

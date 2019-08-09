@@ -214,7 +214,6 @@ mod tests {
             quote!(_).span(),
         );
         assert_eq!(inherits_public.visibility, Visibility::Pub);
-        ;
 
         let inherits_private = lower_metadata(
             &ModuleCtx {
@@ -226,5 +225,23 @@ mod tests {
             quote!(_).span(),
         );
         assert_eq!(inherits_private.visibility, Visibility::NonPub);
+
+        // shouldn't panic
+        let funky = lower_metadata(
+            &ModuleCtx {
+                source_file: PathBuf::from("fake_file.rs"),
+                visibility: Visibility::NonPub,
+            },
+            &parse_quote!(pub(crate)),
+            &[
+                parse_quote!(#[docs(bees = "superior")]),
+                parse_quote!(#[must_use(dogs = "incredible")]),
+                parse_quote!(#[deprecated = "nope"]),
+                parse_quote!(#[deprecated(flim_flam = "funsy parlor")])
+            ],
+            quote!(_).span(),
+        );
+
+        assert_eq!(funky.visibility, Visibility::NonPub);
     }
 }

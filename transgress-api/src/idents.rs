@@ -36,11 +36,6 @@ impl From<&str> for Ident {
         Ident(s.into())
     }
 }
-impl From<String> for Ident {
-    fn from(s: String) -> Self {
-        Ident(s.into())
-    }
-}
 impl From<&proc_macro2::Ident> for Ident {
     fn from(s: &proc_macro2::Ident) -> Ident {
         // TODO: could optimize this w/ a thread-local string buffer
@@ -71,5 +66,18 @@ impl std::fmt::Debug for Ident {
 impl std::fmt::Display for Ident {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(&self.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ident_serialize() {
+        assert_eq!(
+            serde_json::from_str::<Ident>(&serde_json::to_string(&Ident::from("test")).unwrap()).unwrap(),
+            Ident::from("test")
+        );
     }
 }
