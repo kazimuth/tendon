@@ -1,11 +1,22 @@
 language: rust
+sudo: required
+dist: trusty
 rust:
   - nightly
+addons:
+    apt:
+        packages:
+            - libssl-dev
 
 before_script:
   - rustup component add rls --toolchain nightly-x86_64-unknown-linux-gnu
 
 cache: cargo
+
+after_success: |
+    bash <(curl https://raw.githubusercontent.com/xd009642/tarpaulin/master/travis-install.sh)
+    cargo tarpaulin --out Xml
+    bash <(curl -s https://codecov.io/bash)
 
 deploy:
   - provider: releases
@@ -19,3 +30,4 @@ deploy:
       secure: RDq9rD5cJm/44Axvd6T9FYRfbaQUfzkJm2IL22LZQgK2Yfrp0BT9FmI8RwVlHR/qNP7g5/zP3Fw3okvR/gFBQ4VyxhPzoZhEDON+cwI/IAl8FBzXA1DNqAftHTRXQuCS7tpr/V0DkmaBjdSrEJ1dKEDlkLT7gv4w79KuQTf9p5GmuCjQvsH0z4BU2iTGqG2D5l7pYsGQ2I+Ezklnq2QwajLWYgNIqUzvlBgrfSkbMfAjxPG2lGNKiQK5vQNyef9UoH3Bmz2v7CVDDybu0V2glY8Y5/J2htciLEu2Uqx6Q47bd4m/jjZnUO6ZZSRLA2dBEaKeMqA/sRBPmaMTd8JzPxegZKAe1rZiZ2HBwvvuLq5wH82UNwNJg9TDuFJJIKNKb8UHxk8uVQ/rRSuTgwf9PBCaAV41/cvVZBIlYnXiTxnbgyz9h7X6bMxOT5axwx5w1SvNyH4yhn2VPM7mVPN0oOuPkJV03X7PsqAOy6OzDr+ciMoD7z8seS7xziAQv9kXb/pVJ43U1Ke5fEUdny0BLLe+MrlBViGzIIBfJVrvy4QCCfhJR7vgo0oAJkppxiD4JeKMhUfG2j6e5D30buIrj5G7m6YSO5FFfgTUYMnebV+PxUYCDoBTzNT7QTRZM0Cb660SiK88aMU37ymv9z3BPDuDQ8nJHpoGlNLsk/13qvk=
     on:
       tags: true
+
