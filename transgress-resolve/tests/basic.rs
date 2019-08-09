@@ -41,6 +41,10 @@ fn basic() -> Result<(), Box<dyn Error>> {
 
     info!("root package {:?}", root.repr);
 
+    // TODO inject libstd/alloc/core `rustc --print sysroot`
+    // TODO parse libstd/alloc/core to gzipped form distributed w/ tools, parse #[since] annotations
+    //     libflate = "0.1.26"
+
     /*
     let resolver = resolve::resolver::Resolver::new(test_crate.clone())?;
 

@@ -123,7 +123,7 @@ pub struct QSelfType {
     /// `T`
     pub self_: Box<Type>,
     /// `as Trait`
-    pub trait_: Box<Trait>,
+    pub trait_: Trait,
     /// `::Output`
     pub output_: Ident,
 }
@@ -147,15 +147,17 @@ pub struct BareFnType {
 pub struct ImplTraitType {
     /// All of the traits implemented by this type.
     pub traits: Vec<Trait>,
+    /// Lifetime bounds
+    pub lifetimes: Vec<Lifetime>,
 }
 
 /// `dyn Trait`
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TraitObjectType {
-    /// The main trait of the trait object.
-    pub trait_: Trait,
-    /// Extra traits (can only be auto traits).
-    pub extras: Vec<Trait>,
+    /// The traits implemented by this trait object.
+    pub traits: Vec<Trait>,
+    /// Lifetime bounds
+    pub lifetimes: Vec<Lifetime>,
 }
 
 /// A lifetime. Doesn't include apostrophe.
@@ -175,9 +177,9 @@ pub struct GenericArgs {
     /// Lifetime arguments to a type.
     pub lifetimes: Vec<Lifetime>,
     /// Type arguments to a type.
-    pub types: Vec<Box<Type>>,
+    pub types: Vec<Type>,
     /// Type bindings (e.g. `Output=T`)
-    pub bindings: Vec<(Ident, Box<Type>)>,
+    pub bindings: Vec<(Ident, Type)>,
     /// Const generic bindings.
     /// https://github.com/rust-lang/rfcs/blob/master/text/2000-const-generics.md
     /// Note: somne of these may be parsed as types unfortunately, need to fix that later
