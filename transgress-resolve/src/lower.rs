@@ -12,20 +12,6 @@ use transgress_api::{
     tokens::Tokens,
 };
 
-#[cfg(test)]
-/// Helper macro to make working with match trees easier in tests.
-macro_rules! assert_match {
-    ($arg:expr, $binding:pat $(=> $rest:expr)?) => {
-        let ref arg = $arg;
-        match arg {
-            $binding => {
-                $($rest)?
-            },
-            _ => panic!("failed to match {:?} to {}", arg, stringify!($binding))
-        }
-    }
-}
-
 pub mod attributes;
 pub mod struct_;
 pub mod types;

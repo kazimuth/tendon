@@ -27,3 +27,10 @@
 pub mod ast;
 pub mod consume;
 pub mod transcribe;
+
+quick_error! {
+    #[derive(Debug)]
+    pub enum ExpandError {
+
+    }
+}

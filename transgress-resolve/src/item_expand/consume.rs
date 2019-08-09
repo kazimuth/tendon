@@ -103,6 +103,15 @@ impl Stomach {
         }
     }
 
+    /// Reset all internal state.
+    pub fn reset(&mut self) {
+        self.stack = vec![0];
+        self.bindings.clear();
+        self.scratch_a.clear();
+        self.scratch_b.clear();
+        self.speculating = false;
+    }
+
     /// Consume an input token stream.
     ///
     pub fn consume(
@@ -284,7 +293,7 @@ impl Consumer for ast::Group {
             pm2::Delimiter::Brace => stream.peek(syn::token::Brace),
             pm2::Delimiter::Parenthesis => stream.peek(syn::token::Paren),
             pm2::Delimiter::Bracket => stream.peek(syn::token::Bracket),
-            _ => panic!("impossible"),
+            _ => unreachable!(),
         }
     }
 }
@@ -383,9 +392,16 @@ mod tests {
     use super::*;
     use quote::quote;
 
+    fn consume(matcher: pm2::TokenStream, input: pm2::TokenStream) -> Result<HashMap<String, Binding>, syn::Error> {
+        let matchers = syn::parse2::<ast::MatcherSeq>(matcher)?;
+        let mut stomach = Stomach::new();
+        stomach.consume(&input, &matchers)?;
+        Ok(stomach.bindings)
+    }
+
     macro_rules! assert_binding {
-        ($inv:ident [$name:expr] $([$idx:expr])+ == $target:expr) => {
-            match &$inv.bindings[$name] $(. seq_()[$idx])+ {
+        ($bindings:ident [$name:expr] $([$idx:expr])+ == $target:expr) => {
+            match &$bindings[$name] $(. seq_()[$idx])+ {
                 Binding::Leaf(l) => assert_eq!(syn::parse2::<pm2::Ident>(l.clone())?, $target),
                 _ => panic!("not a leaf, should be"),
             }
@@ -396,85 +412,98 @@ mod tests {
     fn full() -> syn::Result<()> {
         spoor::init();
 
-        let matchers = syn::parse2::<ast::MatcherSeq>(quote! {
-            $(pub fn $name:ident ($($arg:pat : $typ:ty),+) -> $ret:ty;)+
-        })?;
-
-        let mut inv = Stomach::new();
-        let to_parse = quote! {
-            pub fn squared(x: f32) -> f32;
-            pub fn atan2(x: f32, y: f32) -> f32;
-        };
-        inv.consume(&to_parse, &matchers)?;
-
-        assert_binding!(inv["name"][0][0] == "squared");
-        assert_binding!(inv["arg"][0][0][0] == "x");
-        assert_binding!(inv["typ"][0][0][0] == "f32");
-        assert_binding!(inv["ret"][0][0] == "f32");
-
-        assert_binding!(inv["name"][0][1] == "atan2");
-        assert_binding!(inv["arg"][0][1][0] == "x");
-        assert_binding!(inv["typ"][0][1][0] == "f32");
-        assert_binding!(inv["arg"][0][1][1] == "y");
-        assert_binding!(inv["typ"][0][1][1] == "f32");
-        assert_binding!(inv["ret"][0][1] == "f32");
-
-        Ok(())
-    }
-
-    #[test]
-    fn simple_repetition() -> syn::Result<()> {
-        spoor::init();
-
-        let matchers = syn::parse2::<ast::MatcherSeq>(quote! { $(bees)+ })?;
-        let to_parse = &quote! { bees bees bees bees bees };
-        let mut inv = Stomach::new();
-        inv.consume(to_parse, &matchers)?;
-
-        Ok(())
-    }
-
-    #[test]
-    fn recursive_repetition() -> syn::Result<()> {
-        spoor::init();
-
-        let matchers = syn::parse2::<ast::MatcherSeq>(quote! { $(($($name:ident)+))+ })?;
-        let to_parse = &quote! { (jane ben harper) (xanadu xylophone)};
-
-        let mut inv = Stomach::new();
-        inv.consume(to_parse, &matchers)?;
-
-        Ok(())
-    }
-
-    #[test]
-    fn nonterminal_fragments() -> syn::Result<()> {
-        spoor::init();
-
-        let matchers = syn::parse2::<ast::MatcherSeq>(quote! { $x:expr })?;
-        let to_parse = &quote! { 1 + 1 * (37 + _umlaut[&|| {}]) };
-
-        let mut inv = Stomach::new();
-        inv.consume(to_parse, &matchers)?;
-
-        Ok(())
-    }
-
-    /*
-    #[test]
-    fn macro_expansion() {
-        macro_rules! t {
-            ($($outer:ident [$($inner:ident)+])* ( $($o2:ident [$($i2:ident)*] )* )) => {
-                stringify!($($outer $o2 [$($inner $i2)+])+)
+        let bindings = consume(
+            quote! { $(pub fn $name:ident ($($arg:pat : $typ:ty),+) -> $ret:ty;)+ },
+            quote! {
+                pub fn squared(x: f32) -> f32;
+                pub fn atan2(x: f32, y: f32) -> f32;
             }
-        }
-        println!("{}", t!(a [b c d] f [g h] (a2 [b2 c2 d2] f2 [g2 h2] )));
-        macro_rules! v {
-            ($(($($x:ident)*))*) => {
-                stringify!($($($x)+)+)
-            }
-        }
-        println!("{}", v!((a b c) (d f)));
+        )?;
+
+        assert_binding!(bindings["name"][0][0] == "squared");
+        assert_binding!(bindings["arg"][0][0][0] == "x");
+        assert_binding!(bindings["typ"][0][0][0] == "f32");
+        assert_binding!(bindings["ret"][0][0] == "f32");
+
+        assert_binding!(bindings["name"][0][1] == "atan2");
+        assert_binding!(bindings["arg"][0][1][0] == "x");
+        assert_binding!(bindings["typ"][0][1][0] == "f32");
+        assert_binding!(bindings["arg"][0][1][1] == "y");
+        assert_binding!(bindings["typ"][0][1][1] == "f32");
+        assert_binding!(bindings["ret"][0][1] == "f32");
+
+        Ok(())
     }
-    */
+
+    #[test]
+    fn repetition() -> syn::Result<()> {
+        spoor::init();
+
+        // simple
+        consume(quote! { $(bees)+ }, quote! { bees bees bees bees bees })?;
+        // recursive
+        consume(quote! { $(($($name:ident)+))+ }, quote! { (jane ben harper) (xanadu xylophone)})?;
+        // weird sep (note: this is valid rust code!)
+        consume(quote! { $(_)bees+ }, quote! { _ bees _ bees _ bees _ })?;
+        // group sep (forbidden)
+        assert_match!(consume(quote! { $(_)[]* }, quote! {}), Err(..));
+
+        Ok(())
+    }
+
+    #[test]
+    fn mismatches() -> syn::Result<()> {
+        spoor::init();
+
+        assert_match!(consume(quote!{ (bees) }, quote! { {bees} }), Err(..));
+        assert_match!(consume(quote!{ bees }, quote! { wasps }), Err(..));
+        assert_match!(consume(quote!{ ! }, quote! { ? }), Err(..));
+
+        Ok(())
+    }
+
+    #[test]
+    fn non_terminal_fragments() -> syn::Result<()> {
+        spoor::init();
+
+        let bindings = consume(quote! { $x:expr }, quote! { 1 + 1 * (37 + _umlaut[&|| {}]) })?;
+
+        assert_eq!(&format!("{:?}", bindings["x"]), "[`1 + 1 * ( 37 + _umlaut [ & | | { } ] )`]");
+
+        Ok(())
+    }
+
+    #[test]
+    fn match_literal() -> syn::Result<()> {
+        spoor::init();
+
+        assert_match!(consume(quote!("hello"), quote!("hello")), Ok(..));
+        assert_match!(consume(quote!("hello"), quote!("goodbye")), Err(..));
+
+        Ok(())
+    }
+
+    #[test]
+    fn all_fragment_specifiers() -> syn::Result<()> {
+        spoor::init();
+
+        consume(quote!($thing:block), quote!({return;}))?;
+
+        consume(quote!($thing:expr), quote!({1 + "hello"}))?;
+        consume(quote!($thing:ident), quote!(zanzibar))?;
+        consume(quote!($thing:item), quote!(type X<T> = B;))?;
+        consume(quote!($thing:lifetime), quote!('short))?;
+
+        consume(quote!($thing:literal), quote!(3.14159f64))?;
+        consume(quote!($thing:meta), quote!(frag))?;
+        consume(quote!($thing:pat), quote!(Banana(ocelot, ..)))?;
+        consume(quote!($thing:path), quote!(::f::x<i32>::y<'a>))?;
+        consume(quote!($thing:stmt), quote!(break;))?;
+        consume(quote!($thing:tt), quote!({banana}))?;
+        consume(quote!($thing:ty), quote!(&[impl Banana<'a, f32> + Copy + ?Sized]))?;
+        consume(quote!($thing:vis), quote!(pub(crate)))?;
+
+        Ok(())
+    }
+
 }
