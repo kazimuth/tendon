@@ -1,8 +1,8 @@
 //! Lowering for referenced types.
-use super::LowerError;
+use super::{generics::lower_lifetime, LowerError};
 use transgress_api::{
     expressions::ConstExpr,
-    generics::{Lifetime, TypeBounds},
+    generics::TypeBounds,
     idents::Ident,
     paths::Path,
     tokens::Tokens,
@@ -30,10 +30,7 @@ pub fn lower_type(type_: &syn::Type) -> Result<Type, LowerError> {
         syn::Type::Reference(reference) => Ok(Type::Reference(ReferenceType {
             type_: Box::new(lower_type(&reference.elem)?),
             mut_: reference.mutability.is_some(),
-            lifetime: reference
-                .lifetime
-                .as_ref()
-                .map(|lt| Lifetime(Ident::from(&lt.ident))),
+            lifetime: reference.lifetime.as_ref().map(lower_lifetime),
         })),
         syn::Type::Never(_) => Ok(Type::Never(NeverType)),
         syn::Type::Tuple(tuple) => Ok(Type::Tuple(TupleType {
@@ -104,13 +101,16 @@ fn lower_type_path(path: &syn::TypePath) -> Result<Type, LowerError> {
             output_,
             trait_: Trait {
                 path,
-                generics,
+                params: generics,
                 is_maybe: false,
             },
         }))
     } else {
         let (path, generics) = path_to_parts(&path.path)?;
-        Ok(Type::Path(PathType { path, generics }))
+        Ok(Type::Path(PathType {
+            path,
+            params: generics,
+        }))
     }
 }
 
@@ -142,11 +142,11 @@ pub fn lower_type_bounds(
                 };
                 traits.push(Trait {
                     path,
-                    generics,
+                    params: generics,
                     is_maybe,
                 })
             }
-            syn::TypeParamBound::Lifetime(lt) => lifetimes.push(Lifetime(Ident::from(&lt.ident))),
+            syn::TypeParamBound::Lifetime(lt) => lifetimes.push(lower_lifetime(lt)),
         }
     }
 
@@ -180,9 +180,7 @@ pub fn path_to_parts(path: &syn::Path) -> Result<(Path, GenericParams), LowerErr
         Some(syn::PathArguments::AngleBracketed(brangled)) => {
             for arg in brangled.args.iter() {
                 match arg {
-                    syn::GenericArgument::Lifetime(lt) => {
-                        args.lifetimes.push(Lifetime(Ident::from(&lt.ident)))
-                    }
+                    syn::GenericArgument::Lifetime(lt) => args.lifetimes.push(lower_lifetime(lt)),
                     syn::GenericArgument::Type(ty) => args.types.push(lower_type(ty)?),
                     syn::GenericArgument::Binding(binding) => args
                         .type_bindings
@@ -247,8 +245,8 @@ mod tests {
             assert_eq!(traits.len(), 3);
             assert_eq!(lifetimes.len(), 1);
             assert_eq!(traits[0].path, Path::fake("Banana"));;
-            assert_eq!(traits[0].generics.lifetimes[0].0, Ident::from("a"));
-            assert_match!(traits[0].generics.types[0], Type::Path(PathType { path, ..}) => {
+            assert_eq!(traits[0].params.lifetimes[0].0, Ident::from("a"));
+            assert_match!(traits[0].params.types[0], Type::Path(PathType { path, ..}) => {
                 assert_eq!(path, &Path::fake("X"));
             });
             assert_eq!(traits[1].path, Path::fake("Copy"));
@@ -260,8 +258,8 @@ mod tests {
             assert_eq!(traits.len(), 3);
             assert_eq!(lifetimes.len(), 1);
             assert_eq!(traits[0].path, Path::fake("Banana"));;
-            assert_eq!(traits[0].generics.lifetimes[0].0, Ident::from("a"));
-            assert_match!(traits[0].generics.types[0], Type::Path(PathType { path, ..}) => {
+            assert_eq!(traits[0].params.lifetimes[0].0, Ident::from("a"));
+            assert_match!(traits[0].params.types[0], Type::Path(PathType { path, ..}) => {
                 assert_eq!(path, &Path::fake("X"));
             });
             assert_eq!(traits[1].path, Path::fake("Copy"));
@@ -280,21 +278,19 @@ mod tests {
         assert_match!(lower("<P>::Q"), Err(..));
 
         assert_match!(lower("<P<F=(::M,)> as F<'a, Z, 2>>::W"), Ok(Type::QSelf(QSelfType {
-            self_, trait_, output_
+            self_, trait_: Trait { path, params, is_maybe }, output_
         })) => {
-            assert_match!(**self_, Type::Path(PathType { path, generics }) => {
+            assert_eq!(path, &Path::fake("F"));
+            assert_eq!(is_maybe, &false);
+            assert_eq!(params.lifetimes[0].0, Ident::from("a"));
+            assert_match!(**self_, Type::Path(PathType { path, params }) => {
                 assert_eq!(path, &Path::fake("P"));
-                assert_eq!(generics.type_bindings[0].0, Ident::from("F"));
-                assert_match!(generics.type_bindings[0].1, Type::Tuple(TupleType { types }) => {
+                assert_eq!(params.type_bindings[0].0, Ident::from("F"));
+                assert_match!(params.type_bindings[0].1, Type::Tuple(TupleType { types }) => {
                     assert_match!(types[0], Type::Path(PathType { path, .. }) => {
                         assert_eq!(path, &Path::fake("::M"));
                     });
                 });
-            });
-            assert_match!(trait_, Trait { path, generics, is_maybe } => {
-                assert_eq!(path, &Path::fake("F"));
-                assert_eq!(is_maybe, &false);
-                assert_eq!(generics.lifetimes[0].0, Ident::from("a"));
             });
             assert_eq!(output_, &Ident::from("W"));
         });
@@ -303,27 +299,27 @@ mod tests {
     #[test]
     fn lower_path() {
         spoor::init();
-        assert_match!(lower("::some::Thing<'a, 'b, A, B, C=D, 1>"), Ok(Type::Path(PathType { path, generics })) => {
+        assert_match!(lower("::some::Thing<'a, 'b, A, B, C=D, 1>"), Ok(Type::Path(PathType { path, params })) => {
             assert_eq!(path, &Path::fake("::some::Thing"));
 
-            assert_eq!(generics.lifetimes.len(), 2);
-            assert_eq!(generics.types.len(), 2);
+            assert_eq!(params.lifetimes.len(), 2);
+            assert_eq!(params.types.len(), 2);
 
-            assert_eq!(generics.type_bindings.len(), 1);
-            assert_eq!(generics.consts.len(), 1);
-            assert_eq!(generics.lifetimes[0].0, Ident::from("a"));
-            assert_eq!(generics.lifetimes[1].0, Ident::from("b"));
-            assert_match!(generics.types[0], Type::Path(PathType { path, .. }) => {
+            assert_eq!(params.type_bindings.len(), 1);
+            assert_eq!(params.consts.len(), 1);
+            assert_eq!(params.lifetimes[0].0, Ident::from("a"));
+            assert_eq!(params.lifetimes[1].0, Ident::from("b"));
+            assert_match!(params.types[0], Type::Path(PathType { path, .. }) => {
                 assert_eq!(path, &Path::fake("A"));
             });
-            assert_match!(generics.types[1], Type::Path(PathType { path, .. }) => {
+            assert_match!(params.types[1], Type::Path(PathType { path, .. }) => {
                 assert_eq!(path, &Path::fake("B"));
             });
-            assert_eq!(generics.type_bindings[0].0, Ident::from("C"));
-            assert_match!(generics.type_bindings[0].1, Type::Path(PathType { path, .. }) => {
+            assert_eq!(params.type_bindings[0].0, Ident::from("C"));
+            assert_match!(params.type_bindings[0].1, Type::Path(PathType { path, .. }) => {
                 assert_eq!(path, &Path::fake("D"));
             });
-            assert_eq!(generics.consts[0].0, Tokens::new("1").unwrap());
+            assert_eq!(params.consts[0].0, Tokens::new("1").unwrap());
         });
         assert_match!(lower("::some<A>::thing<B>::Weird<D>"), Err(..));
     }

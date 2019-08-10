@@ -7,10 +7,7 @@
 //  rules reference: https://rust-lang.github.io/rustc-guide/traits/lowering-rules.html
 
 use std::path::PathBuf;
-use transgress_api::{
-    attributes::{Span, Visibility},
-    tokens::Tokens,
-};
+use transgress_api::{attributes::Visibility, tokens::Tokens};
 
 pub mod attributes;
 pub mod generics;
@@ -28,10 +25,6 @@ pub struct ModuleCtx {
 quick_error! {
     #[derive(Debug)]
     pub enum LowerError {
-        /// lol no generics
-        NoGenericsYet(span: Span) {
-            display("generics unimplemented, can't lower (at {:?})", span)
-        }
         NoHRTBsYet(hrtb_: Tokens) {
             display("HRTBs unimplemented, can't lower {:?}", hrtb_)
         }
@@ -43,6 +36,9 @@ quick_error! {
         }
         MalformedType(type_: Tokens, meta: &'static str) {
             display("malformed type {:?}: {}", type_, meta)
+        }
+        MalformedPredicate(predicate: Tokens) {
+            display("malformed `where` predicate: {:?}", predicate)
         }
     }
 }

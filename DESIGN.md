@@ -766,3 +766,19 @@ https://github.com/rust-lang/cargo/blob/37cb9bbe2428e8d591d42673ef5562ca3ca92c55
 ### erlang
 
 https://github.com/rusterlium/rustler
+
+### Lifetimes
+https://doc.rust-lang.org/reference/trait-bounds.html#lifetime-bounds
+> Lifetime bounds can be applied to types or other lifetimes. The bound 'a: 'b is usually read as 'a outlives 'b.
+> 'a: 'b means that 'a lasts longer than 'b, so a reference &'a () is valid whenever &'b () is valid.
+> 
+> ```rust
+> fn f<'a, 'b>(x: &'a i32, mut y: &'b i32) where 'a: 'b {
+>     y = x;                      // &'a i32 is a subtype of &'b i32 because 'a: 'b
+>     let r: &'b &'a i32 = &&0;   // &'b &'a i32 is well formed because 'a: 'b
+> }
+> ```
+> 
+> T: 'a means that all lifetime parameters of T outlive 'a. For example if 'a is an unconstrained lifetime parameter
+> then i32: 'static and &'static str: 'a are satisfied but Vec<&'a ()>: 'static is not.
+

@@ -48,7 +48,7 @@ pub struct ConstParameter {
     /// The type of the parameter.
     pub type_: Type,
     /// The default value of the parameter, if present.
-    pub value: Option<ConstExpr>,
+    pub default: Option<ConstExpr>,
 }
 
 /// Bounds on a generic argument, trait object, `impl Trait`, or existential type.

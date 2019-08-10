@@ -51,6 +51,14 @@ impl fmt::Debug for Type {
         }
     }
 }
+impl From<Path> for Type {
+    fn from(p: Path) -> Type {
+        Type::Path(PathType {
+            params: Default::default(),
+            path: p.into(),
+        })
+    }
+}
 
 /// A path, possibly with generic arguments `Type<T1, T2, Assoc=T3>`
 #[derive(Clone, Serialize, Deserialize)]
@@ -58,9 +66,9 @@ pub struct PathType {
     /// The path to this type.
     pub path: Path,
     /// The applied generics.
-    pub generics: GenericParams,
+    pub params: GenericParams,
 }
-debug!(PathType, "{:?}{:?}", path, generics);
+debug!(PathType, "{:?}{:?}", path, params);
 
 /// An array, `[i32; n]`.
 #[derive(Clone, Serialize, Deserialize)]
@@ -215,7 +223,7 @@ pub struct Trait {
     /// The path to the trait.
     pub path: Path,
     /// The trait's generic arguments, if present.
-    pub generics: GenericParams,
+    pub params: GenericParams,
     /// If the trait is prefixed with `?`
     pub is_maybe: bool,
 }
@@ -224,7 +232,7 @@ impl fmt::Debug for Trait {
         if self.is_maybe {
             write!(f, "?")?;
         }
-        write!(f, "{:?}{:?}", self.path, self.generics)
+        write!(f, "{:?}{:?}", self.path, self.params)
     }
 }
 
@@ -321,7 +329,7 @@ mod tests {
             types: vec![
                 Type::Path(PathType {
                     path: Path::fake("test::Type"),
-                    generics: Default::default(),
+                    params: Default::default(),
                 }),
                 Type::Pointer(PointerType {
                     mut_: true,
@@ -345,7 +353,7 @@ mod tests {
                             lifetimes: vec![Lifetime(Ident::from("a")), Lifetime(Ident::from("b"))],
                             traits: vec![Trait {
                                 path: Path::fake("FakeTrait"),
-                                generics: Default::default(),
+                                params: Default::default(),
                                 is_maybe: true,
                             }],
                         },
@@ -355,7 +363,7 @@ mod tests {
                         self_: Box::new(Type::Never(NeverType)),
                         trait_: Trait {
                             path: Path::fake("FakeTrait"),
-                            generics: Default::default(),
+                            params: Default::default(),
                             is_maybe: false,
                         },
                     })],
@@ -365,14 +373,14 @@ mod tests {
                         traits: vec![Trait {
                             path: Path::fake("Bees"),
                             is_maybe: false,
-                            generics: GenericParams {
+                            params: GenericParams {
                                 lifetimes: vec![Lifetime(Ident::from("a"))],
                                 types: vec![],
                                 type_bindings: vec![(
                                     Ident::from("B"),
                                     Type::Path(PathType {
                                         path: Path::fake("Honey"),
-                                        generics: Default::default(),
+                                        params: Default::default(),
                                     }),
                                 )],
                                 consts: vec![ConstExpr(Tokens::from(27u8))],

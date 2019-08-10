@@ -26,6 +26,10 @@ impl Path {
             is_absolute: false,
         })
     }
+    /// Make a path to a generic.
+    pub fn generic(generic: Ident) -> Self {
+        Path::Generic(GenericPath { generic })
+    }
 }
 impl From<&syn::Path> for Path {
     fn from(p: &syn::Path) -> Self {
