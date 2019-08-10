@@ -76,7 +76,8 @@ mod tests {
     #[test]
     fn ident_serialize() {
         assert_eq!(
-            serde_json::from_str::<Ident>(&serde_json::to_string(&Ident::from("test")).unwrap()).unwrap(),
+            serde_json::from_str::<Ident>(&serde_json::to_string(&Ident::from("test")).unwrap())
+                .unwrap(),
             Ident::from("test")
         );
     }

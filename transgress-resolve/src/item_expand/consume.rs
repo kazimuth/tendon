@@ -392,7 +392,10 @@ mod tests {
     use super::*;
     use quote::quote;
 
-    fn consume(matcher: pm2::TokenStream, input: pm2::TokenStream) -> Result<HashMap<String, Binding>, syn::Error> {
+    fn consume(
+        matcher: pm2::TokenStream,
+        input: pm2::TokenStream,
+    ) -> Result<HashMap<String, Binding>, syn::Error> {
         let matchers = syn::parse2::<ast::MatcherSeq>(matcher)?;
         let mut stomach = Stomach::new();
         stomach.consume(&input, &matchers)?;
@@ -417,7 +420,7 @@ mod tests {
             quote! {
                 pub fn squared(x: f32) -> f32;
                 pub fn atan2(x: f32, y: f32) -> f32;
-            }
+            },
         )?;
 
         assert_binding!(bindings["name"][0][0] == "squared");
@@ -442,7 +445,10 @@ mod tests {
         // simple
         consume(quote! { $(bees)+ }, quote! { bees bees bees bees bees })?;
         // recursive
-        consume(quote! { $(($($name:ident)+))+ }, quote! { (jane ben harper) (xanadu xylophone)})?;
+        consume(
+            quote! { $(($($name:ident)+))+ },
+            quote! { (jane ben harper) (xanadu xylophone)},
+        )?;
         // weird sep (note: this is valid rust code!)
         consume(quote! { $(_)bees+ }, quote! { _ bees _ bees _ bees _ })?;
         // group sep (forbidden)
@@ -455,9 +461,9 @@ mod tests {
     fn mismatches() -> syn::Result<()> {
         spoor::init();
 
-        assert_match!(consume(quote!{ (bees) }, quote! { {bees} }), Err(..));
-        assert_match!(consume(quote!{ bees }, quote! { wasps }), Err(..));
-        assert_match!(consume(quote!{ ! }, quote! { ? }), Err(..));
+        assert_match!(consume(quote! { (bees) }, quote! { {bees} }), Err(..));
+        assert_match!(consume(quote! { bees }, quote! { wasps }), Err(..));
+        assert_match!(consume(quote! { ! }, quote! { ? }), Err(..));
 
         Ok(())
     }
@@ -466,9 +472,15 @@ mod tests {
     fn non_terminal_fragments() -> syn::Result<()> {
         spoor::init();
 
-        let bindings = consume(quote! { $x:expr }, quote! { 1 + 1 * (37 + _umlaut[&|| {}]) })?;
+        let bindings = consume(
+            quote! { $x:expr },
+            quote! { 1 + 1 * (37 + _umlaut[&|| {}]) },
+        )?;
 
-        assert_eq!(&format!("{:?}", bindings["x"]), "[`1 + 1 * ( 37 + _umlaut [ & | | { } ] )`]");
+        assert_eq!(
+            &format!("{:?}", bindings["x"]),
+            "[`1 + 1 * ( 37 + _umlaut [ & | | { } ] )`]"
+        );
 
         Ok(())
     }
@@ -487,11 +499,21 @@ mod tests {
     fn all_fragment_specifiers() -> syn::Result<()> {
         spoor::init();
 
-        consume(quote!($thing:block), quote!({return;}))?;
+        consume(
+            quote!($thing:block),
+            quote!({
+                return;
+            }),
+        )?;
 
-        consume(quote!($thing:expr), quote!({1 + "hello"}))?;
+        consume(quote!($thing:expr), quote!({ 1 + "hello" }))?;
         consume(quote!($thing:ident), quote!(zanzibar))?;
-        consume(quote!($thing:item), quote!(type X<T> = B;))?;
+        consume(
+            quote!($thing:item),
+            quote!(
+                type X<T> = B;
+            ),
+        )?;
         consume(quote!($thing:lifetime), quote!('short))?;
 
         consume(quote!($thing:literal), quote!(3.14159f64))?;
@@ -499,8 +521,11 @@ mod tests {
         consume(quote!($thing:pat), quote!(Banana(ocelot, ..)))?;
         consume(quote!($thing:path), quote!(::f::x<i32>::y<'a>))?;
         consume(quote!($thing:stmt), quote!(break;))?;
-        consume(quote!($thing:tt), quote!({banana}))?;
-        consume(quote!($thing:ty), quote!(&[impl Banana<'a, f32> + Copy + ?Sized]))?;
+        consume(quote!($thing:tt), quote!({ banana }))?;
+        consume(
+            quote!($thing:ty),
+            quote!(&[impl Banana<'a, f32> + Copy + ?Sized]),
+        )?;
         consume(quote!($thing:vis), quote!(pub(crate)))?;
 
         Ok(())

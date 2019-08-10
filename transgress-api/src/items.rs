@@ -1,6 +1,10 @@
-use crate::attributes::TypeMetadata;
 use crate::{
-    attributes::Metadata, expressions::ConstExpr, idents::Ident, paths::Path, types::Type,
+    attributes::{Metadata, TypeMetadata},
+    expressions::ConstExpr,
+    generics::Generics,
+    idents::Ident,
+    paths::{GenericPath, Path},
+    types::Type,
 };
 use serde::{Deserialize, Serialize};
 
@@ -31,7 +35,6 @@ pub enum SymbolItem {
 #[derive(Clone, Serialize, Deserialize)]
 pub enum TypeItem {
     Struct(StructItem),
-    TupleStruct(TupleStructItem),
     Enum(EnumItem),
     Trait(TraitItem),
 }
@@ -77,31 +80,25 @@ pub struct StructItem {
     pub inherent_impl: InherentImpl,
     /// The fields of this struct.
     pub fields: Vec<StructField>,
+    /// How this struct is defined.
+    pub kind: StructKind,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub enum StructKind {
+    Named,
+    Tuple,
+    Unit,
 }
 
 /// A field of a non-tuple struct.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct StructField {
     pub metadata: Metadata,
-    /// The name of this field.
+    /// The name of this field. May be a numeral.
     pub name: Ident,
     /// The type of this field.
     pub type_: Type,
-}
-
-/// A tuple struct, `struct Point(f32, f32);`
-#[derive(Clone, Serialize, Deserialize)]
-pub struct TupleStructItem {
-    pub metadata: Metadata,
-    pub inherent_impl: InherentImpl,
-}
-
-/// A unit struct, `struct Unit;`.
-/// Note: this does not include unit structs with braces, like `struct UnitBraces {}`; those are
-/// represented as fieldless StructItems.
-pub struct UnitStructItem {
-    pub metadata: Metadata,
-    pub inherent_impl: InherentImpl,
 }
 
 /// An enum, `enum Planet { Earth, Mars, Jupiter }`

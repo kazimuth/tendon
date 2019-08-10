@@ -13,6 +13,7 @@ use transgress_api::{
 };
 
 pub mod attributes;
+pub mod generics;
 pub mod struct_;
 pub mod types;
 

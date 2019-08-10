@@ -1,3 +1,5 @@
+//! [Helpers for interfacing with external tools during the binding process.](https://www.youtube.com/watch?v=TjOb5uMJbIM)
+
 use std::io;
 use std::path::Path;
 use std::process::Command;

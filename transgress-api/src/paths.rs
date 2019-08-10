@@ -142,7 +142,7 @@ impl fmt::Debug for AbsolutePath {
 
 impl fmt::Debug for UnresolvedPath {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("?")?;
+        f.write_str("~")?;
         for (i, seg) in self.path.iter().enumerate() {
             if i > 0 || self.is_absolute {
                 f.write_str("::")?;
@@ -155,9 +155,8 @@ impl fmt::Debug for UnresolvedPath {
 
 impl fmt::Debug for GenericPath {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("<")?;
+        f.write_str("@")?;
         self.generic.fmt(f)?;
-        f.write_str(">")?;
         Ok(())
     }
 }
@@ -220,7 +219,7 @@ mod tests {
                     is_absolute: true
                 })
             ),
-            "?::test::Thing"
+            "~::test::Thing"
         );
         assert_eq!(
             format!(
@@ -229,7 +228,7 @@ mod tests {
                     generic: "T".into()
                 })
             ),
-            "<T>"
+            "@T"
         );
     }
 }

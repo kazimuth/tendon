@@ -21,11 +21,21 @@
 //       can do custom handling for e.g. IntoIterator for now
 // TODO: constexprs grumble grumble
 
+macro_rules! debug {
+    ($name:ty, $fmt:literal $(, $arg:ident)*) => (
+        impl std::fmt::Debug for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, $fmt $(, self.$arg)*)
+            }
+        }
+    )
+}
+
 pub mod attributes;
 pub mod expressions;
+pub mod generics;
 pub mod idents;
 pub mod items;
 pub mod paths;
 pub mod tokens;
-pub mod traits;
 pub mod types;

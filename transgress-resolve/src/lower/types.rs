@@ -2,13 +2,13 @@
 use super::LowerError;
 use transgress_api::{
     expressions::ConstExpr,
+    generics::{Lifetime, TypeBounds},
     idents::Ident,
     paths::Path,
     tokens::Tokens,
-    traits::Trait,
     types::{
-        ArrayType, BareFnType, ImplTraitType, Lifetime, NeverType, PathType, PointerType,
-        QSelfType, ReferenceType, SliceType, TraitObjectType, TupleType, Type, GenericArgs
+        ArrayType, BareFnType, GenericParams, ImplTraitType, NeverType, PathType, PointerType,
+        QSelfType, ReferenceType, SliceType, Trait, TraitObjectType, TupleType, Type,
     },
 };
 
@@ -44,17 +44,13 @@ pub fn lower_type(type_: &syn::Type) -> Result<Type, LowerError> {
                 .collect::<Result<Vec<Type>, LowerError>>()?,
         })),
         syn::Type::TraitObject(trait_object) => {
-            let (traits, lifetimes) = extract_bounds(&trait_object.bounds)?;
-            Ok(Type::TraitObject(TraitObjectType {
-                traits, lifetimes
-            }))
-        },
+            let bounds = lower_type_bounds(&trait_object.bounds)?;
+            Ok(Type::TraitObject(TraitObjectType { bounds }))
+        }
         syn::Type::ImplTrait(impl_trait) => {
-            let (traits, lifetimes) = extract_bounds(&impl_trait.bounds)?;
-            Ok(Type::ImplTrait(ImplTraitType {
-                traits, lifetimes
-            }))
-        },
+            let bounds = lower_type_bounds(&impl_trait.bounds)?;
+            Ok(Type::ImplTrait(ImplTraitType { bounds }))
+        }
         syn::Type::BareFn(bare_fn) => {
             if bare_fn.lifetimes.is_none() {
                 Ok(Type::BareFn(BareFnType {
@@ -106,19 +102,59 @@ fn lower_type_path(path: &syn::TypePath) -> Result<Type, LowerError> {
         Ok(Type::QSelf(QSelfType {
             self_,
             output_,
-            trait_: Trait {path, generics, is_maybe: false}
+            trait_: Trait {
+                path,
+                generics,
+                is_maybe: false,
+            },
         }))
     } else {
         let (path, generics) = path_to_parts(&path.path)?;
-        Ok(Type::Path(PathType {
-            path,
-            generics
-        }))
+        Ok(Type::Path(PathType { path, generics }))
     }
 }
 
+/// Lower a return type.
+pub fn lower_return_type(ret: &syn::ReturnType) -> Result<Type, LowerError> {
+    match ret {
+        syn::ReturnType::Type(_, ret) => Ok(lower_type(&ret)?),
+        syn::ReturnType::Default => Ok(Type::Tuple(TupleType { types: vec![] })),
+    }
+}
+
+/// Convert a set of type bounds to a list of trait bounds + a list of lifetime bounds
+pub fn lower_type_bounds(
+    bounds: &syn::punctuated::Punctuated<syn::TypeParamBound, syn::token::Add>,
+) -> Result<TypeBounds, LowerError> {
+    let mut traits = Vec::new();
+    let mut lifetimes = Vec::new();
+    for bound in bounds.iter() {
+        match bound {
+            syn::TypeParamBound::Trait(trait_bound) => {
+                if trait_bound.lifetimes.is_some() {
+                    return Err(LowerError::NoHRTBsYet(Tokens::from(bound)));
+                }
+                let (path, generics) = path_to_parts(&trait_bound.path)?;
+                let is_maybe = if let syn::TraitBoundModifier::Maybe(_) = trait_bound.modifier {
+                    true
+                } else {
+                    false
+                };
+                traits.push(Trait {
+                    path,
+                    generics,
+                    is_maybe,
+                })
+            }
+            syn::TypeParamBound::Lifetime(lt) => lifetimes.push(Lifetime(Ident::from(&lt.ident))),
+        }
+    }
+
+    Ok(TypeBounds { traits, lifetimes })
+}
+
 /// Split a syn::Path to its constituent actual path and generic arguments.
-fn path_to_parts(path: &syn::Path) -> Result<(Path, GenericArgs), LowerError> {
+pub fn path_to_parts(path: &syn::Path) -> Result<(Path, GenericParams), LowerError> {
     // No QSelf
     // check for generics
     let mut syn_args = None;
@@ -133,10 +169,10 @@ fn path_to_parts(path: &syn::Path) -> Result<(Path, GenericArgs), LowerError> {
         }
     }
 
-    let mut args = GenericArgs {
+    let mut args = GenericParams {
         lifetimes: vec![],
         types: vec![],
-        bindings: vec![],
+        type_bindings: vec![],
         consts: vec![],
     };
 
@@ -147,13 +183,10 @@ fn path_to_parts(path: &syn::Path) -> Result<(Path, GenericArgs), LowerError> {
                     syn::GenericArgument::Lifetime(lt) => {
                         args.lifetimes.push(Lifetime(Ident::from(&lt.ident)))
                     }
-                    syn::GenericArgument::Type(ty) => {
-                        args.types.push(lower_type(ty)?)
-                    }
-                    syn::GenericArgument::Binding(binding) => args.bindings.push((
-                        Ident::from(&binding.ident),
-                        lower_type(&binding.ty)?,
-                    )),
+                    syn::GenericArgument::Type(ty) => args.types.push(lower_type(ty)?),
+                    syn::GenericArgument::Binding(binding) => args
+                        .type_bindings
+                        .push((Ident::from(&binding.ident), lower_type(&binding.ty)?)),
                     syn::GenericArgument::Const(expr) => {
                         args.consts.push(ConstExpr(Tokens::from(&expr)))
                     }
@@ -178,54 +211,13 @@ fn path_to_parts(path: &syn::Path) -> Result<(Path, GenericArgs), LowerError> {
                     .collect::<Result<Vec<Type>, LowerError>>()?,
             }));
             // TODO is it always `Output`?
-            args.bindings.push((Ident::from("Output"), lower_return_type(&parened.output)?));
+            args.type_bindings
+                .push((Ident::from("Output"), lower_return_type(&parened.output)?));
         }
         _ => (),
     }
 
     Ok((Path::from(path), args))
-}
-
-/// Lower a return type.
-fn lower_return_type(ret: &syn::ReturnType) -> Result<Type, LowerError> {
-    match ret {
-        syn::ReturnType::Type(_, ret) => Ok(lower_type(&ret)?),
-        syn::ReturnType::Default => {
-            Ok(Type::Tuple(TupleType { types: vec![] }))
-        }
-    }
-}
-
-/// Convert a set of type bounds to a list of trait bounds + a list of lifetime bounds
-fn extract_bounds(bounds: &syn::punctuated::Punctuated<syn::TypeParamBound, syn::token::Add>) -> Result<(Vec<Trait>, Vec<Lifetime>), LowerError> {
-    let mut traits = Vec::new();
-    let mut lifetimes = Vec::new();
-    for bound in bounds.iter() {
-        match bound {
-            syn::TypeParamBound::Trait(trait_bound) => {
-                if trait_bound.lifetimes.is_some() {
-                    return Err(LowerError::NoHRTBsYet(Tokens::from(bound)));
-                }
-                let (path, generics) = path_to_parts(&trait_bound.path)?;
-                let is_maybe = if let syn::TraitBoundModifier::Maybe(_) = trait_bound.modifier {
-                    true
-                } else {
-                    false
-                };
-                traits.push(Trait {
-                    path,
-                    generics,
-                    is_maybe
-                })
-            }
-            syn::TypeParamBound::Lifetime(lt) => {
-                lifetimes.push(Lifetime(Ident::from(&lt.ident)))
-            }
-        }
-
-    }
-
-    Ok((traits, lifetimes))
 }
 
 #[cfg(test)]
@@ -251,7 +243,7 @@ mod tests {
     #[test]
     fn impl_dyn_trait() {
         spoor::init();
-        assert_match!(lower("dyn Banana<'a, X> + Copy + ?Sized + 'b"), Ok(Type::TraitObject(TraitObjectType { traits, lifetimes })) => {
+        assert_match!(lower("dyn Banana<'a, X> + Copy + ?Sized + 'b"), Ok(Type::TraitObject(TraitObjectType { bounds: TypeBounds { lifetimes, traits } })) => {
             assert_eq!(traits.len(), 3);
             assert_eq!(lifetimes.len(), 1);
             assert_eq!(traits[0].path, Path::fake("Banana"));;
@@ -264,7 +256,7 @@ mod tests {
             assert_eq!(traits[2].is_maybe, true);
             assert_eq!(lifetimes[0].0, Ident::from("b"));
         });
-        assert_match!(lower("impl Banana<'a, X> + Copy + ?Sized + 'b"), Ok(Type::ImplTrait(ImplTraitType { traits, lifetimes })) => {
+        assert_match!(lower("impl Banana<'a, X> + Copy + ?Sized + 'b"), Ok(Type::ImplTrait(ImplTraitType { bounds: TypeBounds { lifetimes, traits }})) => {
             assert_eq!(traits.len(), 3);
             assert_eq!(lifetimes.len(), 1);
             assert_eq!(traits[0].path, Path::fake("Banana"));;
@@ -292,13 +284,19 @@ mod tests {
         })) => {
             assert_match!(**self_, Type::Path(PathType { path, generics }) => {
                 assert_eq!(path, &Path::fake("P"));
-                assert_eq!(generics.bindings[0].0, Ident::from("F"));
-                assert_match!(generics.bindings[0].1, Type::Tuple(TupleType { types }) => {
+                assert_eq!(generics.type_bindings[0].0, Ident::from("F"));
+                assert_match!(generics.type_bindings[0].1, Type::Tuple(TupleType { types }) => {
                     assert_match!(types[0], Type::Path(PathType { path, .. }) => {
                         assert_eq!(path, &Path::fake("::M"));
                     });
                 });
             });
+            assert_match!(trait_, Trait { path, generics, is_maybe } => {
+                assert_eq!(path, &Path::fake("F"));
+                assert_eq!(is_maybe, &false);
+                assert_eq!(generics.lifetimes[0].0, Ident::from("a"));
+            });
+            assert_eq!(output_, &Ident::from("W"));
         });
     }
 
@@ -311,7 +309,7 @@ mod tests {
             assert_eq!(generics.lifetimes.len(), 2);
             assert_eq!(generics.types.len(), 2);
 
-            assert_eq!(generics.bindings.len(), 1);
+            assert_eq!(generics.type_bindings.len(), 1);
             assert_eq!(generics.consts.len(), 1);
             assert_eq!(generics.lifetimes[0].0, Ident::from("a"));
             assert_eq!(generics.lifetimes[1].0, Ident::from("b"));
@@ -321,8 +319,8 @@ mod tests {
             assert_match!(generics.types[1], Type::Path(PathType { path, .. }) => {
                 assert_eq!(path, &Path::fake("B"));
             });
-            assert_eq!(generics.bindings[0].0, Ident::from("C"));
-            assert_match!(generics.bindings[0].1, Type::Path(PathType { path, .. }) => {
+            assert_eq!(generics.type_bindings[0].0, Ident::from("C"));
+            assert_match!(generics.type_bindings[0].1, Type::Path(PathType { path, .. }) => {
                 assert_eq!(path, &Path::fake("D"));
             });
             assert_eq!(generics.consts[0].0, Tokens::new("1").unwrap());
@@ -333,7 +331,10 @@ mod tests {
     #[test]
     fn malformed_path() {
         spoor::init();
-        assert_match!(path_to_parts(&parse_quote!(::bees<A, B>::dog<A, B>)), Err(LowerError::UnexpectedGenericInPath(..)));
+        assert_match!(
+            path_to_parts(&parse_quote!(::bees<A, B>::dog<A, B>)),
+            Err(LowerError::UnexpectedGenericInPath(..))
+        );
     }
 
     #[test]
@@ -345,6 +346,8 @@ mod tests {
         assert_match!(lower("&'a mut i32"), Ok(Type::Reference(..)));
         assert_match!(lower("fn(i32) -> i32"), Ok(Type::BareFn(..)));
         assert_match!(lower("Fn(i32) -> i32"), Ok(Type::Path(..)));
+
+        // TODO: handle macros in type position
         assert_match!(lower("Macro![Thing]"), Err(..));
     }
 }

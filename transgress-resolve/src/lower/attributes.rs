@@ -237,7 +237,7 @@ mod tests {
                 parse_quote!(#[docs(bees = "superior")]),
                 parse_quote!(#[must_use(dogs = "incredible")]),
                 parse_quote!(#[deprecated = "nope"]),
-                parse_quote!(#[deprecated(flim_flam = "funsy parlor")])
+                parse_quote!(#[deprecated(flim_flam = "funsy parlor")]),
             ],
             quote!(_).span(),
         );
