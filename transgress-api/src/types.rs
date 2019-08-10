@@ -199,7 +199,7 @@ pub struct ImplTraitType {
     /// Bounds on this type.
     pub bounds: TypeBounds,
 }
-debug!(ImplTraitType, "impl {:?}", bounds);
+debug!(ImplTraitType, "(impl {:?})", bounds);
 
 /// `dyn Trait`
 #[derive(Clone, Serialize, Deserialize)]
@@ -207,7 +207,7 @@ pub struct TraitObjectType {
     /// Bounds on this type.
     pub bounds: TypeBounds,
 }
-debug!(TraitObjectType, "dyn {:?}", bounds);
+debug!(TraitObjectType, "(dyn {:?})", bounds);
 
 /// A reference to a trait (not a declaration).
 #[derive(Clone, Serialize, Deserialize)]
@@ -375,7 +375,7 @@ mod tests {
                                         generics: Default::default(),
                                     }),
                                 )],
-                                consts: vec![ConstExpr(Tokens::from(27))],
+                                consts: vec![ConstExpr(Tokens::from(27u8))],
                             },
                         }],
                         lifetimes: vec![],
@@ -385,6 +385,6 @@ mod tests {
         });
         println!("{:?}", type_);
         assert_eq!(&format!("{:?}", type_),
-                   "(~test::Type, *mut [!; 5i32], &'a [!], unsafe fn(<! as ~FakeTrait>::Wow, ...) -> dyn 'a + 'b + ?~FakeTrait, impl ~Bees<'a, B=~Honey; 27i32>)");
+                   "(~test::Type, *mut [!; 5i32], &'a [!], unsafe fn(<! as ~FakeTrait>::Wow, ...) -> (dyn 'a + 'b + ?~FakeTrait), (impl ~Bees<'a, B=~Honey; 27u8>))");
     }
 }
