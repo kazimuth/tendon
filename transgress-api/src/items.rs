@@ -79,6 +79,8 @@ pub struct StructItem {
     pub type_metadata: TypeMetadata,
     pub inherent_impl: InherentImpl,
     pub generics: Generics,
+    /// The name of the enum.
+    pub name: Ident,
     /// The fields of this struct.
     pub fields: Vec<StructField>,
     /// How this struct is defined.
@@ -106,7 +108,21 @@ pub struct StructField {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct EnumItem {
     pub metadata: Metadata,
+    pub type_metadata: TypeMetadata,
     pub inherent_impl: InherentImpl,
+    pub generics: Generics,
+    /// The name of the enum.
+    pub name: Ident,
+    /// The variants of this enum.
+    pub variants: Vec<EnumVariant>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct EnumVariant {
+    pub metadata: Metadata,
+    pub kind: StructKind,
+    pub fields: Vec<StructField>,
+    pub name: Ident,
 }
 
 /// A union, `union Planet { Earth, Mars, Jupiter }`

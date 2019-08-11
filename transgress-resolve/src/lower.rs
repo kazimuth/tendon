@@ -11,7 +11,7 @@ use transgress_api::tokens::Tokens;
 
 pub mod attributes;
 pub mod generics;
-pub mod struct_;
+pub mod items;
 pub mod types;
 
 /// Context for lowering items in an individual module.

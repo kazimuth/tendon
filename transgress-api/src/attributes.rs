@@ -93,7 +93,7 @@ impl Attribute {
         }
     }
     /// Get the assigned string, if this is an Assign with a string literal.
-    pub fn get_assigned_str(&self) -> Option<String> {
+    pub fn get_assigned_string(&self) -> Option<String> {
         if let Attribute::Meta(Meta::Assign { literal, .. }) = self {
             if let Ok(lit_str) = literal.parse::<syn::LitStr>() {
                 return Some(lit_str.value());

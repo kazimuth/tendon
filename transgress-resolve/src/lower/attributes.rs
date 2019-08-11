@@ -184,13 +184,13 @@ pub fn extract_symbol_metadata(metadata: &mut Metadata) -> Result<SymbolMetadata
             no_mangle = true;
             return false;
         } else if attribute.path() == &*EXPORT_NAME {
-            if let Some(name) = attribute.get_assigned_str() {
+            if let Some(name) = attribute.get_assigned_string() {
                 export_name = Some(name);
                 return false;
             }
             warn!("malformed #[export_name] attribute: {:?}", attribute);
         } else if attribute.path() == &*LINK_SECTION {
-            if let Some(section) = attribute.get_assigned_str() {
+            if let Some(section) = attribute.get_assigned_string() {
                 link_section = Some(section);
                 return false;
             }
