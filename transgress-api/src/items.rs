@@ -3,7 +3,7 @@ use crate::{
     expressions::ConstExpr,
     generics::Generics,
     idents::Ident,
-    paths::{GenericPath, Path},
+    paths::Path,
     types::Type,
 };
 use serde::{Deserialize, Serialize};
@@ -73,18 +73,19 @@ pub struct Module {
 }
 
 /// A non-tuple struct, `struct Point { x: f32, y: f32 }`
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StructItem {
     pub metadata: Metadata,
     pub type_metadata: TypeMetadata,
     pub inherent_impl: InherentImpl,
+    pub generics: Generics,
     /// The fields of this struct.
     pub fields: Vec<StructField>,
     /// How this struct is defined.
     pub kind: StructKind,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum StructKind {
     Named,
     Tuple,
@@ -92,7 +93,7 @@ pub enum StructKind {
 }
 
 /// A field of a non-tuple struct.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StructField {
     pub metadata: Metadata,
     /// The name of this field. May be a numeral.
@@ -147,5 +148,5 @@ pub struct DeriveMacroItem {
 
 /// The inherent implementation of a type: all methods implemented directly on that type.
 /// TODO: how to handle references &ct?
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InherentImpl {}

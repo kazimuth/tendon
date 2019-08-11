@@ -253,6 +253,14 @@ pub struct GenericParams {
     /// in the pipeline.
     pub consts: Vec<ConstExpr>,
 }
+impl GenericParams {
+    pub fn is_empty(&self) -> bool {
+        self.lifetimes.is_empty()
+            && self.types.is_empty()
+            && self.type_bindings.is_empty()
+            && self.consts.is_empty()
+    }
+}
 impl fmt::Debug for GenericParams {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         if self.lifetimes.len() == 0

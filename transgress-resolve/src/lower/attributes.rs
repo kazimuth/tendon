@@ -1,13 +1,18 @@
 //! Attribute lowering.
 
-use super::ModuleCtx;
+use super::{LowerError, ModuleCtx};
 use lazy_static::lazy_static;
 use syn;
 use tracing::warn;
+use transgress_api::types::Trait;
 use transgress_api::{
-    attributes::{Attribute, Deprecation, Meta, MetaInner, Metadata, Span, Visibility},
+    attributes::{
+        Attribute, Deprecation, Meta, MetaInner, Metadata, Span, SymbolMetadata, TypeMetadata,
+        Visibility,
+    },
     paths::Path,
     tokens::Tokens,
+    types::GenericParams,
 };
 
 lazy_static! {
@@ -17,6 +22,10 @@ lazy_static! {
     static ref DEPRECATED: Path = Path::fake("deprecated");
     static ref SINCE: Path = Path::fake("since");
     static ref NOTE: Path = Path::fake("note");
+    static ref DERIVE: Path = Path::fake("derive");
+    static ref NO_MANGLE: Path = Path::fake("no_mangle");
+    static ref EXPORT_NAME: Path = Path::fake("export_name");
+    static ref LINK_SECTION: Path = Path::fake("link_section");
 }
 
 /// Lower a bunch of syn data structures to the generic `ItemMetadata`.
@@ -28,7 +37,6 @@ pub fn lower_metadata(
 ) -> Metadata {
     let visibility = match visibility {
         syn::Visibility::Public(_) => Visibility::Pub,
-        syn::Visibility::Inherited => module.visibility,
         _ => Visibility::NonPub,
     };
     let mut docs = None;
@@ -141,6 +149,62 @@ fn extract_string(lit: &Tokens) -> String {
     }
 }
 
+/// Given a metadata, strip all the `extra_attributes` that go into a TypeMetadata.
+pub fn extract_type_metadata(metadata: &mut Metadata) -> Result<TypeMetadata, LowerError> {
+    let mut derives = vec![];
+    metadata.extra_attributes.retain(|attribute| {
+        if let Attribute::Meta(Meta::Call { path, args }) = attribute {
+            if path == &*DERIVE {
+                for arg in args {
+                    if let MetaInner::Meta(Meta::Path(path)) = arg {
+                        derives.push(Trait {
+                            path: path.clone(),
+                            params: GenericParams::default(),
+                            is_maybe: false,
+                        })
+                    } else {
+                        warn!("malformed #[derive] arg: {:?}", attribute)
+                    }
+                }
+                return false; // remove this element
+            }
+        }
+        true
+    });
+    Ok(TypeMetadata { derives })
+}
+
+/// Given a metadata, strip all the `extra_attributes` that go into a TypeMetadata.
+pub fn extract_symbol_metadata(metadata: &mut Metadata) -> Result<SymbolMetadata, LowerError> {
+    let mut no_mangle = false;
+    let mut export_name = None;
+    let mut link_section = None;
+    metadata.extra_attributes.retain(|attribute| {
+        if attribute.path() == &*NO_MANGLE {
+            no_mangle = true;
+            return false;
+        } else if attribute.path() == &*EXPORT_NAME {
+            if let Some(name) = attribute.get_assigned_str() {
+                export_name = Some(name);
+                return false;
+            }
+            warn!("malformed #[export_name] attribute: {:?}", attribute);
+        } else if attribute.path() == &*LINK_SECTION {
+            if let Some(section) = attribute.get_assigned_str() {
+                link_section = Some(section);
+                return false;
+            }
+            warn!("malformed #[link_section] attribute: {:?}", attribute);
+        }
+        true
+    });
+    Ok(SymbolMetadata {
+        no_mangle,
+        export_name,
+        link_section,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -154,7 +218,6 @@ mod tests {
         let all = lower_metadata(
             &ModuleCtx {
                 source_file: PathBuf::from("fake_file.rs"),
-                visibility: Visibility::Pub,
             },
             &parse_quote!(pub),
             &[
@@ -204,33 +267,10 @@ mod tests {
             });
         });
 
-        let inherits_public = lower_metadata(
-            &ModuleCtx {
-                source_file: PathBuf::from("fake_file.rs"),
-                visibility: Visibility::Pub,
-            },
-            &parse_quote!(),
-            &[],
-            quote!(_).span(),
-        );
-        assert_eq!(inherits_public.visibility, Visibility::Pub);
-
-        let inherits_private = lower_metadata(
-            &ModuleCtx {
-                source_file: PathBuf::from("fake_file.rs"),
-                visibility: Visibility::NonPub,
-            },
-            &parse_quote!(),
-            &[],
-            quote!(_).span(),
-        );
-        assert_eq!(inherits_private.visibility, Visibility::NonPub);
-
         // shouldn't panic
         let funky = lower_metadata(
             &ModuleCtx {
                 source_file: PathBuf::from("fake_file.rs"),
-                visibility: Visibility::NonPub,
             },
             &parse_quote!(pub(crate)),
             &[

@@ -30,6 +30,16 @@ pub struct Generics {
     /// Bounds on lifetime parameters.
     pub lifetime_bounds: Vec<(Lifetime, LifetimeBounds)>,
 }
+impl Generics {
+    /// Whether there are any generics present.
+    pub fn is_empty(&self) -> bool {
+        self.type_params.is_empty()
+            && self.lifetime_params.is_empty()
+            && self.const_params.is_empty()
+            && self.type_bounds.is_empty()
+            && self.lifetime_bounds.is_empty()
+    }
+}
 
 /// A generic type parameter (at a declaration).
 #[derive(Clone, Debug, Serialize, Deserialize)]

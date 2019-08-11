@@ -7,7 +7,7 @@
 //  rules reference: https://rust-lang.github.io/rustc-guide/traits/lowering-rules.html
 
 use std::path::PathBuf;
-use transgress_api::{attributes::Visibility, tokens::Tokens};
+use transgress_api::tokens::Tokens;
 
 pub mod attributes;
 pub mod generics;
@@ -18,8 +18,6 @@ pub mod types;
 pub struct ModuleCtx {
     /// The location of this module's containing file in the filesystem.
     source_file: PathBuf,
-    /// The visibility of this module.
-    visibility: Visibility,
 }
 
 quick_error! {

@@ -2,6 +2,7 @@
 
 use crate::paths::Path;
 use crate::tokens::Tokens;
+use crate::types::Trait;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::PathBuf;
@@ -73,7 +74,7 @@ impl fmt::Display for Span {
 ///
 /// Note that most built-in attributes are already handled for you; this is for the ones
 /// Transgress doesn't know about.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum Attribute {
     /// An attribute in the format of the
     /// [`meta` fragment specifier](https://doc.rust-lang.org/reference/attributes.html#meta-item-attribute-syntax).
@@ -81,7 +82,6 @@ pub enum Attribute {
     /// An attribute not in the `meta` format.
     Other { path: Path, input: Tokens },
 }
-
 impl Attribute {
     /// Get the root path of this attribute, whatever its form.
     pub fn path(&self) -> &Path {
@@ -92,13 +92,28 @@ impl Attribute {
             Attribute::Other { path, .. } => path,
         }
     }
+    /// Get the assigned string, if this is an Assign with a string literal.
+    pub fn get_assigned_str(&self) -> Option<String> {
+        if let Attribute::Meta(Meta::Assign { literal, .. }) = self {
+            if let Ok(lit_str) = literal.parse::<syn::LitStr>() {
+                return Some(lit_str.value());
+            }
+        }
+        None
+    }
 }
-
-// TODO switch literals to pm2 shim?
+impl fmt::Debug for Attribute {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        match self {
+            Attribute::Meta(meta) => write!(f, "#[{:?}]", meta),
+            Attribute::Other { path, input } => write!(f, "#[{:?} {:?}]", path, input),
+        }
+    }
+}
 
 /// The syntax used by most, but not all, attributes, and the
 /// [`meta` fragment specifier](https://doc.rust-lang.org/reference/attributes.html#meta-item-attribute-syntax).
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum Meta {
     /// A path attribute, e.g. #[thing]
     Path(Path),
@@ -108,11 +123,41 @@ pub enum Meta {
     /// An call attribute, e.g. #[thing(thinga, "bees", thingb = 3, thing4(2))]
     Call { path: Path, args: Vec<MetaInner> },
 }
+impl fmt::Debug for Meta {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        match self {
+            Meta::Path(path) => write!(f, "{:?}", path),
+            Meta::Assign { path, literal } => write!(f, "{:?} = {:?}", path, literal),
+            Meta::Call { path, args } => {
+                write!(f, "{:?}(", path)?;
+                let mut first = true;
+                for arg in args {
+                    if first {
+                        first = false;
+                    } else {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{:?}", arg)?;
+                }
+                write!(f, ")")
+            }
+        }
+    }
+}
+
 /// An argument in a meta list.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum MetaInner {
     Meta(Meta),
     Literal(Tokens),
+}
+impl fmt::Debug for MetaInner {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        match self {
+            MetaInner::Meta(meta) => write!(f, "{:?}", meta),
+            MetaInner::Literal(tokens) => write!(f, "{:?}", tokens),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -137,7 +182,7 @@ pub struct SymbolMetadata {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TypeMetadata {
     /// All #[derives] present on this type.
-    pub derives: Vec<Path>,
+    pub derives: Vec<Trait>,
 }
 
 /// Deprecation metadata.
@@ -203,6 +248,7 @@ pub enum Int {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use quote::quote;
 
     #[test]
     fn debug_span() {
@@ -214,5 +260,29 @@ mod tests {
             end_column: 3,
         };
         assert_eq!(&format!("{}", span), "fake_file.rs[0:1-2:3]")
+    }
+
+    #[test]
+    fn debug_attr() {
+        let attr = Attribute::Meta(Meta::Call {
+            path: Path::fake("test"),
+            args: vec![
+                MetaInner::Meta(Meta::Path(Path::fake("arg1"))),
+                MetaInner::Meta(Meta::Assign {
+                    path: Path::fake("arg2"),
+                    literal: Tokens::from("thing"),
+                }),
+                MetaInner::Literal(Tokens::from(3)),
+            ],
+        });
+        assert_eq!(
+            &format!("{:?}", attr),
+            "#[~test(~arg1, ~arg2 = \"thing\", 3i32)]"
+        );
+        let attr = Attribute::Other {
+            path: Path::fake("test2"),
+            input: Tokens::from(quote!(= i am a test)),
+        };
+        assert_eq!(&format!("{:?}", attr), "#[~test2 = i am a test]");
     }
 }

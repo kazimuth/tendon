@@ -26,6 +26,11 @@ impl Tokens {
         syn::parse_str::<proc_macro2::TokenStream>(&self.0)
             .expect("invariant violated: Tokens can only contain valid rust tokens")
     }
+
+    /// Parse as something.
+    pub fn parse<P: syn::parse::Parse>(&self) -> Result<P, syn::Error> {
+        syn::parse_str(&self.0)
+    }
 }
 impl fmt::Debug for Tokens {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
