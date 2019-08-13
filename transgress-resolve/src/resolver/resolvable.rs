@@ -219,7 +219,6 @@ mod tests {
         assert!(paths.contains(&Path::fake("Z")));
         assert!(paths.contains(&Path::fake("Trait")));
 
-
         let function_ = syn::parse_quote! {
             fn f<T: Copy, Z: Trait>(self, t: T, v: i32, m: Z) {}
         };

@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::fmt::{Display, Write};
 use syn::{self, ext::IdentExt, parse::ParseStream};
 
-use crate::item_expand::ast;
+use crate::expand::ast;
 
 /// A fragment binding.
 ///

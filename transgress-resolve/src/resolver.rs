@@ -1,3 +1,6 @@
+
+pub mod resolvable;
+
 /*
 use crate::{Error, Result};
 use cargo_metadata::{CargoOpt, Metadata, Node, Package, PackageId};
