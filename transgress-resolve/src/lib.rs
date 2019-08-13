@@ -43,6 +43,7 @@ pub mod item_expand;
 pub mod lower;
 pub mod resolver;
 pub mod tools;
+pub mod resolvable;
 
 /// Fast maps.
 pub type Map<K, V> = hashbrown::HashMap<K, V, fxhash::FxBuildHasher>;

@@ -5,7 +5,7 @@
 use super::{LowerError, ModuleCtx};
 use lazy_static::lazy_static;
 use syn;
-use tracing::warn;
+use tracing::{warn, trace};
 use transgress_api::attributes::Repr;
 use transgress_api::types::Trait;
 use transgress_api::{
@@ -68,7 +68,7 @@ pub fn lower_metadata(
                 if let Attribute::Meta(Meta::Assign { literal, .. }) = attr {
                     extract_string(&literal)
                 } else {
-                    warn!("malformed attribute");
+                    warn!("malformed must_use attribute");
                     "".into()
                 },
             );
@@ -167,6 +167,7 @@ pub fn extract_type_metadata(metadata: &mut Metadata) -> Result<TypeMetadata, Lo
             if path == &*DERIVE {
                 for arg in args {
                     if let MetaInner::Meta(Meta::Path(path)) = arg {
+                        trace!("derive({:?})", path);
                         derives.push(Trait {
                             path: path.clone(),
                             params: GenericParams::default(),

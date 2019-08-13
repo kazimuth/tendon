@@ -17,7 +17,7 @@ pub mod types;
 /// Context for lowering items in an individual module.
 pub struct ModuleCtx {
     /// The location of this module's containing file in the filesystem.
-    source_file: PathBuf,
+    pub source_file: PathBuf,
 }
 
 quick_error! {
