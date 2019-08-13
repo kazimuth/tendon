@@ -410,6 +410,6 @@ mod tests {
         });
         println!("{:?}", type_);
         assert_eq!(&format!("{:?}", type_),
-                   "(~test::Type, *mut [!; 5i32], &'a [!], unsafe fn(<! as ~FakeTrait>::Wow, ...) -> (dyn 'a + 'b + ?~FakeTrait), (impl ~Bees<'a, B=~Honey; 27u8>))");
+                   "(test::Type, *mut [!; 5i32], &'a [!], unsafe fn(<! as FakeTrait>::Wow, ...) -> (dyn 'a + 'b + ?FakeTrait), (impl Bees<'a, B=Honey; 27u8>))");
     }
 }

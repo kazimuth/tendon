@@ -8,6 +8,7 @@
 
 use std::path::PathBuf;
 use transgress_api::tokens::Tokens;
+use std::fmt;
 
 pub mod attributes;
 pub mod generics;
@@ -21,7 +22,6 @@ pub struct ModuleCtx {
 }
 
 quick_error! {
-    #[derive(Debug)]
     pub enum LowerError {
         NoHRTBsYet(hrtb_: Tokens) {
             display("HRTBs unimplemented, can't lower {:?}", hrtb_)
@@ -41,5 +41,11 @@ quick_error! {
         MalformedFunctionArg(arg: Tokens) {
             display("malformed function argument: {:?}", arg)
         }
+    }
+}
+
+impl fmt::Debug for LowerError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(self, f)
     }
 }

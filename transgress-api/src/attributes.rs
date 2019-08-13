@@ -254,12 +254,12 @@ mod tests {
         });
         assert_eq!(
             &format!("{:?}", attr),
-            "#[~test(~arg1, ~arg2 = \"thing\", 3i32)]"
+            "#[test(arg1, arg2 = \"thing\", 3i32)]"
         );
         let attr = Attribute::Other {
             path: Path::fake("test2"),
             input: Tokens::from(quote!(= i am a test)),
         };
-        assert_eq!(&format!("{:?}", attr), "#[~test2 = i am a test]");
+        assert_eq!(&format!("{:?}", attr), "#[test2 = i am a test]");
     }
 }
