@@ -1,9 +1,12 @@
 //! Attribute lowering.
 
+// TODO: tie warnings to source locations.
+
 use super::{LowerError, ModuleCtx};
 use lazy_static::lazy_static;
 use syn;
 use tracing::warn;
+use transgress_api::attributes::Repr;
 use transgress_api::types::Trait;
 use transgress_api::{
     attributes::{
@@ -26,6 +29,11 @@ lazy_static! {
     static ref NO_MANGLE: Path = Path::fake("no_mangle");
     static ref EXPORT_NAME: Path = Path::fake("export_name");
     static ref LINK_SECTION: Path = Path::fake("link_section");
+    static ref REPR: Path = Path::fake("repr");
+    static ref REPR_RUST: Path = Path::fake("Rust");
+    static ref REPR_C: Path = Path::fake("C");
+    static ref REPR_TRANSPARENT: Path = Path::fake("transparent");
+    static ref REPR_PACKED: Path = Path::fake("packed");
 }
 
 /// Lower a bunch of syn data structures to the generic `ItemMetadata`.
@@ -151,7 +159,9 @@ fn extract_string(lit: &Tokens) -> String {
 
 /// Given a metadata, strip all the `extra_attributes` that go into a TypeMetadata.
 pub fn extract_type_metadata(metadata: &mut Metadata) -> Result<TypeMetadata, LowerError> {
+    // TODO: repr(align(n))
     let mut derives = vec![];
+    let mut repr = Repr::Rust;
     metadata.extra_attributes.retain(|attribute| {
         if let Attribute::Meta(Meta::Call { path, args }) = attribute {
             if path == &*DERIVE {
@@ -163,15 +173,48 @@ pub fn extract_type_metadata(metadata: &mut Metadata) -> Result<TypeMetadata, Lo
                             is_maybe: false,
                         })
                     } else {
-                        warn!("malformed #[derive] arg: {:?}", attribute)
+                        warn!("malformed #[derive]: {:?}", attribute)
                     }
                 }
                 return false; // remove this element
+            } else if path == &*REPR {
+                if args.len() == 1 {
+                    if let MetaInner::Meta(Meta::Path(path)) = &args[0] {
+                        if path == &*REPR_RUST {
+                            // no change
+                        } else if path == &*REPR_C {
+                            repr = Repr::C;
+                        } else if path == &*REPR_TRANSPARENT {
+                            repr = Repr::Transparent;
+                        } else if path == &*REPR_PACKED {
+                            repr = Repr::Packed;
+                        } else if let Some(ident) = path.get_ident() {
+                            repr = Repr::Other(ident.clone());
+                        } else {
+                            warn!("malformed #[repr]: {:?}", attribute);
+                        }
+                    }
+                } else if args.len() == 2 {
+                    if let MetaInner::Meta(Meta::Path(path)) = &args[0] {
+                        if path == &*REPR_C {
+                            if let MetaInner::Meta(Meta::Path(path)) = &args[1] {
+                                if let Some(ident) = path.get_ident() {
+                                    repr = Repr::IntOuterTag(ident.clone());
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                    warn!("malformed #[repr]: {:?}", attribute)
+                } else {
+                    warn!("malformed #[repr]: {:?}", attribute)
+                }
+                return false;
             }
         }
         true
     });
-    Ok(TypeMetadata { derives })
+    Ok(TypeMetadata { derives, repr })
 }
 
 /// Given a metadata, strip all the `extra_attributes` that go into a TypeMetadata.

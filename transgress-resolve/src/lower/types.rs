@@ -65,7 +65,9 @@ pub fn lower_type(type_: &syn::Type) -> Result<Type, LowerError> {
             }
         }
         syn::Type::Paren(paren) => lower_type(&paren.elem),
-        other => Err(LowerError::UnhandledType(Tokens::from(&other))),
+        other => {
+            Err(LowerError::UnhandledType(Tokens::from(&other)))
+        },
     }
 }
 

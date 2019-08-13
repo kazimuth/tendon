@@ -1,5 +1,6 @@
 //! Extra data held in multiple diffferent items.
 
+use crate::idents::Ident;
 use crate::paths::Path;
 use crate::tokens::Tokens;
 use crate::types::Trait;
@@ -183,6 +184,8 @@ pub struct SymbolMetadata {
 pub struct TypeMetadata {
     /// All #[derives] present on this type.
     pub derives: Vec<Trait>,
+    /// The #[repr] of this type. `Rust` if no attribute is present.
+    pub repr: Repr,
 }
 
 /// Deprecation metadata.
@@ -196,53 +199,27 @@ pub struct Deprecation {
 }
 
 /// A struct representation.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum StructRepr {
-    Rust,
-    C,
-    Transparent,
-    Packed,
-}
-impl Default for StructRepr {
-    fn default() -> Self {
-        StructRepr::Rust
-    }
-}
-
-/// An enum representation.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum EnumRepr {
-    /// Default.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub enum Repr {
+    /// `#[repr(Rust)]`
     Rust,
     /// `#[repr(C)]`
     C,
-    /// `#[repr(i8)]`, etc.
-    Int(Int),
+    /// `#[repr(transparent)]`
+    Transparent,
+    /// `#[repr(packed)]`
+    Packed,
     /// `#[repr(C, i8)]`, etc.
     /// See https://github.com/rust-lang/rfcs/blob/master/text/2195-really-tagged-unions.md
-    IntOuterTag(Int),
-}
-impl Default for EnumRepr {
-    fn default() -> Self {
-        EnumRepr::Rust
-    }
+    IntOuterTag(Ident),
+    /// `#[repr(i8)]` or other reprs.
+    Other(Ident),
 }
 
-/// An Int, used in an `EnumRepr`.
-#[derive(Clone, Debug, Copy, Serialize, Deserialize)]
-pub enum Int {
-    U8,
-    U16,
-    U32,
-    U64,
-    U128,
-    USize,
-    I8,
-    I16,
-    I32,
-    I64,
-    I128,
-    Isize,
+impl Default for Repr {
+    fn default() -> Self {
+        Repr::Rust
+    }
 }
 
 #[cfg(test)]

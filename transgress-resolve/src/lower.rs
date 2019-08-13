@@ -38,5 +38,8 @@ quick_error! {
         MalformedPredicate(predicate: Tokens) {
             display("malformed `where` predicate: {:?}", predicate)
         }
+        MalformedFunctionArg(arg: Tokens) {
+            display("malformed function argument: {:?}", arg)
+        }
     }
 }

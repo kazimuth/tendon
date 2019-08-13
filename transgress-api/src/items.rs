@@ -1,7 +1,7 @@
 use crate::{
-    attributes::{Metadata, TypeMetadata},
+    attributes::{Metadata, SymbolMetadata, TypeMetadata},
     expressions::ConstExpr,
-    generics::Generics,
+    generics::{Generics, Lifetime},
     idents::Ident,
     paths::Path,
     types::Type,
@@ -55,10 +55,6 @@ pub struct StaticItem {
     pub type_: Box<Type>,
     pub value: String,
 }
-
-/// A standalone function, `fn f(x: i32) -> i32 { ... }`
-#[derive(Clone, Serialize, Deserialize)]
-pub struct FunctionItem {}
 
 /// A Reexport, `pub use other_location::Thing;`
 #[derive(Clone, Serialize, Deserialize)]
@@ -163,6 +159,69 @@ pub struct DeriveMacroItem {
 }
 
 /// The inherent implementation of a type: all methods implemented directly on that type.
-/// TODO: how to handle references &ct?
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InherentImpl {}
+
+/// A function (or method).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Function {
+    pub metadata: Metadata,
+    pub symbol_metadata: SymbolMetadata,
+    pub generics: Generics,
+    /// The name of this function.
+    pub name: Ident,
+    /// The arguments to this function.
+    /// Note: this doesn't include `self`, that'll be stored in `Method.receiver` instead
+    pub args: Vec<FunctionArg>,
+    /// The return type of this function.
+    pub ret: Type,
+    /// If this function is `unsafe`.
+    pub is_unsafe: bool,
+    /// If this function is `async`.
+    pub is_async: bool,
+    /// If this function is `const`.
+    pub is_const: bool,
+    /// What ABI does this use?
+    pub abi: Abi,
+    /// The receiver. Will always be `Receiver::None` for non-method arguments.
+    pub receiver: Receiver,
+    /// If this function is variadic.
+    pub variadic: bool,
+}
+
+/// The abi of a function.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum Abi {
+    Rust,
+    C,
+    Other(String),
+}
+
+/// A standalone function.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FunctionItem(pub Function);
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FunctionArg {
+    /// The name of the argument.
+    pub name: Ident,
+    /// The type of the argument.
+    pub type_: Type,
+}
+
+/// The receiver of a method.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum Receiver {
+    /// Doesn't take an instance as an argument.
+    /// This is always the case for non-method functions.
+    None,
+    /// Takes `self`.
+    ConsumeSelf,
+    /// Takes `&self`.
+    RefSelf {
+        lifetime: Option<Lifetime>,
+        mut_: bool,
+    },
+    /// Takes some other form of self (e.g. `self: Pin<&mut Self>`).
+    Other(Type),
+}

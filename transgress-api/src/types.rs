@@ -34,6 +34,15 @@ pub enum Type {
     ImplTrait(ImplTraitType),
     TraitObject(TraitObjectType),
 }
+impl Type {
+    /// If this type is void.
+    pub fn is_void(&self) -> bool {
+        match self {
+            Type::Tuple(t) => t.is_void(),
+            _ => false,
+        }
+    }
+}
 impl fmt::Debug for Type {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {

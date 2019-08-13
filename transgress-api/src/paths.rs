@@ -30,6 +30,16 @@ impl Path {
     pub fn generic(generic: Ident) -> Self {
         Path::Generic(GenericPath { generic })
     }
+
+    /// Get the path, assuming it's a single unresolved, non-absolute Ident.
+    pub fn get_ident(&self) -> Option<&Ident> {
+        if let Path::Unresolved(path) = self {
+            if path.path.len() == 1 && !path.is_absolute {
+                return Some(&path.path[0]);
+            }
+        }
+        None
+    }
 }
 impl From<&syn::Path> for Path {
     fn from(p: &syn::Path) -> Self {
