@@ -57,6 +57,9 @@ impl std::fmt::Debug for Binding {
     }
 }
 impl Binding {
+    /// Get a nested binding.
+    /// Inserts Binding::Seqs as it goes as needed to get to the requested location.
+    /// Returns None if the binding has a leaf in any of the intervening levels.
     pub fn get_mut(&mut self, indices: &[usize]) -> Option<&mut Binding> {
         let mut result = self;
         for index in indices {
@@ -73,6 +76,7 @@ impl Binding {
         }
         Some(result)
     }
+    /// Same as get_mut but doesn't ever modify the input binding.
     pub fn get(&self, indices: &[usize]) -> Option<&Binding> {
         let mut result = self;
         for index in indices {
@@ -109,7 +113,7 @@ impl Stomach {
     /// Create a new Stomach.
     pub fn new() -> Self {
         Stomach {
-            stack: vec![0],
+            stack: vec![],
             bindings: Map::default(),
             scratch_a: String::new(),
             scratch_b: String::new(),
@@ -119,7 +123,7 @@ impl Stomach {
 
     /// Reset all internal state.
     pub fn reset(&mut self) {
-        self.stack = vec![0];
+        self.stack = vec![];
         self.bindings.clear();
         self.scratch_a.clear();
         self.scratch_b.clear();
@@ -262,12 +266,12 @@ impl Consumer for ast::Fragment {
         // If it doesn't exist, we create one, consisting of nested empty seqs to the current stack level.
         let binding = bindings.entry(name).or_insert_with(|| Binding::Seq(vec![]));
 
-        if let Some(Binding::Seq(seq)) = binding.get_mut(&stack[0..stack.len() - 1]) {
+        if let Some(Binding::Seq(seq)) = binding.get_mut(&stack[0..stack.len().saturating_sub(1)]) {
             seq.push(Binding::Leaf(tokens));
             Ok(())
         } else {
             Err(stream.error(format!(
-                "failed to bind ${}:{:?} : malformed binding tree",
+                "failed to bind ${}:{:?} : token matched at earlier level",
                 self.ident, self.spec
             )))
         }
@@ -430,17 +434,17 @@ mod tests {
             }
         }
 
-        assert_binding!(bindings["name", 0, 0] == "squared");
-        assert_binding!(bindings["arg", 0, 0, 0] == "x");
-        assert_binding!(bindings["typ", 0, 0, 0] == "f32");
-        assert_binding!(bindings["ret", 0, 0] == "f32");
+        assert_binding!(bindings["name", 0] == "squared");
+        assert_binding!(bindings["arg", 0, 0] == "x");
+        assert_binding!(bindings["typ", 0, 0] == "f32");
+        assert_binding!(bindings["ret", 0] == "f32");
 
-        assert_binding!(bindings["name", 0, 1] == "atan2");
-        assert_binding!(bindings["arg", 0, 1, 0] == "x");
-        assert_binding!(bindings["typ", 0, 1, 0] == "f32");
-        assert_binding!(bindings["arg", 0, 1, 1] == "y");
-        assert_binding!(bindings["typ", 0, 1, 1] == "f32");
-        assert_binding!(bindings["ret", 0, 1] == "f32");
+        assert_binding!(bindings["name", 1] == "atan2");
+        assert_binding!(bindings["arg", 1, 0] == "x");
+        assert_binding!(bindings["typ", 1, 0] == "f32");
+        assert_binding!(bindings["arg", 1, 1] == "y");
+        assert_binding!(bindings["typ", 1, 1] == "f32");
+        assert_binding!(bindings["ret", 1] == "f32");
 
         Ok(())
     }
