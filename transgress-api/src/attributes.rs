@@ -237,7 +237,7 @@ macro_rules! impl_has_metadata {
             }
         }
     );
-    (enum $type:ident { $($variant:ident (_)),* }) => (
+    (enum $type:ident { $($variant:ident (_), )*}) => (
         impl $crate::attributes::HasMetadata for $type {
             fn metadata(&self) -> &Metadata {
                 match self {
