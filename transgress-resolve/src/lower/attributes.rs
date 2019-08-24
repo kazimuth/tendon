@@ -5,7 +5,7 @@
 use super::{LowerError, ModuleCtx};
 use lazy_static::lazy_static;
 use syn;
-use tracing::{warn, trace};
+use tracing::{trace, warn};
 use transgress_api::attributes::Repr;
 use transgress_api::types::Trait;
 use transgress_api::{

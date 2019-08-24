@@ -154,11 +154,13 @@ pub fn lower_function(
                 receiver = Receiver::ConsumeSelf;
                 false
             }
-            _ => if variadic  {
-                // skip last arg for variadics, can't be parsed
-                *i < decl.inputs.len() - 1
-            } else {
-                true
+            _ => {
+                if variadic {
+                    // skip last arg for variadics, can't be parsed
+                    *i < decl.inputs.len() - 1
+                } else {
+                    true
+                }
             }
         })
         .map(|(_, arg)| match arg {
@@ -307,7 +309,6 @@ mod tests {
             }
         };
         let struct_ = lower_struct(&ctx, &struct_).unwrap();
-        println!("{:#?}", struct_);
 
         assert_eq!(struct_.name, Ident::from("Thing"));
 
@@ -403,9 +404,6 @@ mod tests {
             pub const async unsafe extern "system" fn f<T: Copy>(t: &T, rest: ...) -> i32 {}
         };
         let function_ = lower_function_item(&ctx, &function_);
-        if let Err(e) = &function_ {
-            println!("{}", e);
-        }
         let function_ = function_.unwrap();
         assert!(function_.0.is_const);
         assert!(function_.0.is_unsafe);

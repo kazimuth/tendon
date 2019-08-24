@@ -5,11 +5,11 @@
 
 use proc_macro2 as pm2;
 use quote::ToTokens;
-use std::collections::HashMap;
 use std::fmt::{Display, Write};
 use syn::{self, ext::IdentExt, parse::ParseStream};
 
 use crate::expand::ast;
+use crate::Map;
 
 /// A fragment binding.
 ///
@@ -57,18 +57,32 @@ impl std::fmt::Debug for Binding {
     }
 }
 impl Binding {
-    fn seq(&mut self) -> &mut Vec<Binding> {
-        match self {
-            Binding::Seq(v) => v,
-            Binding::Leaf(_) => panic!("leaf at wrong level binding tree"),
+    pub fn get_mut(&mut self, indices: &[usize]) -> Option<&mut Binding> {
+        let mut result = self;
+        for index in indices {
+            if let Binding::Seq(seq) = result {
+                // necessary if we're looking up a slot for a binding that hasn't been bound yet.
+                while seq.len() <= *index {
+                    seq.push(Binding::Seq(vec![]))
+                }
+
+                result = seq.get_mut(*index)?;
+            } else {
+                return None;
+            }
         }
+        Some(result)
     }
-    #[allow(unused)]
-    fn seq_(&self) -> &Vec<Binding> {
-        match self {
-            Binding::Seq(v) => v,
-            Binding::Leaf(_) => panic!("leaf at wrong level binding tree"),
+    pub fn get(&self, indices: &[usize]) -> Option<&Binding> {
+        let mut result = self;
+        for index in indices {
+            if let Binding::Seq(seq) = result {
+                result = seq.get(*index)?;
+            } else {
+                return None;
+            }
         }
+        Some(result)
     }
 }
 
@@ -80,7 +94,7 @@ pub struct Stomach {
     stack: Vec<usize>,
 
     /// Bound variables.
-    bindings: HashMap<String, Binding>,
+    bindings: Map<String, Binding>,
 
     /// Scratch; used for fast comparisons.
     scratch_a: String,
@@ -96,7 +110,7 @@ impl Stomach {
     pub fn new() -> Self {
         Stomach {
             stack: vec![0],
-            bindings: HashMap::new(),
+            bindings: Map::default(),
             scratch_a: String::new(),
             scratch_b: String::new(),
             speculating: false,
@@ -145,9 +159,12 @@ impl Stomach {
     }
 
     /// Move to the next group within a repetition.
-    fn next_repetition(&mut self) {
-        assert!(self.stack.len() > 1, "can't next root repetition");
+    fn next_repetition(&mut self, stream: ParseStream) -> syn::Result<()> {
+        if self.stack.len() == 0 {
+            return Err(stream.error("No next repetition for root binding"));
+        }
         *self.stack.last_mut().unwrap() += 1;
+        Ok(())
     }
 
     /// If we are within the first repetition of a sequence of repetitions.
@@ -162,40 +179,6 @@ impl Stomach {
         let result = f(self);
         self.speculating = prev;
         result
-    }
-
-    /// Bind a consumed fragment to a name.
-    fn bind(&mut self, name: &pm2::Ident, value: pm2::TokenStream) {
-        if self.speculating {
-            return;
-        }
-        let Stomach {
-            ref mut bindings,
-            ref stack,
-            ..
-        } = *self;
-        let name_ = format!("{}", name);
-        let mut binding = bindings.entry(name_).or_insert_with(|| {
-            let mut current = Binding::Seq(vec![]);
-            for idx in stack[0..stack.len() - 1].iter().rev() {
-                // if we're creating a new binding, we *must* be at position 0 along the whole stack
-                // e.g. if we're matching $($($x:expr)), we gotta not have seen x before
-                assert_eq!(*idx, 0, "binding that somehow wasn't bound earlier?");
-                current = Binding::Seq(vec![current]);
-            }
-            current
-        });
-
-        for idx in &stack[0..stack.len() - 1] {
-            binding = {
-                let seq = binding.seq();
-                if *idx == seq.len() {
-                    seq.push(Binding::Seq(vec![]))
-                }
-                &mut seq[*idx]
-            };
-        }
-        binding.seq().push(Binding::Leaf(value));
     }
 
     /// non-allocating comparison for two types that only impl Display, like Literal in syn
@@ -260,8 +243,34 @@ impl Consumer for ast::Fragment {
             ast::FragSpec::Statement => stream.parse::<syn::Stmt>()?.into_token_stream(),
             ast::FragSpec::Block => stream.parse::<syn::Block>()?.into_token_stream(),
         };
-        inv.bind(&self.ident, tokens);
-        Ok(())
+
+        if inv.speculating {
+            return Ok(());
+        }
+
+        // bind this fragment
+
+        let Stomach {
+            ref mut bindings,
+            ref stack,
+            ..
+        } = *inv;
+
+        let name = format!("{}", self.ident);
+
+        // Look up the binding for this fragment.
+        // If it doesn't exist, we create one, consisting of nested empty seqs to the current stack level.
+        let binding = bindings.entry(name).or_insert_with(|| Binding::Seq(vec![]));
+
+        if let Some(Binding::Seq(seq)) = binding.get_mut(&stack[0..stack.len() - 1]) {
+            seq.push(Binding::Leaf(tokens));
+            Ok(())
+        } else {
+            Err(stream.error(format!(
+                "failed to bind ${}:{:?} : malformed binding tree",
+                self.ident, self.spec
+            )))
+        }
     }
 }
 impl Consumer for ast::Group {
@@ -269,14 +278,11 @@ impl Consumer for ast::Group {
         inv.debug("Group", stream);
         let group = stream.parse::<pm2::Group>()?;
         if group.delimiter() != self.delimiter {
-            return Err(syn::Error::new(
-                group.span(),
-                format!(
-                    "wrong delimiters: expected {:?}, got {:?}",
-                    self.delimiter,
-                    group.delimiter()
-                ),
-            ));
+            return Err(stream.error(format!(
+                "wrong delimiters: expected {:?}, got {:?}",
+                self.delimiter,
+                group.delimiter()
+            )));
         }
         let result = syn::parse::Parser::parse2(
             |stream: ParseStream| -> syn::Result<()> {
@@ -317,7 +323,7 @@ impl Consumer for ast::Repetition {
                     self.sep.consume(inv, stream)?;
                 }
                 self.inner.consume(inv, stream)?;
-                inv.next_repetition();
+                inv.next_repetition(stream)?;
             }
             Ok(())
         });
@@ -395,20 +401,11 @@ mod tests {
     fn consume(
         matcher: pm2::TokenStream,
         input: pm2::TokenStream,
-    ) -> Result<HashMap<String, Binding>, syn::Error> {
+    ) -> Result<Map<String, Binding>, syn::Error> {
         let matchers = syn::parse2::<ast::MatcherSeq>(matcher)?;
         let mut stomach = Stomach::new();
         stomach.consume(&input, &matchers)?;
         Ok(stomach.bindings)
-    }
-
-    macro_rules! assert_binding {
-        ($bindings:ident [$name:expr] $([$idx:expr])+ == $target:expr) => {
-            match &$bindings[$name] $(. seq_()[$idx])+ {
-                Binding::Leaf(l) => assert_eq!(syn::parse2::<pm2::Ident>(l.clone())?, $target),
-                _ => panic!("not a leaf, should be"),
-            }
-        }
     }
 
     #[test]
@@ -423,17 +420,27 @@ mod tests {
             },
         )?;
 
-        assert_binding!(bindings["name"][0][0] == "squared");
-        assert_binding!(bindings["arg"][0][0][0] == "x");
-        assert_binding!(bindings["typ"][0][0][0] == "f32");
-        assert_binding!(bindings["ret"][0][0] == "f32");
+        macro_rules! assert_binding {
+            ($bindings:ident [$name:expr, $($idx:expr),+] == $target:expr) => {
 
-        assert_binding!(bindings["name"][0][1] == "atan2");
-        assert_binding!(bindings["arg"][0][1][0] == "x");
-        assert_binding!(bindings["typ"][0][1][0] == "f32");
-        assert_binding!(bindings["arg"][0][1][1] == "y");
-        assert_binding!(bindings["typ"][0][1][1] == "f32");
-        assert_binding!(bindings["ret"][0][1] == "f32");
+                match &$bindings[$name].get(&[$($idx),+]) {
+                    Some(Binding::Leaf(l)) => assert_eq!(syn::parse2::<pm2::Ident>(l.clone())?, $target),
+                    _ => panic!("not a leaf, should be"),
+                }
+            }
+        }
+
+        assert_binding!(bindings["name", 0, 0] == "squared");
+        assert_binding!(bindings["arg", 0, 0, 0] == "x");
+        assert_binding!(bindings["typ", 0, 0, 0] == "f32");
+        assert_binding!(bindings["ret", 0, 0] == "f32");
+
+        assert_binding!(bindings["name", 0, 1] == "atan2");
+        assert_binding!(bindings["arg", 0, 1, 0] == "x");
+        assert_binding!(bindings["typ", 0, 1, 0] == "f32");
+        assert_binding!(bindings["arg", 0, 1, 1] == "y");
+        assert_binding!(bindings["typ", 0, 1, 1] == "f32");
+        assert_binding!(bindings["ret", 0, 1] == "f32");
 
         Ok(())
     }

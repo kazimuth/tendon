@@ -1,8 +1,11 @@
-//! Macro expansion. Does not implement hygiene, since we only need to parse items.
+//! Macro expansion. Does not implement hygiene or operator precedence, since we only need to parse items.
 //! Implemented as an interpreter on top of syn.
+//!
+//! This module is somewhat messy and could use a refactor.
 //!
 //! ## Expansion algorithm
 //! Rust's macro expansion is actually quite subtle; it handles a lot of not-immediately-obvious edge cases.
+//!
 
 // from rust reference, https://doc.rust-lang.org/stable/reference/macros-by-example.html:
 

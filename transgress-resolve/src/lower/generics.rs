@@ -105,7 +105,6 @@ mod tests {
                 where 'b: 'c, T: Q, F: M<T>, S: Clone = !;
         };
         let generics = lower_generics(&type_.generics).unwrap();
-        println!("{:#?}", generics);
         assert_eq!(generics.type_params.len(), 3);
         assert_eq!(generics.lifetime_params.len(), 3);
         assert_eq!(generics.const_params.len(), 2);

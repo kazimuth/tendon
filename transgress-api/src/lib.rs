@@ -31,6 +31,7 @@ macro_rules! debug {
     )
 }
 
+#[macro_use]
 pub mod attributes;
 pub mod expressions;
 pub mod generics;

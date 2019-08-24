@@ -1,3 +1,4 @@
+use crate::tokens::Tokens;
 use crate::{
     attributes::{Metadata, SymbolMetadata, TypeMetadata},
     expressions::ConstExpr,
@@ -42,6 +43,7 @@ pub enum TypeItem {
 /// A constant `const x: T = expr`, known at compile time,
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ConstItem {
+    pub metadata: Metadata,
     pub name: Ident,
     pub type_: Box<Type>,
     pub value: ConstExpr,
@@ -50,6 +52,7 @@ pub struct ConstItem {
 /// A static value `static x: T = expr`, stored at a location in memory.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct StaticItem {
+    pub metadata: Metadata,
     pub mut_: bool,
     pub name: Ident,
     pub type_: Box<Type>,
@@ -59,6 +62,7 @@ pub struct StaticItem {
 /// A Reexport, `pub use other_location::Thing;`
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ReexportItem {
+    pub metadata: Metadata,
     pub path: Path,
 }
 
@@ -135,10 +139,13 @@ pub struct TraitItem {
     pub inherent_impl: InherentImpl,
 }
 
-/// A declarative macro, `macro_rules!`.
+/// A macro-by-example, `macro_rules!`.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct DeclarativeMacroItem {
     pub metadata: Metadata,
+    /// Note: currently, macros-by-example are re-parsed every time they're invoked, because the
+    /// parsed forms aren't Send. This should probably be fixed...
+    pub item: Tokens,
 }
 
 /// A procedural macro (invoked via bang).
@@ -146,6 +153,7 @@ pub struct DeclarativeMacroItem {
 pub struct ProceduralMacroItem {
     pub metadata: Metadata,
 }
+
 /// A procedural attribute macro.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct AttributeMacroItem {

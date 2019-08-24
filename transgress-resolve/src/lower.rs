@@ -6,9 +6,9 @@
 // TODO trait lowering: https://rust-lang.github.io/rustc-guide/traits/index.html
 //  rules reference: https://rust-lang.github.io/rustc-guide/traits/lowering-rules.html
 
+use std::fmt;
 use std::path::PathBuf;
 use transgress_api::tokens::Tokens;
-use std::fmt;
 
 pub mod attributes;
 pub mod generics;

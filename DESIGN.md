@@ -111,9 +111,8 @@ load crate in full:
 
 determine send + sync from composition:
     if you're a primitive type, stop.
-    if there's a chalk impl for you, use chalk.
+    if there's an unsafe impl for you, use the impl.
     look up all members. determine send + sync from composition.
-    [do we need chalk here?]
 
 [N.b. export rules?]
     [what about pub impls / standard traits?]
@@ -782,3 +781,6 @@ https://doc.rust-lang.org/reference/trait-bounds.html#lifetime-bounds
 > T: 'a means that all lifetime parameters of T outlive 'a. For example if 'a is an unconstrained lifetime parameter
 > then i32: 'static and &'static str: 'a are satisfied but Vec<&'a ()>: 'static is not.
 
+### idea: autodyn
+a tool that converts object-safe generics into dyn traits in dependencies
+could make use of same code as injecting dynamic linking

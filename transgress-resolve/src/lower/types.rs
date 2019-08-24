@@ -65,9 +65,7 @@ pub fn lower_type(type_: &syn::Type) -> Result<Type, LowerError> {
             }
         }
         syn::Type::Paren(paren) => lower_type(&paren.elem),
-        other => {
-            Err(LowerError::UnhandledType(Tokens::from(&other)))
-        },
+        other => Err(LowerError::UnhandledType(Tokens::from(&other))),
     }
 }
 
@@ -233,7 +231,6 @@ mod tests {
     #[test]
     fn simple() {
         spoor::init();
-        //println!("{:#?}", syn::parse_str::<syn::TypePath>("<BANANA as OCELOT>::RHODODENDRON").unwrap());
         assert_match!(lower("!"), Ok(Type::Never(_)));
         assert_match!(lower("()"), Ok(Type::Tuple(TupleType {types})) => {
             assert_eq!(types.len(), 0);

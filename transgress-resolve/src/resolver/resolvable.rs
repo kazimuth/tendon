@@ -23,7 +23,6 @@ pub trait Resolvable {
 
 impl Resolvable for Path {
     fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(&mut self, f: &mut F) -> Result<(), ResolveError> {
-        println!("path {:?}", self);
         match self {
             Path::Unresolved(..) => f(self),
             _ => Ok(())
@@ -59,28 +58,26 @@ impl<T: Resolvable, V: Resolvable> Resolvable for (T, V) {
 /// (Unless the type is marked `skip`, in which case, you still need to go and update it ;)
 macro_rules! impl_resolvable {
     (struct $type:ident { $($field:ident),* }) => (
-        impl Resolvable for $type {
+        impl $crate::resolver::resolvable::Resolvable for $type {
             fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(&mut self, _f: &mut F) -> Result<(), ResolveError> {
-                println!("{} {{", stringify!($type));
                 let $type { $($field),* } = self;
                 $(
                     $field.walk(_f)?;
                 )*
-                println!("}}");
                 Ok(())
             }
         }
     );
 
     (struct $type:ident(_)) => (
-        impl Resolvable for $type {
+        impl $crate::resolver::resolvable::Resolvable for $type {
             fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(&mut self, f: &mut F) -> Result<(), ResolveError> {
                 self.0.walk(f)
             }
         }
     );
     (enum $type:ident { $($variant:ident (_)),* }) => (
-        impl Resolvable for $type {
+        impl $crate::resolver::resolvable::Resolvable for $type {
             fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(&mut self, f: &mut F) -> Result<(), ResolveError> {
                 match self {
                     $(
@@ -91,7 +88,7 @@ macro_rules! impl_resolvable {
         }
     );
     (skip $type:ident) => (
-        impl Resolvable for $type {
+        impl $crate::resolver::resolvable::Resolvable for $type {
             fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(&mut self, _: &mut F) -> Result<(), ResolveError> {
                 Ok(())
             }
@@ -139,9 +136,9 @@ impl_resolvable!(struct TraitObjectType { bounds });
 impl_resolvable!(struct ModuleItem { metadata });
 impl_resolvable!(enum SymbolItem { Const(_), Static(_), Function(_) });
 impl_resolvable!(enum TypeItem { Struct(_), Enum(_), Trait(_) });
-impl_resolvable!(struct ConstItem { name, type_, value });
-impl_resolvable!(struct StaticItem { mut_, name, type_, value });
-impl_resolvable!(struct ReexportItem { path });
+impl_resolvable!(struct ConstItem { metadata, name, type_, value });
+impl_resolvable!(struct StaticItem { metadata, mut_, name, type_, value });
+impl_resolvable!(struct ReexportItem { metadata, path });
 impl_resolvable!(struct Module { metadata });
 impl_resolvable!(struct StructItem { metadata, type_metadata, inherent_impl, generics, name, fields, kind });
 impl_resolvable!(struct StructField { metadata, name, type_ });

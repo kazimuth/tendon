@@ -1,6 +1,7 @@
 //! Extra data held in multiple diffferent items.
 
 use crate::idents::Ident;
+use crate::items::FunctionItem;
 use crate::paths::Path;
 use crate::tokens::Tokens;
 use crate::types::Trait;
@@ -219,6 +220,74 @@ pub enum Repr {
 impl Default for Repr {
     fn default() -> Self {
         Repr::Rust
+    }
+}
+
+/// Get the metadata f
+pub trait HasMetadata {
+    fn metadata(&self) -> &Metadata;
+}
+
+#[macro_export]
+macro_rules! impl_has_metadata {
+    (struct $type:ident) => (
+        impl $crate::attributes::HasMetadata for $type {
+            fn metadata(&self) -> &Metadata {
+                &self.metadata
+            }
+        }
+    );
+    (enum $type:ident { $($variant:ident (_)),* }) => (
+        impl $crate::attributes::HasMetadata for $type {
+            fn metadata(&self) -> &Metadata {
+                match self {
+                    $(
+                        $type::$variant(data) => data.metadata(),
+                    )+
+                }
+            }
+        }
+    );
+}
+
+use crate::items::*;
+
+impl_has_metadata!(
+    enum MacroItem {
+        Declarative(_),
+        Procedural(_),
+        Derive(_),
+        Attribute(_),
+    }
+);
+impl_has_metadata!(
+    enum SymbolItem {
+        Const(_),
+        Static(_),
+        Function(_),
+    }
+);
+impl_has_metadata!(
+    enum TypeItem {
+        Struct(_),
+        Enum(_),
+        Trait(_),
+    }
+);
+impl_has_metadata!(struct DeclarativeMacroItem);
+impl_has_metadata!(struct ProceduralMacroItem);
+impl_has_metadata!(struct DeriveMacroItem);
+impl_has_metadata!(struct AttributeMacroItem);
+impl_has_metadata!(struct ConstItem);
+impl_has_metadata!(struct StaticItem);
+impl_has_metadata!(struct StructItem);
+impl_has_metadata!(struct EnumItem);
+impl_has_metadata!(struct TraitItem);
+impl_has_metadata!(struct ModuleItem);
+
+impl HasMetadata for FunctionItem {
+    fn metadata(&self) -> &Metadata {
+        &self.0.metadata
     }
 }
 

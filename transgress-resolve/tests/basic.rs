@@ -27,19 +27,30 @@ fn basic() -> Result<(), Box<dyn Error>> {
         workspace_root: _workspace_root,
         ..
     } = metadata;
-    let _packages: resolve::Map<_, _> = packages
-        .drain(..)
-        .map(|package| (package.id.clone(), package))
+    let package_map: resolve::Map<_, _> = packages
+        .iter()
+        .map(|package| (package.id.clone(), package.clone()))
         .collect();
     let mut meta_resolve = meta_resolve.unwrap();
     let root = meta_resolve.root.unwrap();
-    let _meta_resolve: resolve::Map<_, _> = meta_resolve
+    info!("root package {:?}", root.repr);
+    let nodes: resolve::Map<_, _> = meta_resolve
         .nodes
-        .drain(..)
-        .map(|node| (node.id.clone(), node))
+        .iter()
+        .map(|node| (&node.id, node))
         .collect();
 
-    info!("root package {:?}", root.repr);
+    let sorted = resolve::tools::topo_sort_nodes(&meta_resolve.nodes);
+
+    let mut visited = resolve::Set::default();
+
+    for id in &sorted {
+        info!("next: {:?}", resolve::tools::get_crate(&package_map[id]));
+        visited.insert(id);
+        for dep in &nodes[id].dependencies {
+            assert!(visited.contains(dep));
+        }
+    }
 
     // TODO inject libstd/alloc/core `rustc --print sysroot`
     // TODO parse libstd/alloc/core to gzipped form distributed w/ tools, parse #[since] annotations
