@@ -14,7 +14,6 @@ pub mod attributes;
 pub mod generics;
 pub mod items;
 pub mod types;
-pub mod macros;
 
 /// Context for lowering items in an individual module.
 pub struct ModuleCtx {

@@ -172,7 +172,7 @@ pub struct InherentImpl {}
 
 /// A function (or method).
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Function {
+pub struct Signature {
     pub metadata: Metadata,
     pub symbol_metadata: SymbolMetadata,
     pub generics: Generics,
@@ -207,7 +207,7 @@ pub enum Abi {
 
 /// A standalone function.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct FunctionItem(pub Function);
+pub struct FunctionItem(pub Signature);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FunctionArg {

@@ -168,7 +168,7 @@ impl Parse for MacroDef {
             "no macro_ident in macro_rules!",
         ))?;
 
-        let rules = syn::parse2::<MacroRules>(mac.tts)?.0;
+        let rules = syn::parse2::<MacroRules>(mac.tokens)?.0;
 
         Ok(MacroDef {
             ident,

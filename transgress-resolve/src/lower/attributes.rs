@@ -120,7 +120,7 @@ fn parse_attribute(attribute: &syn::Attribute) -> Attribute {
     } else {
         Attribute::Other {
             path: (&attribute.path).into(),
-            input: Tokens::from(&attribute.tts),
+            input: Tokens::from(&attribute.tokens),
         }
     }
 }
@@ -129,18 +129,18 @@ fn parse_attribute(attribute: &syn::Attribute) -> Attribute {
 fn lower_meta(meta: &syn::Meta) -> Meta {
     // TODO: update this when syn merges the paths breaking change
     match meta {
-        syn::Meta::Word(ident) => Meta::Path(Path::ident(ident.into())),
-        syn::Meta::NameValue(syn::MetaNameValue { ident, lit, .. }) => Meta::Assign {
-            path: Path::ident(ident.into()),
+        syn::Meta::Path(path) => Meta::Path(path.into()),
+        syn::Meta::NameValue(syn::MetaNameValue { path, lit, .. }) => Meta::Assign {
+            path: path.into(),
             literal: Tokens::from(lit),
         },
-        syn::Meta::List(syn::MetaList { ident, nested, .. }) => Meta::Call {
-            path: Path::ident(ident.into()),
+        syn::Meta::List(syn::MetaList { path, nested, .. }) => Meta::Call {
+            path: path.into(),
             args: nested
                 .iter()
                 .map(|arg| match arg {
                     syn::NestedMeta::Meta(meta) => MetaInner::Meta(lower_meta(meta)),
-                    syn::NestedMeta::Literal(lit) => MetaInner::Literal(Tokens::from(lit)),
+                    syn::NestedMeta::Lit(lit) => MetaInner::Literal(Tokens::from(lit)),
                 })
                 .collect(),
         },

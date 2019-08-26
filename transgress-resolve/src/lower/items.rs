@@ -8,7 +8,7 @@ use crate::lower::{
     types::lower_type,
 };
 use syn::spanned::Spanned;
-use transgress_api::items::{Function, FunctionArg, FunctionItem, Receiver};
+use transgress_api::items::{Signature, FunctionArg, FunctionItem, Receiver};
 use transgress_api::{
     idents::Ident,
     items::{Abi, EnumItem, EnumVariant, InherentImpl, StructField, StructItem, StructKind},
@@ -119,76 +119,64 @@ fn lower_fields(ctx: &ModuleCtx, fields: &syn::Fields) -> Result<Vec<StructField
 /// Lower a function.
 /// Annoyingly, the data for this is stored in different places for functions / methods
 /// so you just have to pass in a bunch of junk lol.
-pub fn lower_function(
+pub fn lower_signature(
     ctx: &ModuleCtx,
-    decl: &syn::FnDecl,
     attrs: &[syn::Attribute],
     vis: &syn::Visibility,
-    ident: &syn::Ident,
-    abi: &Option<syn::Abi>,
-    constness: &Option<syn::token::Const>,
-    asyncness: &Option<syn::token::Async>,
-    unsafety: &Option<syn::token::Unsafe>,
+    sig: &syn::Signature,
     span: proc_macro2::Span,
-) -> Result<Function, LowerError> {
+) -> Result<Signature, LowerError> {
     let mut metadata = lower_metadata(ctx, vis, attrs, span);
     let symbol_metadata = extract_symbol_metadata(&mut metadata)?;
-    let name = Ident::from(ident);
+    let name = Ident::from(&sig.ident);
     let mut receiver = Receiver::None;
-    let variadic = decl.variadic.is_some();
+    let variadic = sig.variadic.is_some();
 
     // this is hairy. idgaf
-    let args = decl
+    let args = sig
         .inputs
         .iter()
         .enumerate()
-        // walk through arguments, pulling out
+        // walk through arguments, pulling out receiver if present
         .filter(|(i, arg)| match arg {
-            syn::FnArg::SelfRef(self_ref) => {
-                let lifetime = self_ref.lifetime.as_ref().map(lower_lifetime);
-                let mut_ = self_ref.mutability.is_some();
-                receiver = Receiver::RefSelf { lifetime, mut_ };
-                false
-            }
-            syn::FnArg::SelfValue(..) => {
-                receiver = Receiver::ConsumeSelf;
+            syn::FnArg::Receiver(rec) => {
+                if let Some((_, lifetime)) = &rec.reference {
+                    let lifetime = lifetime.as_ref().map(lower_lifetime);
+                    let mut_ = rec.mutability.is_some();
+                    receiver = Receiver::RefSelf { lifetime, mut_ };
+                } else {
+                    receiver = Receiver::ConsumeSelf
+                }
                 false
             }
             _ => {
                 if variadic {
                     // skip last arg for variadics, can't be parsed
-                    *i < decl.inputs.len() - 1
+                    *i < sig.inputs.len() - 1
                 } else {
                     true
                 }
             }
         })
         .map(|(_, arg)| match arg {
-            syn::FnArg::Captured(cap) => {
-                let type_ = lower_type(&cap.ty)?;
-                let name = if let syn::Pat::Ident(pat_ident) = &cap.pat {
+            syn::FnArg::Typed(typed) => {
+                let type_ = lower_type(&typed.ty)?;
+                let name = if let syn::Pat::Ident(pat_ident) = &*typed.pat {
                     Ident::from(&pat_ident.ident)
                 } else {
                     Ident::from("_")
                 };
                 Ok(FunctionArg { type_, name })
             }
-            syn::FnArg::Ignored(type_) => {
-                let type_ = lower_type(&type_)?;
-                Ok(FunctionArg {
-                    type_,
-                    name: Ident::from("_"),
-                })
-            }
             _ => Err(LowerError::MalformedFunctionArg(Tokens::from(arg))),
         })
         .collect::<Result<Vec<FunctionArg>, LowerError>>()?;
 
-    let ret = lower_return_type(&decl.output)?;
-    let is_unsafe = unsafety.is_some();
-    let is_async = asyncness.is_some();
-    let is_const = constness.is_some();
-    let abi = abi
+    let ret = lower_return_type(&sig.output)?;
+    let is_unsafe = sig.unsafety.is_some();
+    let is_async = sig.asyncness.is_some();
+    let is_const = sig.constness.is_some();
+    let abi = sig.abi
         .as_ref()
         .map(|abi| {
             if let Some(name) = &abi.name {
@@ -207,9 +195,9 @@ pub fn lower_function(
             // no extern at all
             Abi::Rust,
         );
-    let generics = lower_generics(&decl.generics)?;
+    let generics = lower_generics(&sig.generics)?;
 
-    Ok(Function {
+    Ok(Signature {
         abi,
         args,
         generics,
@@ -230,28 +218,24 @@ pub fn lower_function_item(
     ctx: &ModuleCtx,
     item: &syn::ItemFn,
 ) -> Result<FunctionItem, LowerError> {
-    Ok(FunctionItem(lower_function(
+    Ok(FunctionItem(lower_signature(
         ctx,
-        &item.decl,
         &item.attrs,
         &item.vis,
-        &item.ident,
-        &item.abi,
-        &item.constness,
-        &item.asyncness,
-        &item.unsafety,
+        &item.sig,
         item.span(),
     )?))
 }
 
+/*
 /// Lower a method.
 pub fn lower_impl_method(
     ctx: &ModuleCtx,
     item: &syn::ImplItemMethod,
-) -> Result<Function, LowerError> {
-    Ok(lower_function(
+) -> Result<Signature, LowerError> {
+    Ok(lower_signature(
         ctx,
-        &item.sig.decl,
+        &item.sig.sig,
         &item.attrs,
         &item.vis,
         &item.sig.ident,
@@ -268,10 +252,10 @@ pub fn lower_trait_method(
     ctx: &ModuleCtx,
     item: &syn::TraitItemMethod,
     trait_vis: &syn::Visibility,
-) -> Result<Function, LowerError> {
-    Ok(lower_function(
+) -> Result<Signature, LowerError> {
+    Ok(lower_signature(
         ctx,
-        &item.sig.decl,
+        &item.sig.sig,
         &item.attrs,
         trait_vis,
         &item.sig.ident,
@@ -282,6 +266,7 @@ pub fn lower_trait_method(
         item.span(),
     )?)
 }
+*/
 
 #[cfg(test)]
 mod tests {

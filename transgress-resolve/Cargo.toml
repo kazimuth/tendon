@@ -12,9 +12,9 @@ serde_derive = "1"
 serde_json = "1"
 tracing = "0.1"
 cargo_metadata = "0.8"
-syn = { version = "0.15.36", features = ["full", "visit-mut"] }
-quote = { version = "0.6.12" }
-proc-macro2 = { version = "0.4" }
+syn = { version = "1", features = ["full", "visit-mut"] }
+quote = { version = "1" }
+proc-macro2 = { version = "1" }
 parking_lot = "0.8"
 spoor = { path = "../spoor" }
 transgress-api = { path = "../transgress-api" }
