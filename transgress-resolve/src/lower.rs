@@ -13,6 +13,7 @@ use transgress_api::tokens::Tokens;
 pub mod attributes;
 pub mod generics;
 pub mod items;
+pub mod macros;
 pub mod types;
 
 /// Context for lowering items in an individual module.
@@ -40,6 +41,9 @@ quick_error! {
         }
         MalformedFunctionArg(arg: Tokens) {
             display("malformed function argument: {:?}", arg)
+        }
+        NotAMacroDeclaration {
+            display("not a macro declaration?")
         }
     }
 }

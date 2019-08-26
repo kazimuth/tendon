@@ -143,9 +143,11 @@ pub struct TraitItem {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct DeclarativeMacroItem {
     pub metadata: Metadata,
+    /// The name of the declared macros.
+    pub name: Ident,
     /// Note: currently, macros-by-example are re-parsed every time they're invoked, because the
-    /// parsed forms aren't Send. This should probably be fixed...
-    pub item: Tokens,
+    /// parsed forms aren't Send / Serialize. This should probably be fixed...
+    pub tokens: Tokens,
 }
 
 /// A procedural macro (invoked via bang).

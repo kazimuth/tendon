@@ -39,7 +39,7 @@ mod transcribe;
 
 /// Invoke a macro once.
 pub fn apply_once(macro_: &DeclarativeMacroItem, tokens: pm2::TokenStream) -> syn::Result<pm2::TokenStream> {
-    let rules = syn::parse2::<ast::MacroDef>(macro_.item.get_tokens())?;
+    let rules = syn::parse2::<ast::MacroDef>(macro_.tokens.get_tokens())?;
     let mut stomach = consume::Stomach::new();
 
     for rule in &rules.rules {
