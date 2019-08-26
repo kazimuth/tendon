@@ -3,18 +3,21 @@
 use super::{ast, consume::Binding};
 use crate::{Map, Set};
 use proc_macro2 as pm2;
-use quote::{ToTokens, quote};
+use quote::{quote, ToTokens};
 use std::mem;
-use tracing::warn;
 use syn::spanned::Spanned;
+use tracing::warn;
 
-pub fn transcribe(bindings: &Map<String, Binding>, rule: &ast::TranscribeSeq) -> syn::Result<pm2::TokenStream> {
+pub fn transcribe(
+    bindings: &Map<String, Binding>,
+    rule: &ast::TranscribeSeq,
+) -> syn::Result<pm2::TokenStream> {
     let mut output = pm2::TokenStream::new();
     {
         let mut ctx = Ctx {
             bindings,
             output: &mut output,
-            repetition_stack: vec![]
+            repetition_stack: vec![],
         };
         rule.transcribe(&mut ctx)?;
     }
@@ -28,7 +31,7 @@ struct Ctx<'a> {
     /// The (current) output stream we're writing to.
     output: &'a mut pm2::TokenStream,
     /// Where we are within the stack of repetitions.
-    repetition_stack: Vec<usize>
+    repetition_stack: Vec<usize>,
 }
 impl Ctx<'_> {
     fn write(&mut self, item: &dyn ToTokens) {
@@ -93,7 +96,10 @@ impl Transcriber for ast::TranscribeRepetition {
                 if let Some(Binding::Seq(current_repetition)) = current_repetition {
                     if let Some(reps) = reps {
                         if reps != current_repetition.len() {
-                            return Err(syn::Error::new(quote!(_).span(), "mismatched repetition count"));
+                            return Err(syn::Error::new(
+                                quote!(_).span(),
+                                "mismatched repetition count",
+                            ));
                         }
                     } else {
                         reps = Some(current_repetition.len())
@@ -102,7 +108,9 @@ impl Transcriber for ast::TranscribeRepetition {
             }
             // else: no binding: we just transcribe the fragment specifier verbatim
         }
-        let reps = if let Some(reps) = reps { reps } else {
+        let reps = if let Some(reps) = reps {
+            reps
+        } else {
             // TODO un-fake span
             return Err(syn::Error::new(quote!(_).span(), "nothing to repeat?"));
         };
@@ -144,7 +152,7 @@ impl Transcriber for ast::TranscribeFragment {
         if let Some(binding) = ctx.bindings.get(&self.0) {
             if let Some(Binding::Leaf(tokens)) = binding.get(&ctx.repetition_stack[..]) {
                 ctx.write(&tokens);
-                return Ok(())
+                return Ok(());
             } else {
                 warn!("binding at wrong level to transcribe: {}", &self.0);
             }
@@ -158,9 +166,9 @@ impl Transcriber for ast::TranscribeFragment {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use super::ast::MacroDef;
     use super::super::consume::Stomach;
+    use super::ast::MacroDef;
+    use super::*;
 
     #[test]
     fn full_macro() {
@@ -178,7 +186,5 @@ mod tests {
         let output = transcribe(&stomach.bindings, &rules.rules[0].transcriber).unwrap();
 
         assert_eq!(output.to_string(), quote!([a c e] [b d f]).to_string());
-
-
     }
 }

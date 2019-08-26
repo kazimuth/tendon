@@ -43,10 +43,7 @@ pub fn lower_metadata(
     attributes: &[syn::Attribute],
     span: proc_macro2::Span,
 ) -> Metadata {
-    let visibility = match visibility {
-        syn::Visibility::Public(_) => Visibility::Pub,
-        _ => Visibility::NonPub,
-    };
+    let visibility = lower_visibility(visibility);
     let mut docs = None;
     let mut must_use = None;
     let mut deprecated = None;
@@ -111,6 +108,15 @@ pub fn lower_metadata(
         deprecated,
         extra_attributes,
         span,
+    }
+}
+
+/// Lower a visibility. Assumes inherited visibilities aren't `pub`; you'll need to correct that
+/// by hand.
+pub fn lower_visibility(visibility: &syn::Visibility) -> Visibility {
+    match visibility {
+        syn::Visibility::Public(_) => Visibility::Pub,
+        _ => Visibility::NonPub,
     }
 }
 

@@ -8,7 +8,7 @@ use crate::lower::{
     types::lower_type,
 };
 use syn::spanned::Spanned;
-use transgress_api::items::{Signature, FunctionArg, FunctionItem, Receiver};
+use transgress_api::items::{FunctionArg, FunctionItem, Receiver, Signature};
 use transgress_api::{
     idents::Ident,
     items::{Abi, EnumItem, EnumVariant, InherentImpl, StructField, StructItem, StructKind},
@@ -176,7 +176,8 @@ pub fn lower_signature(
     let is_unsafe = sig.unsafety.is_some();
     let is_async = sig.asyncness.is_some();
     let is_const = sig.constness.is_some();
-    let abi = sig.abi
+    let abi = sig
+        .abi
         .as_ref()
         .map(|abi| {
             if let Some(name) = &abi.name {

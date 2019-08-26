@@ -333,9 +333,9 @@ impl Parse for Transcribe {
             ))
         } else if input.peek(token::Dollar) && input.peek2(syn::Ident) {
             input.parse::<token::Dollar>()?;
-            Ok(Transcribe::Fragment(
-                TranscribeFragment(input.parse::<pm2::Ident>()?.to_string()),
-            ))
+            Ok(Transcribe::Fragment(TranscribeFragment(
+                input.parse::<pm2::Ident>()?.to_string(),
+            )))
         } else {
             let tt = input.parse::<pm2::TokenTree>()?;
             match tt {

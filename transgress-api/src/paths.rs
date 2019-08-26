@@ -61,6 +61,16 @@ pub struct UnresolvedPath {
     /// Whether the path starts with `::`
     pub is_absolute: bool,
 }
+impl UnresolvedPath {
+    pub fn join(self, component: Ident) -> UnresolvedPath {
+        let UnresolvedPath {
+            mut path,
+            is_absolute,
+        } = self;
+        path.push(component);
+        UnresolvedPath { path, is_absolute }
+    }
+}
 impl From<&syn::Path> for UnresolvedPath {
     fn from(p: &syn::Path) -> Self {
         let is_absolute = p.leading_colon.is_some();
@@ -87,12 +97,11 @@ pub struct AbsolutePath {
 
 impl AbsolutePath {
     /// Add another component to the path.
-    pub fn join(&self, elem: impl Into<Ident>) -> Self {
+    pub fn join(self, elem: impl Into<Ident>) -> Self {
         let elem = elem.into();
         assert!(!elem.contains("::"));
 
-        let crate_ = self.crate_.clone();
-        let mut path = self.path.clone();
+        let AbsolutePath { crate_, mut path } = self;
         path.push(elem.into());
 
         AbsolutePath { crate_, path }

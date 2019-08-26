@@ -1,15 +1,21 @@
 //! The Namespace data structure.
 
-use transgress_api::attributes::{HasMetadata, Metadata};
-use transgress_api::paths::AbsolutePath;
-use crate::Map;
-use parking_lot::Mutex;
 use super::ResolveError;
-use tracing::error;
+use crate::Map;
+use cargo_metadata::Resolve;
+use parking_lot::Mutex;
+use std::error::Error;
+use std::path::PathBuf;
+use transgress_api::attributes::{HasMetadata, Span};
+use transgress_api::paths::AbsolutePath;
 
 /// A namespace, for holding some particular type of item during resolution.
-/// Consists of a hashmap of absolute paths to RwLocks of entries.
-pub struct Namespace<I: Namespaced>(Map<AbsolutePath, Mutex<I>>);
+/// Allows operating on many different items in parallel.
+/// Every path in the namespace can be marked invalid, meaning that something related to that
+/// item has caused an error (i.e. parse failure, unimplemented macro expansion, something else).
+/// Items depending on invalid items should be marked invalid as well.
+/// (Invalid items are represented internally as Nones.)
+pub struct Namespace<I: Namespaced>(Map<AbsolutePath, Mutex<Option<I>>>);
 impl<I: Namespaced> Namespace<I> {
     /// Create a namespace.
     pub fn new() -> Self {
@@ -17,16 +23,36 @@ impl<I: Namespaced> Namespace<I> {
     }
 
     /// Insert an item into the namespace.
-    pub fn insert(&mut self, path: AbsolutePath, item: I) {
-        self.insert_impl(path, Mutex::new(item));
+    pub fn insert(&mut self, path: AbsolutePath, item: I) -> Result<(), ResolveError> {
+        self.insert_impl(path, Mutex::new(Some(item)))
+    }
+
+    /// Mark an item as invalid.
+    pub fn mark_invalid(&mut self, path: AbsolutePath) -> Result<(), ResolveError> {
+        self.insert_impl(path, Mutex::new(None))
     }
 
     /// Modify the item present at a path.
-    /// Note, this takes &self: you can modify multiple items at a time.
-    pub fn modify<F: FnOnce(&mut I) -> Result<(), ResolveError>>(&self, path: &AbsolutePath, f: F) -> Result<(), ResolveError> {
+    /// If the modification returns an error, this will invalidate the item.
+    pub fn modify<F: FnOnce(&mut I) -> Result<(), ResolveError>>(
+        &self,
+        path: &AbsolutePath,
+        f: F,
+    ) -> Result<(), ResolveError> {
         if let Some(item) = self.0.get(path) {
             let mut lock = item.lock();
-            f(&mut *lock)
+            let err = if let Some(item) = &mut *lock {
+                if let Err(err) = f(item) {
+                    err
+                } else {
+                    return Ok(());
+                }
+            } else {
+                return Err(ResolveError::CachedError(path.clone()));
+            };
+            *lock = None;
+
+            Err(err)
         } else {
             Err(ResolveError::PathNotFound(I::namespace(), path.clone()))
         }
@@ -37,20 +63,18 @@ impl<I: Namespaced> Namespace<I> {
         self.0.contains_key(path)
     }
 
-    /// Merge values from another namespace.
-    pub fn merge(&mut self, other: Namespace<I>) {
-        for (path, item) in other.0 {
-            self.insert_impl(path, item);
-        }
-    }
-
-    /// insertion helper.
-    fn insert_impl(&mut self, path: AbsolutePath, item: Mutex<I>) -> Result<(), ResolveError> {
+    /// Insertion helper.
+    fn insert_impl(
+        &mut self,
+        path: AbsolutePath,
+        item: Mutex<Option<I>>,
+    ) -> Result<(), ResolveError> {
         let entry = self.0.entry(path);
         match entry {
-            hashbrown::hash_map::Entry::Occupied(occ) => {
-                occ.get().lock().merge(item.into_inner())
-            }
+            hashbrown::hash_map::Entry::Occupied(occ) => Err(ResolveError::AlreadyDefined(
+                I::namespace(),
+                occ.key().clone(),
+            )),
             hashbrown::hash_map::Entry::Vacant(vac) => {
                 vac.insert(item);
                 Ok(())
@@ -61,15 +85,11 @@ impl<I: Namespaced> Namespace<I> {
 
 pub trait Namespaced {
     fn namespace() -> &'static str;
-    fn merge(&mut self, other: Self) -> Result<(), ResolveError>;
 }
 
 impl Namespaced for transgress_api::items::TypeItem {
     fn namespace() -> &'static str {
         "type"
-    }
-    fn merge(&mut self, other: Self) -> Result<(), ResolveError> {
-        Err(ResolveError::AlreadyDefined())
     }
 }
 impl Namespaced for transgress_api::items::SymbolItem {
@@ -87,7 +107,7 @@ impl Namespaced for transgress_api::items::ModuleItem {
         "module"
     }
 }
-impl Namespaced for super::Scope {
+impl Namespaced for super::ModuleImports {
     fn namespace() -> &'static str {
         "scope"
     }

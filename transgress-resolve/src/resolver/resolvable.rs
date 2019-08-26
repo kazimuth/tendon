@@ -1,10 +1,10 @@
-use transgress_api::paths::Path;
 use transgress_api::attributes::*;
-use transgress_api::items::*;
-use transgress_api::types::*;
-use transgress_api::idents::*;
 use transgress_api::expressions::*;
 use transgress_api::generics::*;
+use transgress_api::idents::*;
+use transgress_api::items::*;
+use transgress_api::paths::Path;
+use transgress_api::types::*;
 
 quick_error! {
     #[derive(Clone, Debug)]
@@ -18,27 +18,39 @@ quick_error! {
 /// through this trait.
 pub trait Resolvable {
     /// Walk the type, passing all unresolved paths to the function F to resolve.
-    fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(&mut self, f: &mut F) -> Result<(), ResolveError>;
+    fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(
+        &mut self,
+        f: &mut F,
+    ) -> Result<(), ResolveError>;
 }
 
 impl Resolvable for Path {
-    fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(&mut self, f: &mut F) -> Result<(), ResolveError> {
+    fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(
+        &mut self,
+        f: &mut F,
+    ) -> Result<(), ResolveError> {
         match self {
             Path::Unresolved(..) => f(self),
-            _ => Ok(())
+            _ => Ok(()),
         }
     }
 }
 impl<T: Resolvable> Resolvable for Option<T> {
-    fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(&mut self, f: &mut F) -> Result<(), ResolveError> {
+    fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(
+        &mut self,
+        f: &mut F,
+    ) -> Result<(), ResolveError> {
         match self {
             Some(t) => t.walk(f),
-            _ => Ok(())
+            _ => Ok(()),
         }
     }
 }
 impl<T: Resolvable> Resolvable for Vec<T> {
-    fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(&mut self, f: &mut F) -> Result<(), ResolveError> {
+    fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(
+        &mut self,
+        f: &mut F,
+    ) -> Result<(), ResolveError> {
         for i in self {
             i.walk(f)?;
         }
@@ -46,7 +58,10 @@ impl<T: Resolvable> Resolvable for Vec<T> {
     }
 }
 impl<T: Resolvable, V: Resolvable> Resolvable for (T, V) {
-    fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(&mut self, f: &mut F) -> Result<(), ResolveError> {
+    fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(
+        &mut self,
+        f: &mut F,
+    ) -> Result<(), ResolveError> {
         self.0.walk(f)?;
         self.1.walk(f)
     }
@@ -76,7 +91,7 @@ macro_rules! impl_resolvable {
             }
         }
     );
-    (enum $type:ident { $($variant:ident (_)),* }) => (
+    (enum $type:ident { $($variant:ident (_),)* }) => (
         impl $crate::resolver::resolvable::Resolvable for $type {
             fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(&mut self, f: &mut F) -> Result<(), ResolveError> {
                 match self {
@@ -109,19 +124,21 @@ impl_resolvable!(skip Lifetime);
 impl_resolvable!(struct Trait { path, params, is_maybe });
 impl_resolvable!(struct GenericParams { lifetimes, types, type_bindings, consts });
 impl_resolvable!(struct TypeBounds { traits, lifetimes });
-impl_resolvable!(enum Type {
-    Path(_),
-    Array(_),
-    Slice(_),
-    Reference(_),
-    Pointer(_),
-    Tuple(_),
-    Never(_),
-    QSelf(_),
-    BareFn(_),
-    ImplTrait(_),
-    TraitObject(_)
-});
+impl_resolvable!(
+    enum Type {
+        Path(_),
+        Array(_),
+        Slice(_),
+        Reference(_),
+        Pointer(_),
+        Tuple(_),
+        Never(_),
+        QSelf(_),
+        BareFn(_),
+        ImplTrait(_),
+        TraitObject(_),
+    }
+);
 impl_resolvable!(struct PathType { path, params });
 impl_resolvable!(struct ArrayType { type_, len });
 impl_resolvable!(struct SliceType { type_ });
@@ -134,8 +151,20 @@ impl_resolvable!(struct BareFnType { args, ret, varargs, unsafe_ });
 impl_resolvable!(struct ImplTraitType { bounds });
 impl_resolvable!(struct TraitObjectType { bounds });
 impl_resolvable!(struct ModuleItem { metadata });
-impl_resolvable!(enum SymbolItem { Const(_), Static(_), Function(_) });
-impl_resolvable!(enum TypeItem { Struct(_), Enum(_), Trait(_) });
+impl_resolvable!(
+    enum SymbolItem {
+        Const(_),
+        Static(_),
+        Function(_),
+    }
+);
+impl_resolvable!(
+    enum TypeItem {
+        Struct(_),
+        Enum(_),
+        Trait(_),
+    }
+);
 impl_resolvable!(struct ConstItem { metadata, name, type_, value });
 impl_resolvable!(struct StaticItem { metadata, mut_, name, type_, value });
 impl_resolvable!(struct ReexportItem { metadata, path });
@@ -146,8 +175,10 @@ impl_resolvable!(struct EnumItem { metadata, type_metadata, inherent_impl, gener
 impl_resolvable!(struct EnumVariant { metadata, kind, fields, name });
 impl_resolvable!(struct UnionItem { metadata, inherent_impl });
 impl_resolvable!(struct TraitItem { metadata, inherent_impl });
-impl_resolvable!(struct InherentImpl {});
-impl_resolvable!(struct Function { metadata, symbol_metadata, generics, name, args, ret, is_unsafe, is_async, is_const, abi, receiver, variadic });
+impl_resolvable!(
+    struct InherentImpl {}
+);
+impl_resolvable!(struct Signature { metadata, symbol_metadata, generics, name, args, ret, is_unsafe, is_async, is_const, abi, receiver, variadic });
 impl_resolvable!(struct FunctionArg { name, type_ });
 impl_resolvable!(struct FunctionItem(_));
 impl_resolvable!(skip StructKind);
@@ -159,10 +190,13 @@ impl_resolvable!(struct ConstParameter { name, type_, default });
 
 // weird case, don't feel like adding syntax to the macro
 impl Resolvable for Receiver {
-    fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(&mut self, f: &mut F) -> Result<(), ResolveError> {
+    fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(
+        &mut self,
+        f: &mut F,
+    ) -> Result<(), ResolveError> {
         match self {
             Receiver::Other(t) => t.walk(f),
-            _ => Ok(())
+            _ => Ok(()),
         }
     }
 }
@@ -170,15 +204,17 @@ impl Resolvable for Receiver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Set;
-    use crate::lower::items::{lower_struct, lower_enum, lower_function_item};
+    use crate::lower::items::{lower_enum, lower_function_item, lower_struct};
     use crate::lower::ModuleCtx;
+    use crate::Set;
 
     #[test]
     fn resolve_all() {
         spoor::init();
 
-        let ctx = ModuleCtx { source_file: "fake_file.rs".into() };
+        let ctx = ModuleCtx {
+            source_file: "fake_file.rs".into(),
+        };
 
         let struct_ = syn::parse_quote! {
             #[derive(Copy)]
@@ -190,7 +226,12 @@ mod tests {
         };
         let mut struct_ = lower_struct(&ctx, &struct_).unwrap();
         let mut paths = Set::default();
-        struct_.walk(&mut |p| { paths.insert(p.clone()); Ok(()) }).unwrap();
+        struct_
+            .walk(&mut |p| {
+                paths.insert(p.clone());
+                Ok(())
+            })
+            .unwrap();
 
         assert!(paths.contains(&Path::fake("T")));
         assert!(paths.contains(&Path::fake("i32")));
@@ -208,7 +249,12 @@ mod tests {
         };
         let mut enum_ = lower_enum(&ctx, &enum_).unwrap();
         let mut paths = Set::default();
-        enum_.walk(&mut |p| { paths.insert(p.clone()); Ok(()) }).unwrap();
+        enum_
+            .walk(&mut |p| {
+                paths.insert(p.clone());
+                Ok(())
+            })
+            .unwrap();
 
         assert!(paths.contains(&Path::fake("T")));
         assert!(paths.contains(&Path::fake("i32")));
@@ -221,7 +267,12 @@ mod tests {
         };
         let mut function_ = lower_function_item(&ctx, &function_).unwrap();
         let mut paths = Set::default();
-        function_.walk(&mut |p| { paths.insert(p.clone()); Ok(()) }).unwrap();
+        function_
+            .walk(&mut |p| {
+                paths.insert(p.clone());
+                Ok(())
+            })
+            .unwrap();
 
         assert!(paths.contains(&Path::fake("T")));
         assert!(paths.contains(&Path::fake("i32")));

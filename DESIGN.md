@@ -784,3 +784,6 @@ https://doc.rust-lang.org/reference/trait-bounds.html#lifetime-bounds
 ### idea: autodyn
 a tool that converts object-safe generics into dyn traits in dependencies
 could make use of same code as injecting dynamic linking
+
+### idea: "error-tolerant rust" write-up
+

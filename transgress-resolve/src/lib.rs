@@ -42,7 +42,6 @@ macro_rules! assert_match {
 pub mod expand;
 pub mod lower;
 pub mod resolver;
-pub mod walker;
 
 pub mod tools;
 

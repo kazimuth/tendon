@@ -12,6 +12,7 @@ use transgress_api::tokens::Tokens;
 
 pub mod attributes;
 pub mod generics;
+pub mod imports;
 pub mod items;
 pub mod macros;
 pub mod types;
