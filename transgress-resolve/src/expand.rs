@@ -26,14 +26,28 @@
 // TODO: set macro recursion depth high
 // TODO: multiple matchers per level?
 // TODO: repro weird trace span-drops
+// TODO: make ast Send + Serialize + store in DeclarativeMacroItem
+// TODO: ensure sensible spans + error messages
 
-pub mod ast;
-pub mod consume;
-pub mod transcribe;
+use transgress_api::items::DeclarativeMacroItem;
+use proc_macro2 as pm2;
+use syn::spanned::Spanned;
 
-quick_error! {
-    #[derive(Debug)]
-    pub enum ExpandError {
+mod ast;
+mod consume;
+mod transcribe;
 
+/// Invoke a macro once.
+pub fn apply_once(macro_: &DeclarativeMacroItem, tokens: pm2::TokenStream) -> syn::Result<pm2::TokenStream> {
+    let rules = syn::parse2::<ast::MacroDef>(macro_.item.get_tokens())?;
+    let mut stomach = consume::Stomach::new();
+
+    for rule in &rules.rules {
+        if let Ok(()) = stomach.consume(&tokens, &rule.matcher) {
+            return transcribe::transcribe(&stomach.bindings, &rule.transcriber);
+        } else {
+            stomach.reset();
+        }
     }
+    Err(syn::Error::new(tokens.span(), "failed to match any rule to macro input"))
 }

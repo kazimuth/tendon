@@ -4,7 +4,7 @@
 //! Style note: always prefix syn types with "syn" in this crate.
 
 // TODO trait lowering: https://rust-lang.github.io/rustc-guide/traits/index.html
-//  rules reference: https://rust-lang.github.io/rustc-guide/traits/lowering-rules.html
+// rules reference: https://rust-lang.github.io/rustc-guide/traits/lowering-rules.html
 
 use std::fmt;
 use std::path::PathBuf;
@@ -14,6 +14,7 @@ pub mod attributes;
 pub mod generics;
 pub mod items;
 pub mod types;
+pub mod macros;
 
 /// Context for lowering items in an individual module.
 pub struct ModuleCtx {

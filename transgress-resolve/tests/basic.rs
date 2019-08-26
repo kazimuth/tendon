@@ -22,7 +22,7 @@ fn basic() -> Result<(), Box<dyn Error>> {
         .compat()?;
 
     let Metadata {
-        mut packages,
+        packages,
         resolve: meta_resolve,
         workspace_root: _workspace_root,
         ..
@@ -31,7 +31,7 @@ fn basic() -> Result<(), Box<dyn Error>> {
         .iter()
         .map(|package| (package.id.clone(), package.clone()))
         .collect();
-    let mut meta_resolve = meta_resolve.unwrap();
+    let meta_resolve = meta_resolve.unwrap();
     let root = meta_resolve.root.unwrap();
     info!("root package {:?}", root.repr);
     let nodes: resolve::Map<_, _> = meta_resolve

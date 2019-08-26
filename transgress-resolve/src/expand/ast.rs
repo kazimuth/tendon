@@ -130,7 +130,7 @@ pub struct Group {
 #[derive(Debug)]
 pub enum Transcribe {
     // TODO: can be a false match?
-    Fragment(String),
+    Fragment(TranscribeFragment),
     Repetition(TranscribeRepetition),
     Group(TranscribeGroup),
     Ident(pm2::Ident),
@@ -150,6 +150,10 @@ pub struct TranscribeGroup {
     pub delimiter: pm2::Delimiter,
     pub inner: TranscribeSeq,
 }
+
+#[derive(Debug)]
+/// A fragment transcription, `$thing`
+pub struct TranscribeFragment(pub String);
 
 impl Parse for MacroDef {
     fn parse(input: ParseStream) -> syn::Result<Self> {
@@ -330,7 +334,7 @@ impl Parse for Transcribe {
         } else if input.peek(token::Dollar) && input.peek2(syn::Ident) {
             input.parse::<token::Dollar>()?;
             Ok(Transcribe::Fragment(
-                input.parse::<pm2::Ident>()?.to_string(),
+                TranscribeFragment(input.parse::<pm2::Ident>()?.to_string()),
             ))
         } else {
             let tt = input.parse::<pm2::TokenTree>()?;
@@ -494,7 +498,7 @@ mod tests {
                 assert_eq!(punct.as_char(), '>');
                 assert_eq!(punct.spacing(), Spacing::Alone);
             },
-            (seq.0[4]) Transcribe::Fragment(frag) => assert_eq!(frag, "bees"),
+            (seq.0[4]) Transcribe::Fragment(frag) => assert_eq!(frag.0, "bees"),
             (seq.0[5]) Transcribe::Group(group) => {
                 assert_eq!(group.delimiter, Delimiter::Brace);
                 assert_match!(

@@ -98,7 +98,7 @@ pub struct Stomach {
     stack: Vec<usize>,
 
     /// Bound variables.
-    bindings: Map<String, Binding>,
+    pub bindings: Map<String, Binding>,
 
     /// Scratch; used for fast comparisons.
     scratch_a: String,
