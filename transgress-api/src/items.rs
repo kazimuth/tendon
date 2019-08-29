@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 /// A module.
 pub struct ModuleItem {
     pub metadata: Metadata,
+    pub name: Ident
 }
 
 /// An item in the macro namespace.
@@ -145,6 +146,8 @@ pub struct DeclarativeMacroItem {
     pub metadata: Metadata,
     /// The name of the declared macros.
     pub name: Ident,
+    /// If this macro is `#[macro_export]`.
+    pub macro_export: bool,
     /// Note: currently, macros-by-example are re-parsed every time they're invoked, because the
     /// parsed forms aren't Send / Serialize. This should probably be fixed...
     pub tokens: Tokens,

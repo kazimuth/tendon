@@ -787,3 +787,10 @@ could make use of same code as injecting dynamic linking
 
 ### idea: "error-tolerant rust" write-up
 
+### async
+- simplest impl: lower to blocking w/ block_on
+- language integrations
+    - have language poll futures?
+    - start background polling thread?
+        - can just use `runtime::spawn`
+    - per-language callback strategies

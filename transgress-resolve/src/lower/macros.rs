@@ -4,7 +4,8 @@ use syn::spanned::Spanned;
 use transgress_api::{idents::Ident, items::DeclarativeMacroItem, paths::Path, tokens::Tokens};
 
 lazy_static::lazy_static! {
-    static ref MACRO_RULES: Path = Path::fake("macro_rules");
+    pub static ref MACRO_RULES: Path = Path::fake("macro_rules");
+    static ref MACRO_EXPORT: Path = Path::fake("macro_export");
 }
 
 /// Lower a `macro_rules!` declaration.
@@ -12,7 +13,9 @@ pub fn lower_macro_rules(
     ctx: &ModuleCtx,
     rules_: &syn::ItemMacro,
 ) -> Result<DeclarativeMacroItem, LowerError> {
-    let metadata = lower_metadata(ctx, &syn::parse_quote!(pub), &rules_.attrs, rules_.span());
+    let mut metadata = lower_metadata(ctx, &syn::parse_quote!(pub), &rules_.attrs, rules_.span());
+    let macro_export = metadata.extract_attribute(&*MACRO_EXPORT).is_some();
+
     if &Path::from(&rules_.mac.path) != &*MACRO_RULES {
         return Err(LowerError::NotAMacroDeclaration);
     }
@@ -25,6 +28,7 @@ pub fn lower_macro_rules(
     let tokens = Tokens::from(&rules_.mac);
 
     Ok(DeclarativeMacroItem {
+        macro_export,
         metadata,
         name,
         tokens,

@@ -15,6 +15,7 @@ pub mod generics;
 pub mod imports;
 pub mod items;
 pub mod macros;
+pub mod modules;
 pub mod types;
 
 /// Context for lowering items in an individual module.

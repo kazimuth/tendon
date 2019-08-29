@@ -64,3 +64,5 @@ fn basic() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
+
+// TODO: `core`, parse and resolve all items in `core`

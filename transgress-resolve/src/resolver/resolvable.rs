@@ -150,7 +150,7 @@ impl_resolvable!(struct QSelfType { self_, trait_, output_ });
 impl_resolvable!(struct BareFnType { args, ret, varargs, unsafe_ });
 impl_resolvable!(struct ImplTraitType { bounds });
 impl_resolvable!(struct TraitObjectType { bounds });
-impl_resolvable!(struct ModuleItem { metadata });
+impl_resolvable!(struct ModuleItem { metadata, name });
 impl_resolvable!(
     enum SymbolItem {
         Const(_),

@@ -27,6 +27,13 @@ pub struct Metadata {
     /// The span of this declaration.
     pub span: Span,
 }
+impl Metadata {
+    /// Remove the first attribute with this path, if any.
+    pub fn extract_attribute(&mut self, path: &Path) -> Option<Attribute> {
+        let index = self.extra_attributes.iter().position(|att| att.path() == path);
+        index.map(|index| self.extra_attributes.remove(index))
+    }
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 /// A span in a source file.

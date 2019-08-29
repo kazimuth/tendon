@@ -3,7 +3,7 @@ use crate::{lower::LowerError, Map};
 use syn;
 use transgress_api::idents::Ident;
 use transgress_api::items::{MacroItem, ModuleItem, SymbolItem, TypeItem};
-use transgress_api::paths::{AbsoluteCrate, AbsolutePath, Path, UnresolvedPath};
+use transgress_api::paths::{AbsolutePath, Path};
 
 pub mod namespace;
 pub mod resolvable;
@@ -18,6 +18,31 @@ pub struct Db {
     pub macros: Namespace<MacroItem>,
     pub modules: Namespace<ModuleItem>,
     pub scopes: Namespace<ModuleImports>,
+}
+
+impl Db {
+    /// Create a new database.
+    pub fn new() -> Db {
+        Db {
+            types: Namespace::new(),
+            symbols: Namespace::new(),
+            macros: Namespace::new(),
+            modules: Namespace::new(),
+            scopes: Namespace::new(),
+        }
+    }
+
+    /// Add all entries from another database.
+    /// Collisions will be ignored with a warning.
+    pub fn merge_from(&mut self, other: Db) {
+        let Db { types, symbols, macros, modules, scopes } = other;
+
+        self.types.merge_from(types);
+        self.symbols.merge_from(symbols);
+        self.macros.merge_from(macros);
+        self.modules.merge_from(modules);
+        self.scopes.merge_from(scopes);
+    }
 }
 
 // macro name resolution is affected by order, right?
@@ -84,18 +109,6 @@ quick_error! {
     }
 }
 
-impl Db {
-    pub fn new() -> Db {
-        Db {
-            types: Namespace::new(),
-            symbols: Namespace::new(),
-            macros: Namespace::new(),
-            modules: Namespace::new(),
-            scopes: Namespace::new(),
-        }
-    }
-}
-
 // A scope.
 // Each scope currently corresponds to a module; that might change if we end up having to handle
 // impl's in function scopes.
@@ -111,15 +124,39 @@ pub struct ModuleImports {
     /// i.e. `use x::Y;` is stored as `Y => x::Y`,
     /// `use x::z as w` is stored as `w => x::z`
     pub imports: Map<Ident, Path>,
+
+    /// This module's `pub` glob imports.
+    /// `use x::y::z::*` is stored as `x::y::z` pre-resolution,
+    /// and as an AbsolutePath post-resolution.
+    /// Includes the prelude, if any.
+    pub pub_glob_imports: Vec<Path>,
+
+    /// This module's non-glob `pub` imports.
+    /// Maps the imported-as ident to a path,
+    /// i.e. `use x::Y;` is stored as `Y => x::Y`,
+    /// `use x::z as w` is stored as `w => x::z`
+    pub pub_imports: Map<Ident, Path>
+
 }
 
 impl ModuleImports {
+    /// Create a new set of imports
     fn new() -> ModuleImports {
         ModuleImports {
             glob_imports: Vec::new(),
             imports: Map::default(),
+            pub_glob_imports: Vec::new(),
+            pub_imports: Map::default(),
         }
     }
+
+    /*
+    /// Resolve paths used in imports
+    fn resolve(&mut self) {
+        // TODO: how to handle root scope?
+
+    }
+    */
 }
 
 /*

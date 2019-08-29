@@ -1,20 +1,9 @@
-use super::{LowerError, ModuleCtx};
 use crate::Map;
-use lazy_static::lazy_static;
 use syn;
-use tracing::{trace, warn};
-use transgress_api::attributes::Repr;
 use transgress_api::paths::UnresolvedPath;
-use transgress_api::types::Trait;
 use transgress_api::{
-    attributes::{
-        Attribute, Deprecation, Meta, MetaInner, Metadata, Span, SymbolMetadata, TypeMetadata,
-        Visibility,
-    },
     idents::Ident,
     paths::Path,
-    tokens::Tokens,
-    types::GenericParams,
 };
 
 /// Lower a use tree into a set of globs and imports.

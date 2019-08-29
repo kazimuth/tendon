@@ -50,7 +50,7 @@ pub fn lower_metadata(
     let mut extra_attributes = vec![];
 
     for syn_attr in attributes {
-        let attr = parse_attribute(syn_attr);
+        let attr = lower_attribute(syn_attr);
         if attr.path() == &*DOCS {
             docs = Some(
                 if let Attribute::Meta(Meta::Assign { literal, .. }) = attr {
@@ -120,7 +120,8 @@ pub fn lower_visibility(visibility: &syn::Visibility) -> Visibility {
     }
 }
 
-fn parse_attribute(attribute: &syn::Attribute) -> Attribute {
+/// Lower a syn attribute.
+pub fn lower_attribute(attribute: &syn::Attribute) -> Attribute {
     if let Ok(meta) = attribute.parse_meta() {
         Attribute::Meta(lower_meta(&meta))
     } else {
