@@ -39,9 +39,11 @@ macro_rules! assert_match {
     }
 }
 
+#[macro_use]
+pub mod resolver;
+
 pub mod expand;
 pub mod lower;
-pub mod resolver;
 
 pub mod tools;
 

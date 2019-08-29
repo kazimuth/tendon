@@ -2,7 +2,7 @@
 //! Expands macros as it goes.
 
 use super::namespace::Namespace;
-use super::{ModuleImports, ResolveError};
+use super::{ModuleCtx, ModuleImports, ResolveError};
 use crate::{
     expand::apply_once,
     lower::{
@@ -10,7 +10,6 @@ use crate::{
         imports::lower_use,
         macros::{lower_macro_rules, MACRO_RULES},
         modules::lower_module,
-        ModuleCtx,
     },
     resolver::Db,
     Map,

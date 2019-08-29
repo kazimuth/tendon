@@ -1,9 +1,33 @@
 //! Namespaces.
 use crate::{lower::LowerError, Map};
+use std::path::Path as FsPath;
 use syn;
 use transgress_api::idents::Ident;
 use transgress_api::items::{MacroItem, ModuleItem, SymbolItem, TypeItem};
-use transgress_api::paths::{AbsolutePath, Path};
+use transgress_api::paths::{AbsoluteCrate, AbsolutePath, Path};
+
+#[cfg(test)]
+macro_rules! test_ctx {
+    ($ctx:ident) => {
+        let source_file = std::path::PathBuf::from("fake_file.rs");
+        let module = transgress_api::paths::AbsolutePath {
+            crate_: transgress_api::paths::AbsoluteCrate {
+                name: "fake_crate".into(),
+                version: "0.0.1".into(),
+            },
+            path: vec![],
+        };
+        let root_db = crate::resolver::Db::new();
+        let crate_map = crate::Map::default();
+
+        let $ctx = ModuleCtx {
+            source_file: &source_file,
+            module: &module,
+            root_db: &root_db,
+            crate_map: &crate_map,
+        };
+    };
+}
 
 pub mod namespace;
 pub mod resolvable;
@@ -16,7 +40,9 @@ pub struct Db {
     pub types: Namespace<TypeItem>,
     pub symbols: Namespace<SymbolItem>,
     pub macros: Namespace<MacroItem>,
+    /// `mod` items, mostly just store metadata.
     pub modules: Namespace<ModuleItem>,
+    /// Scopes; used in name resolution, then discarded.
     pub scopes: Namespace<ModuleImports>,
 }
 
@@ -49,6 +75,18 @@ impl Db {
         self.modules.merge_from(modules);
         self.scopes.merge_from(scopes);
     }
+}
+
+/// Context for lowering items in an individual module.
+pub struct ModuleCtx<'a> {
+    /// The location of this module's containing file in the filesystem.
+    pub source_file: &'a FsPath,
+    /// The module path.
+    pub module: &'a AbsolutePath,
+    /// A Db containing resolved definitions for all dependencies.
+    pub root_db: &'a Db,
+    /// Names for external crates in this module.
+    pub crate_map: &'a Map<Ident, AbsoluteCrate>,
 }
 
 // macro name resolution is affected by order, right?

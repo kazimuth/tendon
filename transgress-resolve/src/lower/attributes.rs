@@ -2,7 +2,8 @@
 
 // TODO: tie warnings to source locations.
 
-use super::{LowerError, ModuleCtx};
+use super::LowerError;
+use crate::resolver::ModuleCtx;
 use lazy_static::lazy_static;
 use syn;
 use tracing::{trace, warn};
@@ -99,7 +100,7 @@ pub fn lower_metadata(
         }
     }
 
-    let span = Span::from_syn(module.source_file.clone(), span);
+    let span = Span::from_syn(module.source_file.to_path_buf(), span);
 
     Metadata {
         visibility,
@@ -266,10 +267,9 @@ mod tests {
 
     #[test]
     fn metadata_lowering() {
+        test_ctx!(ctx);
         let all = lower_metadata(
-            &ModuleCtx {
-                source_file: PathBuf::from("fake_file.rs"),
-            },
+            &ctx,
             &parse_quote!(pub),
             &[
                 parse_quote!(
@@ -320,9 +320,7 @@ mod tests {
 
         // shouldn't panic
         let funky = lower_metadata(
-            &ModuleCtx {
-                source_file: PathBuf::from("fake_file.rs"),
-            },
+            &ctx,
             &parse_quote!(pub(crate)),
             &[
                 parse_quote!(#[docs(bees = "superior")]),

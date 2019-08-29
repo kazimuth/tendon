@@ -7,7 +7,7 @@
 // rules reference: https://rust-lang.github.io/rustc-guide/traits/lowering-rules.html
 
 use std::fmt;
-use std::path::PathBuf;
+use std::path::Path as FsPath;
 use transgress_api::tokens::Tokens;
 
 pub mod attributes;
@@ -17,12 +17,6 @@ pub mod items;
 pub mod macros;
 pub mod modules;
 pub mod types;
-
-/// Context for lowering items in an individual module.
-pub struct ModuleCtx {
-    /// The location of this module's containing file in the filesystem.
-    pub source_file: PathBuf,
-}
 
 quick_error! {
     pub enum LowerError {

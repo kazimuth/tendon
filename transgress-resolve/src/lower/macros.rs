@@ -1,5 +1,6 @@
-use super::{LowerError, ModuleCtx};
+use super::LowerError;
 use crate::lower::attributes::lower_metadata;
+use crate::resolver::ModuleCtx;
 use syn::spanned::Spanned;
 use transgress_api::{idents::Ident, items::DeclarativeMacroItem, paths::Path, tokens::Tokens};
 

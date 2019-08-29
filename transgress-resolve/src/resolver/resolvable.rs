@@ -205,16 +205,14 @@ impl Resolvable for Receiver {
 mod tests {
     use super::*;
     use crate::lower::items::{lower_enum, lower_function_item, lower_struct};
-    use crate::lower::ModuleCtx;
+    use crate::resolver::ModuleCtx;
     use crate::Set;
 
     #[test]
     fn resolve_all() {
         spoor::init();
 
-        let ctx = ModuleCtx {
-            source_file: "fake_file.rs".into(),
-        };
+        test_ctx!(ctx);
 
         let struct_ = syn::parse_quote! {
             #[derive(Copy)]

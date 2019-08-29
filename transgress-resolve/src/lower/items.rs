@@ -1,4 +1,4 @@
-use super::{LowerError, ModuleCtx};
+use super::LowerError;
 use crate::lower::attributes::extract_symbol_metadata;
 use crate::lower::generics::lower_lifetime;
 use crate::lower::types::lower_return_type;
@@ -7,6 +7,7 @@ use crate::lower::{
     generics::lower_generics,
     types::lower_type,
 };
+use crate::resolver::ModuleCtx;
 use syn::spanned::Spanned;
 use transgress_api::items::{FunctionArg, FunctionItem, Receiver, Signature};
 use transgress_api::{
@@ -279,9 +280,7 @@ mod tests {
     #[test]
     fn struct_lowering() {
         spoor::init();
-        let ctx = ModuleCtx {
-            source_file: "fake_file.rs".into(),
-        };
+        test_ctx!(ctx);
         let struct_: syn::ItemStruct = syn::parse_quote! {
             /// This is an example struct.
             #[derive(Clone)]
@@ -326,9 +325,7 @@ mod tests {
     #[test]
     fn enum_lowering() {
         spoor::init();
-        let ctx = ModuleCtx {
-            source_file: "fake_file.rs".into(),
-        };
+        test_ctx!(ctx);
         let enum_: syn::ItemEnum = syn::parse_quote! {
             #[repr(C, i8)]
             pub enum Thing2 {
@@ -380,9 +377,7 @@ mod tests {
     #[test]
     fn function_lowering() {
         spoor::init();
-        let ctx = ModuleCtx {
-            source_file: "fake_file.rs".into(),
-        };
+        test_ctx!(ctx);
         let function_ = syn::parse_quote! {
             #[no_mangle]
             #[export_name = "orange"]
