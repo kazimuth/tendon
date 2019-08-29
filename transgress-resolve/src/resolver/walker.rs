@@ -4,21 +4,22 @@
 use super::namespace::Namespace;
 use super::{ModuleImports, ResolveError};
 use crate::{
-    resolver::Db, Map,
+    expand::apply_once,
     lower::{
-        ModuleCtx,
-        attributes::{lower_visibility},
+        attributes::lower_visibility,
         imports::lower_use,
-        macros::{MACRO_RULES, lower_macro_rules},
+        macros::{lower_macro_rules, MACRO_RULES},
         modules::lower_module,
+        ModuleCtx,
     },
-    expand::apply_once
+    resolver::Db,
+    Map,
 };
 use quote::ToTokens;
+use std::fmt::Display;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path as FsPath, PathBuf};
-use std::fmt::Display;
 use syn::spanned::Spanned;
 use tracing::{info, trace, warn};
 use transgress_api::attributes::{Span, Visibility};

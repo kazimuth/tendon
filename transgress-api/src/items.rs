@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// A module.
 pub struct ModuleItem {
     pub metadata: Metadata,
-    pub name: Ident
+    pub name: Ident,
 }
 
 /// An item in the macro namespace.

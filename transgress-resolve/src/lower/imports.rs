@@ -1,10 +1,7 @@
 use crate::Map;
 use syn;
 use transgress_api::paths::UnresolvedPath;
-use transgress_api::{
-    idents::Ident,
-    paths::Path,
-};
+use transgress_api::{idents::Ident, paths::Path};
 
 /// Lower a use tree into a set of globs and imports.
 pub fn lower_use(use_: &syn::ItemUse, globs: &mut Vec<Path>, imports: &mut Map<Ident, Path>) {

@@ -3,9 +3,9 @@
 use super::ResolveError;
 use crate::Map;
 use parking_lot::Mutex;
-use transgress_api::paths::AbsolutePath;
-use transgress_api::idents::Ident;
 use tracing::warn;
+use transgress_api::idents::Ident;
+use transgress_api::paths::AbsolutePath;
 
 /// A namespace, for holding some particular type of item during resolution.
 /// Allows operating on many different items in parallel.
@@ -15,7 +15,7 @@ use tracing::warn;
 /// (Invalid items are represented internally as Nones.)
 pub struct Namespace<I: Namespaced> {
     items: Map<AbsolutePath, Mutex<I>>,
-    module_map: Map<AbsolutePath, Vec<Ident>>
+    module_map: Map<AbsolutePath, Vec<Ident>>,
 }
 
 impl<I: Namespaced> Namespace<I> {
@@ -23,7 +23,7 @@ impl<I: Namespaced> Namespace<I> {
     pub fn new() -> Self {
         Namespace {
             items: Map::default(),
-            module_map: Map::default()
+            module_map: Map::default(),
         }
     }
 
@@ -34,7 +34,7 @@ impl<I: Namespaced> Namespace<I> {
 
     /// Modify the item present at a path.
     /// If the modification fails, you might want to remove the item.
-    pub fn modify<F: FnOnce(&mut I) -> Result<(), ResolveError>> (
+    pub fn modify<F: FnOnce(&mut I) -> Result<(), ResolveError>>(
         &self,
         path: &AbsolutePath,
         f: F,
@@ -66,16 +66,15 @@ impl<I: Namespaced> Namespace<I> {
     }
 
     /// Insertion helper.
-    fn insert_impl(
-        &mut self,
-        path: AbsolutePath,
-        item: Mutex<I>,
-    ) -> Result<(), ResolveError> {
+    fn insert_impl(&mut self, path: AbsolutePath, item: Mutex<I>) -> Result<(), ResolveError> {
         let mut parent = path.clone();
 
         // don't modify modulemap for root crate entry
         if let Some(last) = parent.path.pop() {
-            self.module_map.entry(parent).or_insert_with(Vec::new).push(last)
+            self.module_map
+                .entry(parent)
+                .or_insert_with(Vec::new)
+                .push(last)
         }
 
         let entry = self.items.entry(path);

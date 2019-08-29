@@ -35,7 +35,13 @@ impl Db {
     /// Add all entries from another database.
     /// Collisions will be ignored with a warning.
     pub fn merge_from(&mut self, other: Db) {
-        let Db { types, symbols, macros, modules, scopes } = other;
+        let Db {
+            types,
+            symbols,
+            macros,
+            modules,
+            scopes,
+        } = other;
 
         self.types.merge_from(types);
         self.symbols.merge_from(symbols);
@@ -135,8 +141,7 @@ pub struct ModuleImports {
     /// Maps the imported-as ident to a path,
     /// i.e. `use x::Y;` is stored as `Y => x::Y`,
     /// `use x::z as w` is stored as `w => x::z`
-    pub pub_imports: Map<Ident, Path>
-
+    pub pub_imports: Map<Ident, Path>,
 }
 
 impl ModuleImports {

@@ -30,7 +30,10 @@ pub struct Metadata {
 impl Metadata {
     /// Remove the first attribute with this path, if any.
     pub fn extract_attribute(&mut self, path: &Path) -> Option<Attribute> {
-        let index = self.extra_attributes.iter().position(|att| att.path() == path);
+        let index = self
+            .extra_attributes
+            .iter()
+            .position(|att| att.path() == path);
         index.map(|index| self.extra_attributes.remove(index))
     }
 }
