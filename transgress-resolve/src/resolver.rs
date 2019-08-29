@@ -3,8 +3,8 @@ use crate::{lower::LowerError, Map};
 use std::path::Path as FsPath;
 use syn;
 use transgress_api::idents::Ident;
-use transgress_api::items::{MacroItem, ModuleItem, SymbolItem, TypeItem};
-use transgress_api::paths::{AbsoluteCrate, AbsolutePath, Path};
+use transgress_api::items::{MacroItem, ModuleItem, SymbolItem, TypeItem, DeclarativeMacroItem};
+use transgress_api::paths::{AbsoluteCrate, AbsolutePath, Path, UnresolvedPath};
 
 #[cfg(test)]
 macro_rules! test_ctx {
@@ -19,12 +19,16 @@ macro_rules! test_ctx {
         };
         let root_db = crate::resolver::Db::new();
         let crate_map = crate::Map::default();
+        let mut scope = crate::resolver::ModuleImports::new();
+        let mut macros = crate::Map::default();
 
         let $ctx = ModuleCtx {
-            source_file: &source_file,
-            module: &module,
+            source_file,
+            module,
             root_db: &root_db,
             crate_map: &crate_map,
+            scope: &mut scope,
+            macros: &mut macros
         };
     };
 }
@@ -34,6 +38,7 @@ pub mod resolvable;
 pub mod walker;
 
 use namespace::Namespace;
+use syn::Macro;
 
 /// A database of all known paths and their contents.
 pub struct Db {
@@ -80,13 +85,17 @@ impl Db {
 /// Context for lowering items in an individual module.
 pub struct ModuleCtx<'a> {
     /// The location of this module's containing file in the filesystem.
-    pub source_file: &'a FsPath,
+    pub source_file: FsPath,
     /// The module path.
-    pub module: &'a AbsolutePath,
+    pub module: AbsolutePath,
     /// A Db containing resolved definitions for all dependencies.
     pub root_db: &'a Db,
     /// Names for external crates in this module.
     pub crate_map: &'a Map<Ident, AbsoluteCrate>,
+    /// The local namespace of macros. Includes macros defined (before this module) in parents
+    pub local_macros: &'a mut Map<Ident, DeclarativeMacroItem>,
+    /// The scope for this module.
+    pub scope: &'a mut ModuleImports,
 }
 
 // macro name resolution is affected by order, right?
@@ -150,6 +159,12 @@ quick_error! {
         CachedError(path: AbsolutePath) {
             display("path {:?} is invalid due to some previous error", path)
         }
+        MalformedPathAttribute(tokens: String) {
+            display("malformed `#[path]` attribute: {}", tokens)
+        }
+        Root() {
+            display("files at fs root??")
+        }
     }
 }
 
@@ -193,33 +208,40 @@ impl ModuleImports {
         }
     }
 
+    /// Resolve a path, looking only at the absolute namespace; return whether the path was resolved
+    fn resolve_absolute(crate_map: &Map<Ident, AbsoluteCrate>, path: &mut Path) -> bool {
+        *path = if let Path::Unresolved(unresolved) = path {
+            if let Some(crate_) = crate_map.get(&unresolved.path[0]) {
+                Path::Absolute(AbsolutePath {
+                    crate_: crate_.clone(),
+                    path: unresolved.path.drain(..).skip(1).collect()
+                })
+            } else { return false  }
+        } else { return false };
+
+        true
+    }
+
     /// Resolve paths with crate roots (only for macro resolution)
     fn pre_resolve(&mut self, crate_map: &Map<Ident, AbsoluteCrate>) {
-        let resolve_path = |path: &mut Path| {
-            *path = if let Path::Unresolved(unresolved) = path {
-                if unresolved.path.len() > 0 {
-                    if let Some(crate_) = crate_map.get(&unresolved.path[0]) {
-                        Path::Absolute(AbsolutePath {
-                            crate_: crate_.clone(),
-                            path: unresolved.path.drain(..).skip(1).collect()
-                        })
-                    } else { return }
-                } else {return}
-            } else {return}
-        };
-
         for path in self.imports.values_mut() {
-            resolve_path(path);
+            Self::resolve_absolute(crate_map, path);
         }
         for path in self.pub_imports.values_mut() {
-            resolve_path(path);
+            Self::resolve_absolute(crate_map, path);
         }
         for path in &mut self.glob_imports {
-            resolve_path(path);
+            Self::resolve_absolute(crate_map, path);
         }
         for path in &mut self.pub_glob_imports {
-            resolve_path(path);
+            Self::resolve_absolute(crate_map, path);
         }
+    }
+
+    /// Attempt to resolve a macro from external crates. `pre_resolve` must be called before this.
+    fn resolve_macro<'a>(&mut self, path: &UnresolvedPath, extern_macros: &'a Namespace<MacroItem>) -> Option<AbsolutePath> {
+        // TODO: switch to take namespace<scope> + namespace<macros>
+        panic!()
     }
 }
 
@@ -246,7 +268,6 @@ mod tests {
         let mut imp = ModuleImports::new();
         imp.glob_imports.push(Path::fake("thing::test::A"));
         imp.glob_imports.push(Path::fake("::thing::test::A"));
-        imp.glob_imports.push(empty.clone());
         imp.glob_imports.push(Path::fake("other_thing::test::A"));
 
         let crate_ = AbsoluteCrate { name: "thing-crate".into(), version: "0.1.0".into() };
@@ -258,8 +279,7 @@ mod tests {
 
         assert_eq!(imp.glob_imports[0], Path::Absolute(AbsolutePath { crate_: crate_.clone(), path: vec!["test".into(), "A".into()]}));
         assert_eq!(imp.glob_imports[1], Path::Absolute(AbsolutePath { crate_: crate_.clone(), path: vec!["test".into(), "A".into()]}));
-        assert_eq!(imp.glob_imports[2], empty);
-        assert_eq!(imp.glob_imports[3], Path::fake("other_thing::test::A"));
+        assert_eq!(imp.glob_imports[2], Path::fake("other_thing::test::A"));
     }
 
 }
