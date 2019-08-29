@@ -193,13 +193,34 @@ impl ModuleImports {
         }
     }
 
-    /*
-    /// Resolve paths used in imports
-    fn resolve(&mut self) {
-        // TODO: how to handle root scope?
+    /// Resolve paths with crate roots (only for macro resolution)
+    fn pre_resolve(&mut self, crate_map: &Map<Ident, AbsoluteCrate>) {
+        let resolve_path = |path: &mut Path| {
+            *path = if let Path::Unresolved(unresolved) = path {
+                if unresolved.path.len() > 0 {
+                    if let Some(crate_) = crate_map.get(&unresolved.path[0]) {
+                        Path::Absolute(AbsolutePath {
+                            crate_: crate_.clone(),
+                            path: unresolved.path.drain(..).skip(1).collect()
+                        })
+                    } else { return }
+                } else {return}
+            } else {return}
+        };
 
+        for path in self.imports.values_mut() {
+            resolve_path(path);
+        }
+        for path in self.pub_imports.values_mut() {
+            resolve_path(path);
+        }
+        for path in &mut self.glob_imports {
+            resolve_path(path);
+        }
+        for path in &mut self.pub_glob_imports {
+            resolve_path(path);
+        }
     }
-    */
 }
 
 /*
@@ -212,3 +233,33 @@ impl CrateAdaptor<'_> {
     fn lookup(&self, module: path: UnresolvedPath)
 }
 */
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use transgress_api::paths::UnresolvedPath;
+
+    #[test]
+    fn pre_resolve_module_imports(){
+        let empty = Path::Unresolved(UnresolvedPath {is_absolute: false, path: vec![] });
+
+        let mut imp = ModuleImports::new();
+        imp.glob_imports.push(Path::fake("thing::test::A"));
+        imp.glob_imports.push(Path::fake("::thing::test::A"));
+        imp.glob_imports.push(empty.clone());
+        imp.glob_imports.push(Path::fake("other_thing::test::A"));
+
+        let crate_ = AbsoluteCrate { name: "thing-crate".into(), version: "0.1.0".into() };
+
+        let mut crate_map = Map::default();
+        crate_map.insert(Ident::from("thing"), crate_.clone());
+
+        imp.pre_resolve(&crate_map);
+
+        assert_eq!(imp.glob_imports[0], Path::Absolute(AbsolutePath { crate_: crate_.clone(), path: vec!["test".into(), "A".into()]}));
+        assert_eq!(imp.glob_imports[1], Path::Absolute(AbsolutePath { crate_: crate_.clone(), path: vec!["test".into(), "A".into()]}));
+        assert_eq!(imp.glob_imports[2], empty);
+        assert_eq!(imp.glob_imports[3], Path::fake("other_thing::test::A"));
+    }
+
+}
