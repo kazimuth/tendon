@@ -277,6 +277,8 @@ https://rust-lang-nursery.github.io/api-guidelines/future-proofing.html#future-p
 -> special trick for handling cross-library deps
 
 -> will be handled if we handle reexports correctly
+    -> must *always* access items through their reexported paths, not through their original paths, which may not be accessible
+    -> however, should only generate bindings once for every type
 
 - storing data behind pointers vs storing data in-line
   - cross-rust compatibility?

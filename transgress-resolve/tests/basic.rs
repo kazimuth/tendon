@@ -27,15 +27,19 @@ fn basic() -> Result<(), Box<dyn Error>> {
         .iter()
         .find(|package| &package.id == root)
         .unwrap();
-    let root = resolve::tools::get_crate(root);
+    let root = resolve::tools::lower_absolute_crate(root);
 
     info!("root package {:?}", root);
 
-    let crates = resolve::tools::lower_crates(&metadata);
+    let mut crates = resolve::tools::lower_crates(&metadata);
+    resolve::tools::add_rust_sources(&mut crates, &test_crate)?;
 
     let transitive_deps = resolve::tools::transitive_dependencies(&root, &crates);
 
-    for id in &transitive_deps {
+    let mut ordered = transitive_deps.iter().collect::<Vec<_>>();
+    ordered.sort();
+
+    for id in ordered {
         info!("transitive dep: {:?}", id);
     }
 
