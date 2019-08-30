@@ -14,10 +14,12 @@ use crate::{
     resolver::Db,
     Map,
 };
+use lazy_static::lazy_static;
 use quote::ToTokens;
 use std::fmt::Display;
-use std::fs::{File};
+use std::fs::File;
 use std::io::Read;
+use std::mem;
 use std::path::{Path as FsPath, PathBuf};
 use syn::spanned::Spanned;
 use tracing::{info, trace, warn};
@@ -25,8 +27,6 @@ use transgress_api::attributes::{Span, Visibility};
 use transgress_api::idents::Ident;
 use transgress_api::items::{DeclarativeMacroItem, MacroItem, ModuleItem};
 use transgress_api::paths::{AbsoluteCrate, AbsolutePath, Path};
-use lazy_static::lazy_static;
-use std::mem;
 
 lazy_static! {
     static ref MACRO_USE: Path = Path::fake("macro_use");
@@ -44,15 +44,15 @@ pub fn walk_crate(
 */
 
 macro_rules! unwrap_or_warn {
-    ($result:expr, $span:expr) => (
+    ($result:expr, $span:expr) => {
         match $result {
             Ok(result) => result,
             Err(err) => {
                 warn($span, &err);
-                continue
+                continue;
             }
         }
-    );
+    };
 }
 
 // ** TODO **: refactor `ModuleCtx` to include:
@@ -71,11 +71,7 @@ macro_rules! unwrap_or_warn {
 //
 
 /// Parse a set of items into a database.
-pub fn walk_items(
-    ctx: &mut ModuleCtx,
-    items: &[syn::Item],
-) -> Result<Db, ResolveError> {
-
+pub fn walk_items(ctx: &mut ModuleCtx, items: &[syn::Item]) -> Result<Db, ResolveError> {
     // TODO: this could probably be refactored to be moderately more sane, but eh
 
     trace!("lowering {:?}", ctx.module);
@@ -86,7 +82,11 @@ pub fn walk_items(
         match item {
             syn::Item::Use(use_) => {
                 if lower_visibility(&use_.vis) == Visibility::Pub {
-                    lower_use(&use_, &mut ctx.scope.pub_glob_imports, &mut ctx.scope.pub_imports);
+                    lower_use(
+                        &use_,
+                        &mut ctx.scope.pub_glob_imports,
+                        &mut ctx.scope.pub_imports,
+                    );
                 } else {
                     lower_use(&use_, &mut ctx.scope.glob_imports, &mut ctx.scope.imports);
                 }
@@ -114,13 +114,16 @@ pub fn walk_items(
                     // crate.
                     let path = AbsolutePath {
                         crate_: ctx.module.crate_.clone(),
-                        path: vec![macro_lowered.name.clone()]
+                        path: vec![macro_lowered.name.clone()],
                     };
                     // TODO: handle merging macros
-                    db.macros.insert(path, MacroItem::Declarative(macro_lowered.clone()));
+                    db.macros
+                        .insert(path, MacroItem::Declarative(macro_lowered.clone()))?;
                 }
                 // TODO: handle merging macros
-                ctx.local_macros.insert(macro_lowered.name.clone(), macro_lowered);
+                ctx.local_macros
+                    .insert(macro_lowered.name.clone(), macro_lowered)
+                    .unwrap();
             } else {
                 /*
                 let decl = if extern_
@@ -151,17 +154,20 @@ pub fn walk_items(
                 );
                 let (macro_db, macro_macros) = unwrap_or_warn!(result);
                 */
-                panic!()
+                unimplemented!()
                 // TODO merge
-
             }
         } else if let syn::Item::Mod(module) = item {
             let mut lowered = lower_module(&ctx, module);
+            let macro_use = lowered.metadata.extract_attribute(&MACRO_USE).is_some();
+
             let items = if let Some((_, items)) = &module.content {
                 items
-            } else if lowered.metadata.extract_attribute(&MACRO_USE).is_some() {
-
-            } else { continue };
+            } else if macro_use {
+                unimplemented!()
+            } else {
+                continue;
+            };
 
             let mut new_module = ctx.module.clone().join(lowered.name.clone());
             let span = &Span::from_syn(ctx.source_file.to_owned(), module.span());
@@ -202,7 +208,6 @@ pub fn walk_items(
 
     // Fourth pass: merge child Dbs
 
-
     // scope to target crate?
 
     // https://doc.rust-lang.org/stable/reference/items/modules.html
@@ -233,6 +238,7 @@ pub fn parse_file(file: &FsPath) -> Result<syn::File, ResolveError> {
 /// Find the path for a module.
 /// TODO finish
 pub fn find_path(parent_ctx: &ModuleCtx, item: &mut ModuleItem) -> Result<PathBuf, ResolveError> {
+    /*
     let dir = parent_ctx.source_file.parent().ok_or(ResolveError::Root)?;
     let look_at = if let Some(path) = item.metadata.extract_attribute(&PATH) {
         let string = path.get_assigned_string().ok_or_else(ResolveError::MalformedPathAttribute(format!("{:?}", path)))?;
@@ -248,7 +254,8 @@ pub fn find_path(parent_ctx: &ModuleCtx, item: &mut ModuleItem) -> Result<PathBu
 
     if dir.
 
-    panic!()
+    */
+    unimplemented!()
 }
 
 pub fn skip(kind: &str, path: AbsolutePath) {

@@ -91,10 +91,20 @@ impl<I: Namespaced> Namespace<I> {
     }
 
     /// Iterate through all the known items in a module.
-    pub fn iter_module<'a>(&'a self, module: &'a AbsolutePath) -> impl Iterator<Item = &Mutex<I>> + 'a {
-        self.module_map.get(module).into_iter()
-            .flat_map(move |entries| entries.iter().flat_map(move |entry|
-                self.items.get(&module.clone().join(entry.clone())).into_iter()))
+    pub fn iter_module<'a>(
+        &'a self,
+        module: &'a AbsolutePath,
+    ) -> impl Iterator<Item = &Mutex<I>> + 'a {
+        self.module_map
+            .get(module)
+            .into_iter()
+            .flat_map(move |entries| {
+                entries.iter().flat_map(move |entry| {
+                    self.items
+                        .get(&module.clone().join(entry.clone()))
+                        .into_iter()
+                })
+            })
     }
 
     // TODO remove

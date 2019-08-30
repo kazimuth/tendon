@@ -36,6 +36,11 @@ impl From<&str> for Ident {
         Ident(s.into())
     }
 }
+impl From<String> for Ident {
+    fn from(s: String) -> Self {
+        Ident(s.into())
+    }
+}
 impl From<&proc_macro2::Ident> for Ident {
     fn from(s: &proc_macro2::Ident) -> Ident {
         // TODO: could optimize this w/ a thread-local string buffer

@@ -137,7 +137,7 @@ impl Into<Path> for GenericPath {
 /// A crate, absolutely resolved within a crate graph.
 /// Each AbsoluteCrate in a crate graph maps to a single crate.
 /// TODO: intern, def worth it for these
-#[derive(Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[derive(Hash, PartialEq, Eq, Clone, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct AbsoluteCrate {
     /// The name of the crate.
     pub name: SmolStr,

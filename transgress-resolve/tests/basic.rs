@@ -21,35 +21,22 @@ fn basic() -> Result<(), Box<dyn Error>> {
         .exec()
         .compat()?;
 
-    let Metadata {
-        packages,
-        resolve: meta_resolve,
-        workspace_root: _workspace_root,
-        ..
-    } = metadata;
-    let package_map: resolve::Map<_, _> = packages
+    let root = metadata.resolve.as_ref().unwrap().root.as_ref().unwrap();
+    let root = metadata
+        .packages
         .iter()
-        .map(|package| (package.id.clone(), package.clone()))
-        .collect();
-    let meta_resolve = meta_resolve.unwrap();
-    let root = meta_resolve.root.unwrap();
-    info!("root package {:?}", root.repr);
-    let nodes: resolve::Map<_, _> = meta_resolve
-        .nodes
-        .iter()
-        .map(|node| (&node.id, node))
-        .collect();
+        .find(|package| &package.id == root)
+        .unwrap();
+    let root = resolve::tools::get_crate(root);
 
-    let sorted = resolve::tools::topo_sort_nodes(&meta_resolve.nodes);
+    info!("root package {:?}", root);
 
-    let mut visited = resolve::Set::default();
+    let crates = resolve::tools::lower_crates(&metadata);
 
-    for id in &sorted {
-        info!("next: {:?}", resolve::tools::get_crate(&package_map[id]));
-        visited.insert(id);
-        for dep in &nodes[id].dependencies {
-            assert!(visited.contains(dep));
-        }
+    let transitive_deps = resolve::tools::transitive_dependencies(&root, &crates);
+
+    for id in &transitive_deps {
+        info!("transitive dep: {:?}", id);
     }
 
     // TODO inject libstd/alloc/core `rustc --print sysroot`
