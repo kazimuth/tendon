@@ -180,8 +180,8 @@ quick_error! {
         Root {
             display("files at fs root??")
         }
-        ModuleNotFound(path: AbsolutePath) {
-            display("couldn't find source file for module {:?}", path)
+        ModuleNotFound {
+            display("couldn't find source file")
         }
     }
 }

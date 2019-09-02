@@ -4,7 +4,7 @@ use super::ResolveError;
 use crate::Set;
 use dashmap::{DashMap, DashMapRefAny};
 use transgress_api::idents::Ident;
-use transgress_api::paths::AbsolutePath;
+use transgress_api::paths::{AbsolutePath, AbsoluteCrate};
 
 /// A namespace, for holding some particular type of item during resolution.
 /// Allows operating on many different items in parallel.
@@ -69,10 +69,12 @@ impl<I: Namespaced> Namespace<I> {
     pub fn insert(&self, path: AbsolutePath, item: I) -> Result<(), ResolveError> {
         let mut failed = true;
 
-        self.items.get_or_insert_with(&path, || {
-            failed = false;
-            item
-        });
+        {
+            self.items.get_or_insert_with(&path, || {
+                failed = false;
+                item
+            });
+        }
         let result = if failed {
             Err(ResolveError::AlreadyDefined(I::namespace(), path.clone()))
         } else {
@@ -120,18 +122,21 @@ impl<I: Namespaced> Namespace<I> {
     /// Noop for root crate entry.
     fn update_module_map(&self, mut path: AbsolutePath) {
         if let Some(last) = path.path.pop() {
-            // get a mutable reference
-            let mut parent = if let DashMapRefAny::Unique(mut_) =
-                self.module_map.get_or_insert_with(&path, Set::default)
             {
-                // if we get a mutable ref, use it
-                mut_
-            } else {
-                // otherwise, get one explicitly
-                self.module_map.index_mut(&path)
-            };
+                // get a mutable reference
+                if let DashMapRefAny::Unique(mut mut_) =
+                self.module_map.get_or_insert_with(&path, Set::default)
+                {
+                    // if we get a mutable ref, use it
+                    mut_.insert(last);
+                    return;
+                }
+            }
 
-            parent.insert(last);
+            {
+                // otherwise, get one explicitly
+                self.module_map.index_mut(&path).insert(last);
+            };
         }
     }
 
@@ -218,5 +223,43 @@ impl Namespaced for transgress_api::items::ModuleItem {
 impl Namespaced for super::ModuleImports {
     fn namespace() -> &'static str {
         "scope"
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::resolver::ModuleImports;
+    use transgress_api::paths::AbsoluteCrate;
+
+    fn fake_a() -> AbsolutePath {
+        AbsolutePath {
+            crate_: AbsoluteCrate {
+                name: "core".into(),
+                version: "0.0.0".into()
+            },
+            path: vec!["a".into()]
+        }
+    }
+    fn fake_b() -> AbsolutePath {
+        AbsolutePath {
+            crate_: AbsoluteCrate {
+                name: "core".into(),
+                version: "0.0.0".into()
+            },
+            path: vec!["b".into()]
+        }
+    }
+
+    #[test]
+    fn insert_deadlock() {
+        spoor::init();
+
+        let namespace = Namespace::<ModuleImports>::new();
+
+        // this used to have a deadlock, doesn't anymore
+        namespace.insert(fake_a(), ModuleImports::new()).unwrap();
+        namespace.insert(fake_b(), ModuleImports::new()).unwrap();
     }
 }

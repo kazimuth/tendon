@@ -102,7 +102,7 @@ pub fn walk_items_parallel(ctx: &mut ModuleCtx, items: &[syn::Item]) -> Result<(
 
     trace!("{:?} children: {:#?}", ctx.module, parallel_mods.iter().map(|(_, path)| path).collect::<Vec<_>>());
 
-    parallel_mods.into_iter().for_each(|(mut mod_, path): (ModuleItem, AbsolutePath)| {
+    parallel_mods.into_par_iter().for_each(|(mut mod_, path): (ModuleItem, AbsolutePath)| {
         // -- PARALLEL --
 
         // poor man's try:
@@ -195,9 +195,7 @@ pub fn walk_items(ctx: &mut ModuleCtx, items: &[syn::Item]) -> Result<(), Resolv
             syn::Item::Union(union_) => skip("union", ctx.module.clone().join(&union_.ident)),
             syn::Item::Trait(trait_) => skip("trait", ctx.module.clone().join(&trait_.ident)),
             syn::Item::TraitAlias(alias_) => skip("alias", ctx.module.clone().join(&alias_.ident)),
-            syn::Item::Impl(impl_) => {
-                info!("impl: {}", impl_.into_token_stream());
-            }
+            syn::Item::Impl(impl_) => skip("alias", ctx.module.clone()),
             syn::Item::ForeignMod(_foreign_mod) => skip("foreign_mod", ctx.module.clone()),
             syn::Item::Verbatim(_verbatim_) => skip("verbatim", ctx.module.clone()),
             syn::Item::Macro(_macro) => skip("macro", ctx.module.clone()),
@@ -267,11 +265,11 @@ pub fn find_source_file(parent_ctx: &ModuleCtx, item: &mut ModuleItem) -> Result
         }
     }
 
-    Err(ResolveError::ModuleNotFound(parent_ctx.module.clone().join(&item.name)))
+    Err(ResolveError::ModuleNotFound)
 }
 
 pub fn skip(kind: &str, path: AbsolutePath) {
-    info!("skipping {} {:?}", kind, &path);
+    trace!("skipping {} {:?}", kind, &path);
 }
 
 pub fn warn(span: &Span, cause: &dyn Display) {
