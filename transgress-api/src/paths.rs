@@ -36,11 +36,10 @@ impl Path {
     /// Get the path, assuming it's a single unresolved, non-absolute Ident.
     pub fn get_ident(&self) -> Option<&Ident> {
         if let Path::Unresolved(path) = self {
-            if path.path.len() == 1 && !path.is_absolute {
-                return Some(&path.path[0]);
-            }
+            path.get_ident()
+        } else {
+            None
         }
-        None
     }
 }
 impl From<&syn::Path> for Path {
@@ -71,6 +70,15 @@ impl UnresolvedPath {
         } = self;
         path.push(component);
         UnresolvedPath { path, is_absolute }
+    }
+
+    /// Get the path, assuming it's a single unresolved, non-absolute Ident.
+    pub fn get_ident(&self) -> Option<&Ident> {
+        if self.path.len() == 1 && !self.is_absolute {
+            Some(&self.path[0])
+        } else {
+            None
+        }
     }
 }
 impl From<&syn::Path> for UnresolvedPath {

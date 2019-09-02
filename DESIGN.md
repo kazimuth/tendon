@@ -417,8 +417,45 @@ distribution notes:
 faq:
 is it fast?
     faster than whatever language you're using lmao. unless you're using c/c++, in which case, about the same speed,
-    but safer. ffi calls involve a function call whatever lang you're using (unless you use lto).
+    but safer. ffi calls involve a function call whatever lang you're using (unless you use lto). some types are copied
+    across ffi boundary by default (e.g. strings). Some types require runtime checks (e.g. RwLocks on borrows).
+    Some binding languages impose very expensive FFI calls (go, mostly.) 
     
+
+#### Usability table
+basic ffi (e.g. strings, numbers, arrays, functions, POD structs, inherent impls) -- great
+
+functions returning owned data - great
+
+common rust patterns (e.g. Debug, Result, std::ops::*, #[derive]s) -- great; where possible, will be bound to
+    corresponding features in binding language
+
+simple generics (e.g. generic containers / functions w/o complex bounds) -- good; can also be used to store data from
+    binding language; rust traits may be implemented from binding language features (e.g. in python `__lt__` will be
+    used to implement `Ord`)
+
+simple traits (e.g. direct impls on types w/o associated types) -- good; can be implemented from binding language
+
+!send / !sync types (e.g. types containing `Rc`) -- usable; will error on access from another thread --
+    this will be very annoying in languages with M:N runtimes like Go or Erlang; if you can get away with using Arc, do
+    that
+    
+functions returning borrows -- usable; require use of resource management in whatever language you're using; will
+    error at runtime if you try to do something invalid; use implicit RwLocks which may impose overhead
+    
+raw pointers / c-style APIs -- unsafe, but usable; won't generate as pretty APIs (maybe use SWIG?); user must
+    uphold safety guarantees by hand
+    
+functions consuming owned data -- usable; later accesses to data from binding language will error
+
+complex generics / type-level stuff (e.g. specs) -- poor, need to instantiate particular versions for binding
+
+macro_rules! -- can never be bound, since they're deeply tied to how Rust's syntax and compiler work. 
+    Note: it's fine to use macros to *define* code you want to bind; it's just the macros themselves that can't be
+    called from other languages.
+
+proc-macros -- can't be bound *or* used to define code to bind, except for simple cases; this may be fixed later.
+
 ### wasm
 
 https://rustwasm.github.io/book/reference/which-crates-work-with-wasm.html
@@ -796,3 +833,10 @@ could make use of same code as injecting dynamic linking
     - start background polling thread?
         - can just use `runtime::spawn`
     - per-language callback strategies
+
+### idea: !send shim
+- driver threads that hold !send objects and wait for rpc-style calls 
+
+### idea: rpc-style bindings
+...
+

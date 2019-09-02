@@ -113,5 +113,4 @@ mod tests {
         assert!(generics.type_params[2].default.is_some());
         assert!(generics.const_params[0].default.is_some());
     }
-
 }

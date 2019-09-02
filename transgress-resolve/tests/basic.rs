@@ -4,9 +4,10 @@ use std::error::Error;
 use std::path::Path;
 use tracing::info;
 use transgress_resolve as resolve;
+use transgress_api::paths::AbsoluteCrate;
 
 #[test]
-fn basic() -> Result<(), Box<dyn Error>> {
+fn walk_test_crate() -> Result<(), Box<dyn Error>> {
     spoor::init();
     let manifest_dir: &Path = env!("CARGO_MANIFEST_DIR").as_ref();
     let test_crate = manifest_dir.parent().unwrap().join("test-crate");
@@ -43,17 +44,36 @@ fn basic() -> Result<(), Box<dyn Error>> {
         info!("transitive dep: {:?}", id);
     }
 
-    // TODO inject libstd/alloc/core `rustc --print sysroot`
-    // TODO parse libstd/alloc/core to gzipped form distributed w/ tools, parse #[since] annotations
-    //     libflate = "0.1.26"
-
-    /*
-    let resolver = resolve::resolver::Resolver::new(test_crate.clone())?;
-
-    resolver.parse_crate(resolver.root.clone())?;
-    */
-
     Ok(())
 }
 
 // TODO: `core`, parse and resolve all items in `core`
+
+#[test]
+fn walk_core() -> Result<(), Box<dyn Error>> {
+    spoor::init();
+    let manifest_dir: &Path = env!("CARGO_MANIFEST_DIR").as_ref();
+    let test_crate = manifest_dir.parent().unwrap().join("test-crate");
+
+    resolve::tools::check(&test_crate)?;
+
+    let mut crates = resolve::Map::default();
+    resolve::tools::add_rust_sources(&mut crates, &test_crate)?;
+
+    let core = AbsoluteCrate {
+        name: "core".into(),
+        version: "0.0.0".into()
+    };
+
+    let db = resolve::resolver::Db::new();
+
+    // TODO inject libstd/alloc/core `rustc --print sysroot`
+    let unresolved = resolve::resolver::walker::walk_crate(
+        core.clone(),
+        &crates[&core],
+        &db,
+    )?;
+
+    Ok(())
+}
+

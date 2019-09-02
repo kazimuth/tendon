@@ -1,10 +1,16 @@
-//! Namespaces.
 use crate::{lower::LowerError, Map};
-use std::path::{Path as FsPath, PathBuf};
+use std::path::PathBuf;
 use syn;
 use transgress_api::idents::Ident;
-use transgress_api::items::{DeclarativeMacroItem, MacroItem, ModuleItem, SymbolItem, TypeItem};
-use transgress_api::paths::{AbsoluteCrate, AbsolutePath, Path, UnresolvedPath};
+use transgress_api::items::{MacroItem, ModuleItem, SymbolItem, TypeItem};
+use transgress_api::paths::{AbsoluteCrate, AbsolutePath, Path};
+use transgress_api::tokens::Tokens;
+use dashmap::DashMap;
+use namespace::Namespace;
+use transgress_api::attributes::Span;
+
+
+// https://github.com/rust-lang/rust/tree/master/src/librustc_resolve
 
 #[cfg(test)]
 macro_rules! test_ctx {
@@ -17,18 +23,20 @@ macro_rules! test_ctx {
             },
             path: vec![],
         };
-        let root_db = crate::resolver::Db::new();
-        let crate_map = crate::Map::default();
+        let db = crate::resolver::Db::new();
         let mut scope = crate::resolver::ModuleImports::new();
-        let mut local_macros = crate::Map::default();
+        let mut unexpanded = crate::resolver::UnexpandedModule::new();
+        let crate_unexpanded_modules = dashmap::DashMap::default();
+        let source_root = std::path::PathBuf::from("fake_src/");
 
         let $ctx = ModuleCtx {
             source_file,
             module,
-            root_db: &root_db,
-            crate_map: &crate_map,
+            db: &db,
             scope: &mut scope,
-            local_macros: &mut local_macros,
+            unexpanded: &mut unexpanded,
+            crate_unexpanded_modules: &crate_unexpanded_modules,
+            source_root: &source_root
         };
     };
 }
@@ -36,9 +44,6 @@ macro_rules! test_ctx {
 pub mod namespace;
 pub mod resolvable;
 pub mod walker;
-
-use namespace::Namespace;
-use syn::Macro;
 
 /// A database of all known paths and their contents.
 pub struct Db {
@@ -62,24 +67,6 @@ impl Db {
             scopes: Namespace::new(),
         }
     }
-
-    /// Add all entries from another database.
-    /// Collisions will be ignored with a warning.
-    pub fn merge_from(&mut self, other: Db) {
-        let Db {
-            types,
-            symbols,
-            macros,
-            modules,
-            scopes,
-        } = other;
-
-        self.types.merge_from(types);
-        self.symbols.merge_from(symbols);
-        self.macros.merge_from(macros);
-        self.modules.merge_from(modules);
-        self.scopes.merge_from(scopes);
-    }
 }
 
 /// Context for lowering items in an individual module.
@@ -88,17 +75,25 @@ pub struct ModuleCtx<'a> {
     pub source_file: PathBuf,
     /// The module path.
     pub module: AbsolutePath,
+
     /// A Db containing resolved definitions for all dependencies.
-    pub root_db: &'a Db,
-    /// Names for external crates in this module.
-    pub crate_map: &'a Map<Ident, AbsoluteCrate>,
-    /// The local namespace of macros. Includes macros defined (before this module) in parents
-    pub local_macros: &'a mut Map<Ident, DeclarativeMacroItem>,
+    pub db: &'a Db,
+
     /// The scope for this module.
     pub scope: &'a mut ModuleImports,
+
+    /// All items in this module that need to be macro-expanded.
+    pub unexpanded: &'a mut UnexpandedModule,
+
+    /// Unexpanded modules in this crate.
+    pub crate_unexpanded_modules: &'a DashMap<AbsolutePath, UnexpandedModule>,
+
+    /// The source root (i.e. directory containing root lib.rs file) of this crate
+    pub source_root: &'a PathBuf
 }
 
-/// Metadata
+/// Metadata for a crate instantiation. There's one of these for every separate semver version for
+/// every crate in the dependency tree.
 #[derive(Debug)]
 pub struct CrateData {
     /// The dependencies of this crate (note: renamed according to Cargo.toml, but NOT according to
@@ -108,9 +103,9 @@ pub struct CrateData {
     pub features: Vec<String>,
     /// The path to the crate's `Cargo.toml`.
     pub manifest_path: PathBuf,
-    /// The directory where the crate's code layout begins.
-    /// Note that this isn't always `crate_root/src`, some crates do other wacky stuff.
-    pub src_root: PathBuf,
+    /// The entry file into the crate.
+    /// Note that this isn't always `crate_root/src/lib.rs`, some crates do other wacky stuff.
+    pub entry: PathBuf,
     /// The source this crate was downloaded from.
     /// If not present, the crate is a local dependency and must be referred to by relative path.
     pub cargo_source: Option<cargo_metadata::Source>,
@@ -185,9 +180,11 @@ quick_error! {
         Root {
             display("files at fs root??")
         }
+        ModuleNotFound(path: AbsolutePath) {
+            display("couldn't find source file for module {:?}", path)
+        }
     }
 }
-
 // A scope.
 // Each scope currently corresponds to a module; that might change if we end up having to handle
 // impl's in function scopes.
@@ -227,95 +224,35 @@ impl ModuleImports {
             pub_imports: Map::default(),
         }
     }
+}
 
-    /// Resolve a path, looking only at the absolute namespace; return whether the path was resolved
-    fn resolve_absolute(crate_map: &Map<Ident, AbsoluteCrate>, path: &mut Path) -> bool {
-        *path = if let Path::Unresolved(unresolved) = path {
-            if let Some(crate_) = crate_map.get(&unresolved.path[0]) {
-                Path::Absolute(AbsolutePath {
-                    crate_: crate_.clone(),
-                    path: unresolved.path.drain(..).skip(1).collect(),
-                })
-            } else {
-                return false;
-            }
-        } else {
-            return false;
-        };
-
-        true
-    }
-
-    /// Resolve paths with crate roots (only for macro resolution)
-    fn pre_resolve(&mut self, crate_map: &Map<Ident, AbsoluteCrate>) {
-        for path in self.imports.values_mut() {
-            Self::resolve_absolute(crate_map, path);
-        }
-        for path in self.pub_imports.values_mut() {
-            Self::resolve_absolute(crate_map, path);
-        }
-        for path in &mut self.glob_imports {
-            Self::resolve_absolute(crate_map, path);
-        }
-        for path in &mut self.pub_glob_imports {
-            Self::resolve_absolute(crate_map, path);
-        }
+/// A module with macros unexpanded.
+/// We throw all macro-related stuff here when we're walking freshly-parsed modules.
+/// It's not possible to eagerly expand macros because they rely on name resolution to work, and we
+/// can't do name resolution (afaict) until after we've lowered most modules already.
+/// This is ordered because order affects macro name resolution.
+pub struct UnexpandedModule(Vec<UnexpandedItem>);
+impl UnexpandedModule {
+    /// Create an empty unexpanded module.
+    pub fn new() -> Self {
+        UnexpandedModule(vec![])
     }
 }
 
-/*
-pub struct CrateAdaptor<'a> {
-    crate_: AbsoluteCrate,
-    scopes: &'a Db
+/// An item that needs macro expansion.
+/// TODO: do we need to store imports here as well?
+pub enum UnexpandedItem {
+    /// A macro invocation in item position. Note: the macro in question could be `macro_rules!`.
+    MacroInvocation(Span, Tokens),
+    /// Some item that contains a macro in type position.
+    TypeMacro(Span, Tokens),
+    /// Something with an attribute macro applied.
+    AttributeMacro(Span, Tokens),
+    /// Something with a derive macro applied.
+    /// Note: the item itself should already be stored in the main `Db`, and doesn't need to be
+    /// re-added.
+    DeriveMacro(Span, Tokens),
+    /// A sub module that has yet to be expanded.
+    UnexpandedModule { name: Ident, macro_use: bool }
 }
 
-impl CrateAdaptor<'_> {
-    fn lookup(&self, module: path: UnresolvedPath)
-}
-*/
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use transgress_api::paths::UnresolvedPath;
-
-    #[test]
-    fn pre_resolve_module_imports() {
-        let empty = Path::Unresolved(UnresolvedPath {
-            is_absolute: false,
-            path: vec![],
-        });
-
-        let mut imp = ModuleImports::new();
-        imp.glob_imports.push(Path::fake("thing::test::A"));
-        imp.glob_imports.push(Path::fake("::thing::test::A"));
-        imp.glob_imports.push(Path::fake("other_thing::test::A"));
-
-        let crate_ = AbsoluteCrate {
-            name: "thing-crate".into(),
-            version: "0.1.0".into(),
-        };
-
-        let mut crate_map = Map::default();
-        crate_map.insert(Ident::from("thing"), crate_.clone());
-
-        imp.pre_resolve(&crate_map);
-
-        assert_eq!(
-            imp.glob_imports[0],
-            Path::Absolute(AbsolutePath {
-                crate_: crate_.clone(),
-                path: vec!["test".into(), "A".into()]
-            })
-        );
-        assert_eq!(
-            imp.glob_imports[1],
-            Path::Absolute(AbsolutePath {
-                crate_: crate_.clone(),
-                path: vec!["test".into(), "A".into()]
-            })
-        );
-        assert_eq!(imp.glob_imports[2], Path::fake("other_thing::test::A"));
-    }
-
-}

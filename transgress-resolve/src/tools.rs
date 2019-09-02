@@ -2,15 +2,12 @@
 
 use crate::resolver::CrateData;
 use crate::{Map, Set};
-use cargo_metadata::{Metadata, Node, Package, PackageId};
-use std::collections::{BinaryHeap, HashMap};
-use std::ffi::{OsStr, OsString};
+use cargo_metadata::{Metadata};
 use std::fs;
 use std::io;
 use std::path::{Path as FsPath, PathBuf};
 use std::process::Command;
 use tracing::{info, warn};
-use transgress_api::idents::Ident;
 use transgress_api::paths::AbsoluteCrate;
 
 /// Run `cargo check` on target project to ensure well-formed input + dependencies.
@@ -122,7 +119,7 @@ pub fn add_rust_sources(
             deps: Map::default(),
             is_proc_macro: false,
             cargo_source: None,
-            src_root: sources.join("libcore"),
+            entry: sources.join("libcore").join("lib.rs"),
             manifest_path: sources.join("libcore").join("Cargo.toml"),
             features: vec![],
         },
@@ -136,7 +133,7 @@ pub fn add_rust_sources(
             deps: deps.clone(),
             is_proc_macro: false,
             cargo_source: None,
-            src_root: sources.join("liballoc"),
+            entry: sources.join("liballoc").join("lib.rs"),
             manifest_path: sources.join("liballoc").join("Cargo.toml"),
             features: vec![],
         },
@@ -149,7 +146,7 @@ pub fn add_rust_sources(
             deps,
             is_proc_macro: false,
             cargo_source: None,
-            src_root: sources.join("libstd"),
+            entry: sources.join("libstd").join("lib.rs"),
             manifest_path: sources.join("libstd").join("Cargo.toml"),
             features: vec![],
         },
@@ -163,7 +160,7 @@ pub fn transitive_dependencies(
     target_crate: &AbsoluteCrate,
     crates: &Map<AbsoluteCrate, CrateData>,
 ) -> Set<AbsoluteCrate> {
-    let mut dependencies: Map<AbsoluteCrate, Set<&AbsoluteCrate>> = crates
+    let dependencies: Map<AbsoluteCrate, Set<&AbsoluteCrate>> = crates
         .keys()
         .map(|crate_| (crate_.clone(), crates[crate_].deps.values().collect()))
         .collect();
@@ -218,12 +215,13 @@ pub fn lower_crates(metadata: &Metadata) -> Map<AbsoluteCrate, CrateData> {
             .find(|target| target.kind.contains(&proc_macro))
             .is_some();
 
-        let src_root = package
+        let entry = package
             .targets
             .iter()
             .find(|target| target.kind.contains(&lib) || target.kind.contains(&proc_macro));
-        let src_root = if let Some(src_root) = src_root {
-            src_root.src_path.parent().unwrap().to_owned()
+
+        let entry = if let Some(entry) = entry {
+            entry.src_path.clone()
         } else {
             warn!(
                 "skipping package with no lib target: {:?} {:?}",
@@ -253,7 +251,7 @@ pub fn lower_crates(metadata: &Metadata) -> Map<AbsoluteCrate, CrateData> {
             abs_crate,
             CrateData {
                 manifest_path,
-                src_root,
+                entry,
                 features,
                 deps,
                 cargo_source,

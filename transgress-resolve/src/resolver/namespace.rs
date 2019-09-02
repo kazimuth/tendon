@@ -1,51 +1,167 @@
 //! The Namespace data structure.
 
 use super::ResolveError;
-use crate::Map;
-use parking_lot::Mutex;
-use tracing::warn;
+use crate::Set;
+use dashmap::{DashMap, DashMapRefAny};
 use transgress_api::idents::Ident;
 use transgress_api::paths::AbsolutePath;
 
 /// A namespace, for holding some particular type of item during resolution.
 /// Allows operating on many different items in parallel.
-/// Every path in the namespace can be marked invalid, meaning that something related to that
-/// item has caused an error (i.e. parse failure, unimplemented macro expansion, something else).
-/// Items depending on invalid items should be marked invalid as well.
-/// (Invalid items are represented internally as Nones.)
 pub struct Namespace<I: Namespaced> {
-    items: Map<AbsolutePath, Mutex<I>>,
-    module_map: Map<AbsolutePath, Vec<Ident>>,
+    items: DashMap<AbsolutePath, I>,
+    module_map: DashMap<AbsolutePath, Set<Ident>>,
+}
+
+// Modifying multiple items in a namespace at the same time can deadlock.
+// This will detect this condition during te
+#[cfg(test)]
+#[macro_use]
+mod check_modify {
+    use std::cell::Cell;
+    thread_local! {
+        static CALLING_MODIFY: Cell<bool> = Cell::new(false);
+    }
+
+    pub struct CallingModify(());
+
+    pub fn check_modify() -> CallingModify {
+        CALLING_MODIFY.with(|cm| {
+            assert!(
+                !cm.get(),
+                "recursively modifying database can deadlock, please don't"
+            );
+            cm.set(true);
+
+            CallingModify(())
+        })
+    }
+
+    impl Drop for CallingModify {
+        fn drop(&mut self) {
+            CALLING_MODIFY.with(|cm| {
+                cm.set(false);
+            });
+        }
+    }
+
+    macro_rules! check_modify {
+        () => {
+            let _check = check_modify::check_modify();
+        };
+    }
+}
+#[cfg(not(test))]
+macro_rules! check_modify {
+    () => {};
 }
 
 impl<I: Namespaced> Namespace<I> {
     /// Create a namespace.
     pub fn new() -> Self {
         Namespace {
-            items: Map::default(),
-            module_map: Map::default(),
+            items: DashMap::default(),
+            module_map: DashMap::default(),
         }
     }
 
     /// Insert an item into the namespace.
-    pub fn insert(&mut self, path: AbsolutePath, item: I) -> Result<(), ResolveError> {
-        self.insert_impl(path, Mutex::new(item))
+    pub fn insert(&self, path: AbsolutePath, item: I) -> Result<(), ResolveError> {
+        let mut failed = true;
+
+        self.items.get_or_insert_with(&path, || {
+            failed = false;
+            item
+        });
+        let result = if failed {
+            Err(ResolveError::AlreadyDefined(I::namespace(), path.clone()))
+        } else {
+            Ok(())
+        };
+
+        self.update_module_map(path);
+
+        result
+    }
+
+    pub fn insert_or_update<F>(
+        &self,
+        path: AbsolutePath,
+        item: I,
+        mut f: F,
+    ) -> Result<(), ResolveError>
+    where
+        F: FnMut(&mut I, I) -> Result<(), ResolveError>,
+        I: Clone,
+    {
+        if let Some(mut current) = self.items.get_mut(&path) {
+            check_modify!();
+            f(&mut *current, item)
+        } else {
+            let mut failed = true;
+            // TODO: can we avoid this clone?
+            let cloned = item.clone();
+
+            self.items.get_or_insert_with(&path, || {
+                failed = false;
+                cloned
+            });
+
+            if failed {
+                // try again
+                self.insert_or_update(path, item, f)
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    /// Add a path to it's parents list of sub-paths.
+    /// Noop for root crate entry.
+    fn update_module_map(&self, mut path: AbsolutePath) {
+        if let Some(last) = path.path.pop() {
+            // get a mutable reference
+            let mut parent = if let DashMapRefAny::Unique(mut_) =
+                self.module_map.get_or_insert_with(&path, Set::default)
+            {
+                // if we get a mutable ref, use it
+                mut_
+            } else {
+                // otherwise, get one explicitly
+                self.module_map.index_mut(&path)
+            };
+
+            parent.insert(last);
+        }
     }
 
     /// Modify the item present at a path.
     /// If the modification fails, you might want to remove the item.
-    pub fn modify<F: FnOnce(&mut I) -> Result<(), ResolveError>>(
+    /// Note: calling this recursively can deadlock!!
+    pub fn modify<R, F: FnOnce(&mut I) -> Result<R, ResolveError>>(
         &self,
         path: &AbsolutePath,
         f: F,
-    ) -> Result<(), ResolveError> {
-        if let Some(item) = self.items.get(path) {
-            let mut lock = item.lock();
-            if let Err(err) = f(&mut *lock) {
-                Err(err)
-            } else {
-                Ok(())
-            }
+    ) -> Result<R, ResolveError> {
+        if let Some(mut item) = self.items.get_mut(&path) {
+            check_modify!();
+            f(&mut *item)
+        } else {
+            Err(ResolveError::PathNotFound(I::namespace(), path.clone()))
+        }
+    }
+
+    /// Inspect the item present at a path.
+    /// If the modification fails, you might want to remove the item.
+    /// Note: calling this and `modify` at the same time can deadlock!!
+    pub fn inspect<R, F: FnOnce(&I) -> Result<R, ResolveError>>(
+        &self,
+        path: &AbsolutePath,
+        f: F,
+    ) -> Result<R, ResolveError> {
+        if let Some(item) = self.items.get(&path) {
+            check_modify!();
+            f(&*item)
         } else {
             Err(ResolveError::PathNotFound(I::namespace(), path.clone()))
         }
@@ -56,54 +172,19 @@ impl<I: Namespaced> Namespace<I> {
         self.items.contains_key(path)
     }
 
-    /// Merge all items from another namespace.
-    pub fn merge_from(&mut self, other: Namespace<I>) {
-        for (path, item) in other.items {
-            if let Err(err) = self.insert_impl(path, item) {
-                warn!("error during Db merge: {}", err);
-            }
-        }
-    }
-
-    /// Insertion helper.
-    fn insert_impl(&mut self, path: AbsolutePath, item: Mutex<I>) -> Result<(), ResolveError> {
-        let mut parent = path.clone();
-
-        // don't modify modulemap for root crate entry
-        if let Some(last) = parent.path.pop() {
-            self.module_map
-                .entry(parent)
-                .or_insert_with(Vec::new)
-                .push(last)
-        }
-
-        let entry = self.items.entry(path);
-        match entry {
-            hashbrown::hash_map::Entry::Occupied(occ) => Err(ResolveError::AlreadyDefined(
-                I::namespace(),
-                occ.key().clone(),
-            )),
-            hashbrown::hash_map::Entry::Vacant(vac) => {
-                vac.insert(item);
-                Ok(())
-            }
-        }
-    }
-
-    /// Iterate through all the known items in a module.
+    /// Iterate through all the known paths in a module.
     pub fn iter_module<'a>(
         &'a self,
         module: &'a AbsolutePath,
-    ) -> impl Iterator<Item = &Mutex<I>> + 'a {
+    ) -> impl Iterator<Item = AbsolutePath> + 'a {
         self.module_map
             .get(module)
             .into_iter()
             .flat_map(move |entries| {
-                entries.iter().flat_map(move |entry| {
-                    self.items
-                        .get(&module.clone().join(entry.clone()))
-                        .into_iter()
-                })
+                entries
+                    .clone()
+                    .into_iter()
+                    .map(move |entry| module.clone().join(entry))
             })
     }
 

@@ -10,12 +10,14 @@ use crate::{
 use serde::{Deserialize, Serialize};
 
 /// A module.
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ModuleItem {
     pub metadata: Metadata,
     pub name: Ident,
 }
 
 /// An item in the macro namespace.
+#[derive(Clone, Serialize, Deserialize)]
 pub enum MacroItem {
     Declarative(DeclarativeMacroItem),
     Procedural(ProceduralMacroItem),

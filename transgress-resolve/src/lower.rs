@@ -7,7 +7,6 @@
 // rules reference: https://rust-lang.github.io/rustc-guide/traits/lowering-rules.html
 
 use std::fmt;
-use std::path::Path as FsPath;
 use transgress_api::tokens::Tokens;
 
 pub mod attributes;

@@ -87,5 +87,4 @@ pub mod tests {
         assert_eq!(imports[&Ident::from("V")], Path::fake("x::y::z::V"));
         assert_eq!(imports[&Ident::from("p")], Path::fake("x::y::f"));
     }
-
 }

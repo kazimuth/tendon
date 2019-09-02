@@ -1,7 +1,6 @@
 use super::attributes::lower_metadata;
 use crate::resolver::ModuleCtx;
 use syn::spanned::Spanned;
-use transgress_api::attributes::Metadata;
 use transgress_api::idents::Ident;
 use transgress_api::items::ModuleItem;
 

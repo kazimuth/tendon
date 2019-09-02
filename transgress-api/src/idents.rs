@@ -36,6 +36,11 @@ impl From<&str> for Ident {
         Ident(s.into())
     }
 }
+impl From<&Ident> for Ident {
+    fn from(i: &Ident) -> Self {
+        Ident(i.0.clone())
+    }
+}
 impl From<String> for Ident {
     fn from(s: String) -> Self {
         Ident(s.into())
