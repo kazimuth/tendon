@@ -6,6 +6,7 @@ use tracing::info;
 use transgress_resolve as resolve;
 use transgress_api::paths::AbsoluteCrate;
 use std::time::Instant;
+use rayon::prelude::*;
 
 #[test]
 fn walk_test_crate() -> Result<(), Box<dyn Error>> {
@@ -137,6 +138,55 @@ fn walk_stdlib() -> Result<(), Box<dyn Error>> {
     )?;
 
     println!("time to parse stdlib: {}ms", (Instant::now() - start).as_millis());
+
+    Ok(())
+}
+
+#[ignore]
+#[test]
+fn walk_repo_deps() -> Result<(), Box<dyn Error>> {
+    spoor::init();
+    let manifest_dir: &Path = env!("CARGO_MANIFEST_DIR").as_ref();
+    let test_crate = manifest_dir.parent().unwrap().join("test-crate");
+
+    resolve::tools::check(&test_crate)?;
+
+    info!("Collecting cargo metadata");
+    let metadata = MetadataCommand::new()
+        .current_dir(&test_crate)
+        .manifest_path(&test_crate.join("Cargo.toml"))
+        .features(CargoOpt::AllFeatures)
+        .exec()
+        .compat()?;
+
+    let root = metadata.resolve.as_ref().unwrap().root.as_ref().unwrap();
+    let root = metadata
+        .packages
+        .iter()
+        .find(|package| &package.id == root)
+        .unwrap();
+    let root = resolve::tools::lower_absolute_crate(root);
+
+    info!("root package {:?}", root);
+
+    let mut crates = resolve::tools::lower_crates(&metadata);
+    resolve::tools::add_rust_sources(&mut crates, &test_crate)?;
+
+    let mut all = crates.keys().collect::<Vec<_>>();
+    all.sort();
+
+    let db = resolve::resolver::Db::new();
+
+    let start = Instant::now();
+
+    all.par_iter().for_each(|dep| {
+        let _ = resolve::resolver::walker::walk_crate(
+            (*dep).clone(),
+            &crates[dep],
+            &db,
+        );
+    });
+    println!("time to parse all repo deps: {}ms", (Instant::now() - start).as_millis());
 
     Ok(())
 }

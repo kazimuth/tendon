@@ -1,6 +1,7 @@
 use criterion::*;
 use dashmap::DashMap;
 use transgress_resolve::Map;
+use transgress_resolve as resolve;
 
 fn compare_hash_maps(c: &mut Criterion) {
     let mut group = c.benchmark_group("compare hash maps");

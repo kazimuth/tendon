@@ -12,9 +12,9 @@ serde_derive = "1"
 serde_json = "1"
 tracing = "0.1"
 cargo_metadata = "0.8"
-syn = { version = "1", features = ["full", "visit-mut"] }
-quote = { version = "1" }
-proc-macro2 = { version = "1" }
+syn = { version = "1", features = ["full", "visit-mut"], default_features = false }
+quote = { version = "1", default_features = false }
+proc-macro2 = { version = "1", default_features = false }
 parking_lot = "0.8"
 transgress-api = { path = "../transgress-api" }
 hashbrown = { version = "0.5.0", features = ["nightly", "serde"] }
@@ -31,5 +31,5 @@ spoor = { path = "../spoor" }
 criterion = "0.3.0"
 
 [[bench]]
-name = "benches"
+name = "components"
 harness = false
