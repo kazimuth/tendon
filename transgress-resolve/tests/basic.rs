@@ -1,12 +1,12 @@
 use cargo_metadata::{CargoOpt, Metadata, MetadataCommand};
 use failure::ResultExt;
+use rayon::prelude::*;
 use std::error::Error;
 use std::path::Path;
-use tracing::info;
-use transgress_resolve as resolve;
-use transgress_api::paths::AbsoluteCrate;
 use std::time::Instant;
-use rayon::prelude::*;
+use tracing::info;
+use transgress_api::paths::AbsoluteCrate;
+use transgress_resolve as resolve;
 
 #[test]
 fn walk_test_crate() -> Result<(), Box<dyn Error>> {
@@ -57,7 +57,7 @@ fn walk_test_crate() -> Result<(), Box<dyn Error>> {
     //        &db,
     //    )?;
     //}
-    //println!("time to parse all test-crate deps: {}ms", (Instant::now() - start).as_millis());
+    //info!("time to parse all test-crate deps: {}ms", (Instant::now() - start).as_millis());
 
     Ok(())
 }
@@ -75,20 +75,19 @@ fn walk_core() -> Result<(), Box<dyn Error>> {
 
     let core = AbsoluteCrate {
         name: "core".into(),
-        version: "0.0.0".into()
+        version: "0.0.0".into(),
     };
 
     let db = resolve::resolver::Db::new();
 
     let start = Instant::now();
 
-    let unresolved = resolve::resolver::walker::walk_crate(
-        core.clone(),
-        &crates[&core],
-        &db,
-    )?;
+    let unresolved = resolve::resolver::walker::walk_crate(core.clone(), &crates[&core], &db)?;
 
-    println!("time to parse core: {}ms", (Instant::now() - start).as_millis());
+    info!(
+        "time to parse core: {}ms",
+        (Instant::now() - start).as_millis()
+    );
 
     Ok(())
 }
@@ -106,38 +105,35 @@ fn walk_stdlib() -> Result<(), Box<dyn Error>> {
 
     let core = AbsoluteCrate {
         name: "core".into(),
-        version: "0.0.0".into()
+        version: "0.0.0".into(),
     };
     let alloc = AbsoluteCrate {
         name: "alloc".into(),
-        version: "0.0.0".into()
+        version: "0.0.0".into(),
     };
     let std = AbsoluteCrate {
         name: "std".into(),
-        version: "0.0.0".into()
+        version: "0.0.0".into(),
     };
 
     let db = resolve::resolver::Db::new();
 
     let start = Instant::now();
 
-    resolve::resolver::walker::walk_crate(
-        core.clone(),
-        &crates[&core],
-        &db,
-    )?;
-    resolve::resolver::walker::walk_crate(
-        alloc.clone(),
-        &crates[&alloc],
-        &db,
-    )?;
-    resolve::resolver::walker::walk_crate(
-        std.clone(),
-        &crates[&std],
-        &db,
-    )?;
+    resolve::resolver::walker::walk_crate(core.clone(), &crates[&core], &db)?;
+    resolve::resolver::walker::walk_crate(alloc.clone(), &crates[&alloc], &db)?;
+    resolve::resolver::walker::walk_crate(std.clone(), &crates[&std], &db)?;
 
-    println!("time to parse stdlib: {}ms", (Instant::now() - start).as_millis());
+    info!(
+        "time to parse stdlib: {}ms",
+        (Instant::now() - start).as_millis()
+    );
+    info!(
+        "found in stdlib: {} types, {} symbols, {} modules",
+        db.types.len(),
+        db.symbols.len(),
+        db.modules.len()
+    );
 
     Ok(())
 }
@@ -180,13 +176,21 @@ fn walk_repo_deps() -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
 
     all.par_iter().for_each(|dep| {
-        let _ = resolve::resolver::walker::walk_crate(
-            (*dep).clone(),
-            &crates[dep],
-            &db,
-        );
+        let _ = resolve::resolver::walker::walk_crate((*dep).clone(), &crates[dep], &db);
     });
-    println!("time to parse all repo deps: {}ms", (Instant::now() - start).as_millis());
+    info!(
+        "time to parse all repo deps: {}ms",
+        (Instant::now() - start).as_millis()
+    );
+    info!(
+        "found in all repo deps: {} types, {} symbols, {} modules",
+        db.types.len(),
+        db.symbols.len(),
+        db.modules.len()
+    );
+
+    // TODO: add similar to ^ output in console stdout
+    // TODO: measure # of relevant parse / lowering failures
 
     Ok(())
 }

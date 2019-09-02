@@ -2,7 +2,7 @@
 
 use crate::resolver::CrateData;
 use crate::{Map, Set};
-use cargo_metadata::{Metadata};
+use cargo_metadata::Metadata;
 use std::fs;
 use std::io;
 use std::path::{Path as FsPath, PathBuf};

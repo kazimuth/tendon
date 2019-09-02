@@ -1,31 +1,32 @@
 //! Walk through a module, feeding data to syn and then a `resolver::Db`.
 //! Expands macros as it goes.
+//!
+//! TODO: move around stuff from "resolver" to "walker", make this its own top-level module
+use dashmap::DashMap;
 use lazy_static::lazy_static;
 use quote::ToTokens;
+use rayon::prelude::*;
 use std::fmt::Display;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path as FsPath, PathBuf};
 use syn::spanned::Spanned;
-use tracing::{info, trace, warn, trace_span};
-use rayon::prelude::*;
-use dashmap::DashMap;
+use tracing::{info, trace, trace_span, warn};
 
-use transgress_api::attributes::{Span, Visibility, Metadata};
-use transgress_api::items::{ModuleItem};
-use transgress_api::paths::{AbsolutePath, Path, AbsoluteCrate};
+use transgress_api::attributes::{Metadata, Span, Visibility};
 use transgress_api::idents::Ident;
+use transgress_api::items::{ModuleItem, SymbolItem, TypeItem};
+use transgress_api::paths::{AbsoluteCrate, AbsolutePath, Path};
+use transgress_api::tokens::Tokens;
 
 use super::{ModuleCtx, ModuleImports, ResolveError};
-use crate::{
-    lower::{
-        attributes::lower_visibility,
-        imports::lower_use,
-        modules::lower_module,
-    },
-};
-use crate::resolver::{UnexpandedModule, Db, CrateData};
 use crate::lower::attributes::lower_metadata;
+use crate::lower::items::lower_enum;
+use crate::lower::items::lower_function_item;
+use crate::lower::items::lower_struct;
+use crate::lower::LowerError;
+use crate::lower::{attributes::lower_visibility, imports::lower_use, modules::lower_module};
+use crate::resolver::{CrateData, Db, UnexpandedItem, UnexpandedModule};
 
 lazy_static! {
     static ref MACRO_USE: Path = Path::fake("macro_use");
@@ -37,7 +38,7 @@ macro_rules! unwrap_or_warn {
         match $result {
             Ok(result) => result,
             Err(err) => {
-                warn($span, &err);
+                warn(&err, $span);
                 continue;
             }
         }
@@ -45,14 +46,21 @@ macro_rules! unwrap_or_warn {
 }
 
 /// Walk a whole crate in parallel, storing all resulting data in the central db.
-pub fn walk_crate(crate_: AbsoluteCrate, data: &CrateData, db: &Db) -> Result<DashMap<AbsolutePath, UnexpandedModule>, ResolveError> {
+pub fn walk_crate(
+    crate_: AbsoluteCrate,
+    data: &CrateData,
+    db: &Db,
+) -> Result<DashMap<AbsolutePath, UnexpandedModule>, ResolveError> {
     trace!("walking {:?}", crate_);
 
     let mut imports = ModuleImports::new();
     let mut unexpanded = UnexpandedModule::new();
     let crate_unexpanded_modules = DashMap::default();
 
-    let path = AbsolutePath { crate_, path: vec![] };
+    let path = AbsolutePath {
+        crate_,
+        path: vec![],
+    };
 
     let source_root = data.entry.parent().unwrap().to_path_buf();
 
@@ -63,7 +71,7 @@ pub fn walk_crate(crate_: AbsoluteCrate, data: &CrateData, db: &Db) -> Result<Da
         db,
         scope: &mut imports,
         unexpanded: &mut unexpanded,
-        crate_unexpanded_modules: &crate_unexpanded_modules
+        crate_unexpanded_modules: &crate_unexpanded_modules,
     };
 
     let file = parse_file(&data.entry)?;
@@ -75,7 +83,7 @@ pub fn walk_crate(crate_: AbsoluteCrate, data: &CrateData, db: &Db) -> Result<Da
     let metadata = lower_metadata(&mut ctx, &syn::parse_quote!(pub), &file.attrs, file.span());
     let module = ModuleItem {
         name: Ident::from(path.crate_.name.to_string()),
-        metadata
+        metadata,
     };
 
     // store results for root crate entry
@@ -88,84 +96,106 @@ pub fn walk_crate(crate_: AbsoluteCrate, data: &CrateData, db: &Db) -> Result<Da
 
 /// Walk a set of items, spawning rayon tasks to walk submodules in parallel.
 pub fn walk_items_parallel(ctx: &mut ModuleCtx, items: &[syn::Item]) -> Result<(), ResolveError> {
-
     // find modules we can walk in parallel
-    let parallel_mods: Vec<(ModuleItem, AbsolutePath)> = items.iter().filter_map(|item| {
-        if let syn::Item::Mod(mod_) = item {
-            // have to walk inline mods serially
-            if mod_.content.is_none() {
-                return Some((lower_module(ctx, mod_), ctx.module.clone().join(Ident::from(&mod_.ident))));
-            }
-        }
-        None
-    }).collect();
-
-    trace!("{:?} children: {:#?}", ctx.module, parallel_mods.iter().map(|(_, path)| path).collect::<Vec<_>>());
-
-    parallel_mods.into_par_iter().for_each(|(mut mod_, path): (ModuleItem, AbsolutePath)| {
-        // -- PARALLEL --
-
-        // poor man's try:
-        let result = (|| -> Result<(), ResolveError> {
-            let mut imports = ModuleImports::new();
-            let mut unexpanded = UnexpandedModule::new();
-
-            let source_file = find_source_file(ctx, &mut mod_)?;
-            let parsed = parse_file(&source_file)?;
-
-            {
-                let mut ctx = ModuleCtx {
-                    source_file,
-                    source_root: ctx.source_root,
-                    module: ctx.module.clone().join(mod_.name.clone()),
-
-                    scope: &mut imports,
-                    unexpanded: &mut unexpanded,
-
-                    db: &ctx.db,
-                    crate_unexpanded_modules: &ctx.crate_unexpanded_modules
-                };
-
-                // Invoke children
-                walk_items_parallel(&mut ctx, &parsed.items)?;
-
-                trace!("finished invoking children");
-
-                // Fix up metadata
-                let Metadata {
-                    visibility: _,
-                    extra_attributes,
-                    deprecated,
-                    docs,
-                    must_use: _,
-                    span: _,
-                } = lower_metadata(&mut ctx, &syn::parse_quote!(), &parsed.attrs, parsed.span());
-
-                mod_.metadata.extra_attributes.extend(extra_attributes.into_iter());
-                if let (None, Some(deprecated)) = (&mod_.metadata.deprecated, deprecated) {
-                    mod_.metadata.deprecated = Some(deprecated);
-                }
-                if let (None, Some(docs)) = (&mod_.metadata.docs, docs) {
-                    mod_.metadata.docs = Some(docs);
+    let parallel_mods: Vec<(ModuleItem, AbsolutePath)> = items
+        .iter()
+        .filter_map(|item| {
+            if let syn::Item::Mod(mod_) = item {
+                // have to walk inline mods serially
+                if mod_.content.is_none() {
+                    return Some((
+                        lower_module(ctx, mod_),
+                        ctx.module.clone().join(Ident::from(&mod_.ident)),
+                    ));
                 }
             }
+            None
+        })
+        .collect();
 
-            trace!("insert modules");
-            ctx.db.modules.insert(path.clone(), mod_)?;
-            trace!("insert scopes");
-            ctx.db.scopes.insert(path.clone(), imports)?;
-            trace!("insert unexpanded");
-            ctx.crate_unexpanded_modules.insert(path.clone(), unexpanded);
+    trace!(
+        "{:?} children: {:#?}",
+        ctx.module,
+        parallel_mods
+            .iter()
+            .map(|(_, path)| path)
+            .collect::<Vec<_>>()
+    );
 
-            trace!("finished insertion");
-            Ok(())
-        })();
+    parallel_mods
+        .into_par_iter()
+        .for_each(|(mut mod_, path): (ModuleItem, AbsolutePath)| {
+            // -- PARALLEL --
 
-        if let Err(err) = result {
-            // TODO use span
-            warn!("error parsing module {:?}: {}", path, err);
-        }
-    });
+            // poor man's try:
+            let result = (|| -> Result<(), ResolveError> {
+                let mut imports = ModuleImports::new();
+                let mut unexpanded = UnexpandedModule::new();
+
+                let source_file = find_source_file(ctx, &mut mod_)?;
+                let parsed = parse_file(&source_file)?;
+
+                {
+                    let mut ctx = ModuleCtx {
+                        source_file,
+                        source_root: ctx.source_root,
+                        module: ctx.module.clone().join(mod_.name.clone()),
+
+                        scope: &mut imports,
+                        unexpanded: &mut unexpanded,
+
+                        db: &ctx.db,
+                        crate_unexpanded_modules: &ctx.crate_unexpanded_modules,
+                    };
+
+                    // Invoke children
+                    walk_items_parallel(&mut ctx, &parsed.items)?;
+
+                    trace!("finished invoking children");
+
+                    // Fix up metadata
+                    let Metadata {
+                        visibility: _,
+                        extra_attributes,
+                        deprecated,
+                        docs,
+                        must_use: _,
+                        span: _,
+                    } = lower_metadata(
+                        &mut ctx,
+                        &syn::parse_quote!(),
+                        &parsed.attrs,
+                        parsed.span(),
+                    );
+
+                    mod_.metadata
+                        .extra_attributes
+                        .extend(extra_attributes.into_iter());
+                    if let (None, Some(deprecated)) = (&mod_.metadata.deprecated, deprecated) {
+                        mod_.metadata.deprecated = Some(deprecated);
+                    }
+                    if let (None, Some(docs)) = (&mod_.metadata.docs, docs) {
+                        mod_.metadata.docs = Some(docs);
+                    }
+                }
+
+                trace!("insert modules");
+                ctx.db.modules.insert(path.clone(), mod_)?;
+                trace!("insert scopes");
+                ctx.db.scopes.insert(path.clone(), imports)?;
+                trace!("insert unexpanded");
+                ctx.crate_unexpanded_modules
+                    .insert(path.clone(), unexpanded);
+
+                trace!("finished insertion");
+                Ok(())
+            })();
+
+            if let Err(err) = result {
+                // TODO use span
+                warn!("error parsing module {:?}: {}", path, err);
+            }
+        });
 
     // now do the actual lowering for this crate
     // note: the fact that we save this for after all submodules are done parsing means the current parsed file
@@ -185,20 +215,76 @@ pub fn walk_items(ctx: &mut ModuleCtx, items: &[syn::Item]) -> Result<(), Resolv
     trace!("walking {:?}", ctx.module);
 
     for item in items {
+        let span = Span::from_syn(ctx.source_file.clone(), item.span());
+
         match item {
             syn::Item::Static(static_) => skip("static", ctx.module.clone().join(&static_.ident)),
             syn::Item::Const(const_) => skip("const", ctx.module.clone().join(&const_.ident)),
-            syn::Item::Fn(fn_) => skip("fn", ctx.module.clone().join(&fn_.sig.ident)),
+            syn::Item::Fn(fn_) => {
+                let result = lower_function_item(ctx, fn_);
+                match result {
+                    Ok(fn_) => unwrap_or_warn!(
+                        ctx.db.symbols.insert(
+                            ctx.module.clone().join(&fn_.0.name),
+                            SymbolItem::Function(fn_)
+                        ),
+                        &span
+                    ),
+                    Err(LowerError::TypePositionMacro) => ctx
+                        .unexpanded
+                        .0
+                        .push(UnexpandedItem::TypeMacro(span, Tokens::from(fn_))),
+                    Err(other) => warn(&other, &span),
+                }
+            }
             syn::Item::Type(type_) => skip("type", ctx.module.clone().join(&type_.ident)),
-            syn::Item::Struct(struct_) => skip("struct", ctx.module.clone().join(&struct_.ident)),
-            syn::Item::Enum(enum_) => skip("enum", ctx.module.clone().join(&enum_.ident)),
+            syn::Item::Struct(struct_) => {
+                let result = lower_struct(ctx, struct_);
+                match result {
+                    Ok(struct_) => unwrap_or_warn!(
+                        ctx.db.types.insert(
+                            ctx.module.clone().join(&struct_.name),
+                            TypeItem::Struct(struct_)
+                        ),
+                        &span
+                    ),
+                    Err(LowerError::TypePositionMacro) => ctx
+                        .unexpanded
+                        .0
+                        .push(UnexpandedItem::TypeMacro(span, Tokens::from(struct_))),
+                    Err(other) => warn(&other, &span),
+                }
+            }
+            syn::Item::Enum(enum_) => {
+                let result = lower_enum(ctx, enum_);
+                match result {
+                    Ok(enum_) => unwrap_or_warn!(
+                        ctx.db
+                            .types
+                            .insert(ctx.module.clone().join(&enum_.name), TypeItem::Enum(enum_)),
+                        &span
+                    ),
+                    Err(LowerError::TypePositionMacro) => ctx
+                        .unexpanded
+                        .0
+                        .push(UnexpandedItem::TypeMacro(span, Tokens::from(enum_))),
+                    Err(other) => warn(&other, &span),
+                }
+            }
             syn::Item::Union(union_) => skip("union", ctx.module.clone().join(&union_.ident)),
             syn::Item::Trait(trait_) => skip("trait", ctx.module.clone().join(&trait_.ident)),
-            syn::Item::TraitAlias(alias_) => skip("alias", ctx.module.clone().join(&alias_.ident)),
-            syn::Item::Impl(impl_) => skip("alias", ctx.module.clone()),
+            syn::Item::TraitAlias(alias_) => {
+                skip("trait alias", ctx.module.clone().join(&alias_.ident))
+            }
+            syn::Item::Impl(_impl_) => skip("impl", ctx.module.clone()),
             syn::Item::ForeignMod(_foreign_mod) => skip("foreign_mod", ctx.module.clone()),
             syn::Item::Verbatim(_verbatim_) => skip("verbatim", ctx.module.clone()),
-            syn::Item::Macro(_macro) => skip("macro", ctx.module.clone()),
+            syn::Item::Macro(macro_rules_) => {
+                ctx.unexpanded.0.push(UnexpandedItem::MacroInvocation(
+                    span,
+                    Tokens::from(macro_rules_),
+                ));
+            }
             syn::Item::Use(use_) => {
                 if lower_visibility(&use_.vis) == Visibility::Pub {
                     lower_use(
@@ -210,7 +296,7 @@ pub fn walk_items(ctx: &mut ModuleCtx, items: &[syn::Item]) -> Result<(), Resolv
                     lower_use(&use_, &mut ctx.scope.glob_imports, &mut ctx.scope.imports);
                 }
             }
-            syn::Item::ExternCrate(extern_crate) => skip("extern crate", ctx.module.clone()),
+            syn::Item::ExternCrate(_extern_crate) => skip("extern crate", ctx.module.clone()),
             _ => skip("something else", ctx.module.clone()),
         }
     }
@@ -233,9 +319,14 @@ pub fn parse_file(file: &FsPath) -> Result<syn::File, ResolveError> {
 }
 
 /// Find the path for a module.
-pub fn find_source_file(parent_ctx: &ModuleCtx, item: &mut ModuleItem) -> Result<PathBuf, ResolveError> {
+pub fn find_source_file(
+    parent_ctx: &ModuleCtx,
+    item: &mut ModuleItem,
+) -> Result<PathBuf, ResolveError> {
     let look_at = if let Some(path) = item.metadata.extract_attribute(&PATH) {
-        let string = path.get_assigned_string().ok_or_else(|| ResolveError::MalformedPathAttribute(format!("{:?}", path)))?;
+        let string = path
+            .get_assigned_string()
+            .ok_or_else(|| ResolveError::MalformedPathAttribute(format!("{:?}", path)))?;
         if string.ends_with(".rs") {
             // TODO are there more places we should check?
             let dir = parent_ctx.source_file.parent().ok_or(ResolveError::Root)?;
@@ -254,13 +345,13 @@ pub fn find_source_file(parent_ctx: &ModuleCtx, item: &mut ModuleItem) -> Result
 
     let to_try = [
         root.join(format!("{}.rs", look_at)),
-        root.join(look_at).join("mod.rs")
+        root.join(look_at).join("mod.rs"),
     ];
 
     for to_try in to_try.iter() {
         if let Ok(metadata) = fs::metadata(to_try) {
             if metadata.is_file() {
-                return Ok(to_try.clone())
+                return Ok(to_try.clone());
             }
         }
     }
@@ -272,6 +363,6 @@ pub fn skip(kind: &str, path: AbsolutePath) {
     trace!("skipping {} {:?}", kind, &path);
 }
 
-pub fn warn(span: &Span, cause: &dyn Display) {
+pub fn warn(cause: &dyn Display, span: &Span) {
     warn!("ignoring error [{:?}]: {}", span, cause);
 }

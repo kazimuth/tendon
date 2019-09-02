@@ -5,7 +5,6 @@
 use super::LowerError;
 use crate::resolver::ModuleCtx;
 use lazy_static::lazy_static;
-use syn;
 use tracing::{trace, warn};
 use transgress_api::attributes::Repr;
 use transgress_api::types::Trait;
@@ -57,7 +56,11 @@ pub fn lower_metadata(
                 if let Attribute::Meta(Meta::Assign { literal, .. }) = attr {
                     extract_string(&literal)
                 } else {
-                    warn!("malformed doc attribute");
+                    warn!(
+                        "malformed doc attribute {:?} [{:?}]",
+                        attr,
+                        Span::from_syn(module.source_file.clone(), span.clone())
+                    );
                     "".into()
                 },
             );

@@ -12,7 +12,7 @@ serde_derive = "1"
 serde_json = "1"
 tracing = "0.1"
 cargo_metadata = "0.8"
-syn = { version = "1", features = ["full", "visit-mut"], default_features = false }
+syn = { version = "1", features = ["full"], default_features = false }
 quote = { version = "1", default_features = false }
 proc-macro2 = { version = "1", default_features = false }
 parking_lot = "0.8"

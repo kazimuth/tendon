@@ -40,6 +40,9 @@ quick_error! {
         NotAMacroDeclaration {
             display("not a macro declaration?")
         }
+        TypePositionMacro {
+            display("type-position macro")
+        }
     }
 }
 

@@ -4,7 +4,7 @@ use super::ResolveError;
 use crate::Set;
 use dashmap::{DashMap, DashMapRefAny};
 use transgress_api::idents::Ident;
-use transgress_api::paths::{AbsolutePath, AbsoluteCrate};
+use transgress_api::paths::{AbsoluteCrate, AbsolutePath};
 
 /// A namespace, for holding some particular type of item during resolution.
 /// Allows operating on many different items in parallel.
@@ -125,7 +125,7 @@ impl<I: Namespaced> Namespace<I> {
             {
                 // get a mutable reference
                 if let DashMapRefAny::Unique(mut mut_) =
-                self.module_map.get_or_insert_with(&path, Set::default)
+                    self.module_map.get_or_insert_with(&path, Set::default)
                 {
                     // if we get a mutable ref, use it
                     mut_.insert(last);
@@ -193,6 +193,11 @@ impl<I: Namespaced> Namespace<I> {
             })
     }
 
+    /// How many items are in this namespace?
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
     // TODO remove
 }
 
@@ -226,7 +231,6 @@ impl Namespaced for super::ModuleImports {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -237,18 +241,18 @@ mod tests {
         AbsolutePath {
             crate_: AbsoluteCrate {
                 name: "core".into(),
-                version: "0.0.0".into()
+                version: "0.0.0".into(),
             },
-            path: vec!["a".into()]
+            path: vec!["a".into()],
         }
     }
     fn fake_b() -> AbsolutePath {
         AbsolutePath {
             crate_: AbsoluteCrate {
                 name: "core".into(),
-                version: "0.0.0".into()
+                version: "0.0.0".into(),
             },
-            path: vec!["b".into()]
+            path: vec!["b".into()],
         }
     }
 

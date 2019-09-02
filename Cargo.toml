@@ -7,3 +7,6 @@ members = [
     "prefab",
     "spoor"
 ]
+
+[profile.release]
+debug = true

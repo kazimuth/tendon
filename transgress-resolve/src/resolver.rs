@@ -1,14 +1,13 @@
 use crate::{lower::LowerError, Map};
+use dashmap::DashMap;
+use namespace::Namespace;
 use std::path::PathBuf;
 use syn;
+use transgress_api::attributes::Span;
 use transgress_api::idents::Ident;
 use transgress_api::items::{MacroItem, ModuleItem, SymbolItem, TypeItem};
 use transgress_api::paths::{AbsoluteCrate, AbsolutePath, Path};
 use transgress_api::tokens::Tokens;
-use dashmap::DashMap;
-use namespace::Namespace;
-use transgress_api::attributes::Span;
-
 
 // https://github.com/rust-lang/rust/tree/master/src/librustc_resolve
 
@@ -36,7 +35,7 @@ macro_rules! test_ctx {
             scope: &mut scope,
             unexpanded: &mut unexpanded,
             crate_unexpanded_modules: &crate_unexpanded_modules,
-            source_root: &source_root
+            source_root: &source_root,
         };
     };
 }
@@ -89,7 +88,7 @@ pub struct ModuleCtx<'a> {
     pub crate_unexpanded_modules: &'a DashMap<AbsolutePath, UnexpandedModule>,
 
     /// The source root (i.e. directory containing root lib.rs file) of this crate
-    pub source_root: &'a PathBuf
+    pub source_root: &'a PathBuf,
 }
 
 /// Metadata for a crate instantiation. There's one of these for every separate semver version for
@@ -253,6 +252,5 @@ pub enum UnexpandedItem {
     /// re-added.
     DeriveMacro(Span, Tokens),
     /// A sub module that has yet to be expanded.
-    UnexpandedModule { name: Ident, macro_use: bool }
+    UnexpandedModule { name: Ident, macro_use: bool },
 }
-
