@@ -8,7 +8,7 @@ use transgress_api::types::*;
 
 quick_error! {
     #[derive(Clone, Debug)]
-    pub enum ResolveError {
+    pub enum WalkError {
         Bees
     }
 }
@@ -18,17 +18,17 @@ quick_error! {
 /// through this trait.
 pub trait Resolvable {
     /// Walk the type, passing all unresolved paths to the function F to resolve.
-    fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(
+    fn walk<F: FnMut(&mut Path) -> Result<(), WalkError>>(
         &mut self,
         f: &mut F,
-    ) -> Result<(), ResolveError>;
+    ) -> Result<(), WalkError>;
 }
 
 impl Resolvable for Path {
-    fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(
+    fn walk<F: FnMut(&mut Path) -> Result<(), WalkError>>(
         &mut self,
         f: &mut F,
-    ) -> Result<(), ResolveError> {
+    ) -> Result<(), WalkError> {
         match self {
             Path::Unresolved(..) => f(self),
             _ => Ok(()),
@@ -36,10 +36,10 @@ impl Resolvable for Path {
     }
 }
 impl<T: Resolvable> Resolvable for Option<T> {
-    fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(
+    fn walk<F: FnMut(&mut Path) -> Result<(), WalkError>>(
         &mut self,
         f: &mut F,
-    ) -> Result<(), ResolveError> {
+    ) -> Result<(), WalkError> {
         match self {
             Some(t) => t.walk(f),
             _ => Ok(()),
@@ -47,10 +47,10 @@ impl<T: Resolvable> Resolvable for Option<T> {
     }
 }
 impl<T: Resolvable> Resolvable for Vec<T> {
-    fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(
+    fn walk<F: FnMut(&mut Path) -> Result<(), WalkError>>(
         &mut self,
         f: &mut F,
-    ) -> Result<(), ResolveError> {
+    ) -> Result<(), WalkError> {
         for i in self {
             i.walk(f)?;
         }
@@ -58,10 +58,10 @@ impl<T: Resolvable> Resolvable for Vec<T> {
     }
 }
 impl<T: Resolvable, V: Resolvable> Resolvable for (T, V) {
-    fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(
+    fn walk<F: FnMut(&mut Path) -> Result<(), WalkError>>(
         &mut self,
         f: &mut F,
-    ) -> Result<(), ResolveError> {
+    ) -> Result<(), WalkError> {
         self.0.walk(f)?;
         self.1.walk(f)
     }
@@ -74,7 +74,7 @@ impl<T: Resolvable, V: Resolvable> Resolvable for (T, V) {
 macro_rules! impl_resolvable {
     (struct $type:ident { $($field:ident),* }) => (
         impl $crate::resolver::resolvable::Resolvable for $type {
-            fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(&mut self, _f: &mut F) -> Result<(), ResolveError> {
+            fn walk<F: FnMut(&mut Path) -> Result<(), WalkError>>(&mut self, _f: &mut F) -> Result<(), WalkError> {
                 let $type { $($field),* } = self;
                 $(
                     $field.walk(_f)?;
@@ -86,14 +86,14 @@ macro_rules! impl_resolvable {
 
     (struct $type:ident(_)) => (
         impl $crate::resolver::resolvable::Resolvable for $type {
-            fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(&mut self, f: &mut F) -> Result<(), ResolveError> {
+            fn walk<F: FnMut(&mut Path) -> Result<(), WalkError>>(&mut self, f: &mut F) -> Result<(), WalkError> {
                 self.0.walk(f)
             }
         }
     );
     (enum $type:ident { $($variant:ident (_),)* }) => (
         impl $crate::resolver::resolvable::Resolvable for $type {
-            fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(&mut self, f: &mut F) -> Result<(), ResolveError> {
+            fn walk<F: FnMut(&mut Path) -> Result<(), WalkError>>(&mut self, f: &mut F) -> Result<(), WalkError> {
                 match self {
                     $(
                         $type::$variant(data) => data.walk(f),
@@ -104,7 +104,7 @@ macro_rules! impl_resolvable {
     );
     (skip $type:ident) => (
         impl $crate::resolver::resolvable::Resolvable for $type {
-            fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(&mut self, _: &mut F) -> Result<(), ResolveError> {
+            fn walk<F: FnMut(&mut Path) -> Result<(), WalkError>>(&mut self, _: &mut F) -> Result<(), WalkError> {
                 Ok(())
             }
         }
@@ -190,10 +190,10 @@ impl_resolvable!(struct ConstParameter { name, type_, default });
 
 // weird case, don't feel like adding syntax to the macro
 impl Resolvable for Receiver {
-    fn walk<F: FnMut(&mut Path) -> Result<(), ResolveError>>(
+    fn walk<F: FnMut(&mut Path) -> Result<(), WalkError>>(
         &mut self,
         f: &mut F,
-    ) -> Result<(), ResolveError> {
+    ) -> Result<(), WalkError> {
         match self {
             Receiver::Other(t) => t.walk(f),
             _ => Ok(()),
@@ -205,7 +205,7 @@ impl Resolvable for Receiver {
 mod tests {
     use super::*;
     use crate::lower::items::{lower_enum, lower_function_item, lower_struct};
-    use crate::resolver::ModuleCtx;
+    use crate::walker::WalkModuleCtx;
     use crate::Set;
 
     #[test]

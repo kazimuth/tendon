@@ -4,14 +4,13 @@
 //! TODO: move around stuff from "resolver" to "walker", make this its own top-level module
 use dashmap::DashMap;
 use lazy_static::lazy_static;
-use quote::ToTokens;
 use rayon::prelude::*;
 use std::fmt::Display;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path as FsPath, PathBuf};
 use syn::spanned::Spanned;
-use tracing::{info, trace, trace_span, warn};
+use tracing::{trace, trace_span, warn};
 
 use transgress_api::attributes::{Metadata, Span, Visibility};
 use transgress_api::idents::Ident;
@@ -19,14 +18,14 @@ use transgress_api::items::{ModuleItem, SymbolItem, TypeItem};
 use transgress_api::paths::{AbsoluteCrate, AbsolutePath, Path};
 use transgress_api::tokens::Tokens;
 
-use super::{ModuleCtx, ModuleImports, ResolveError};
 use crate::lower::attributes::lower_metadata;
 use crate::lower::items::lower_enum;
 use crate::lower::items::lower_function_item;
 use crate::lower::items::lower_struct;
 use crate::lower::LowerError;
 use crate::lower::{attributes::lower_visibility, imports::lower_use, modules::lower_module};
-use crate::resolver::{CrateData, Db, UnexpandedItem, UnexpandedModule};
+use crate::tools::CrateData;
+use crate::{Db, Map};
 
 lazy_static! {
     static ref MACRO_USE: Path = Path::fake("macro_use");
@@ -45,12 +44,135 @@ macro_rules! unwrap_or_warn {
     };
 }
 
+/// Context for lowering items in an individual module.
+pub struct WalkModuleCtx<'a> {
+    /// The location of this module's containing file in the filesystem.
+    pub source_file: PathBuf,
+    /// The module path.
+    pub module: AbsolutePath,
+
+    /// A Db containing resolved definitions for all dependencies.
+    pub db: &'a Db,
+
+    /// The scope for this module.
+    pub scope: &'a mut ModuleImports,
+
+    /// All items in this module that need to be macro-expanded.
+    pub unexpanded: &'a mut UnexpandedModule,
+
+    /// Unexpanded modules in this crate.
+    pub crate_unexpanded_modules: &'a DashMap<AbsolutePath, UnexpandedModule>,
+
+    /// The source root (i.e. directory containing root lib.rs file) of this crate
+    pub source_root: &'a PathBuf,
+}
+
+#[cfg(test)]
+macro_rules! test_ctx {
+    ($ctx:ident) => {
+        let source_file = std::path::PathBuf::from("fake_file.rs");
+        let module = transgress_api::paths::AbsolutePath {
+            crate_: transgress_api::paths::AbsoluteCrate {
+                name: "fake_crate".into(),
+                version: "0.0.1".into(),
+            },
+            path: vec![],
+        };
+        let db = crate::Db::new();
+        let mut scope = crate::walker::ModuleImports::new();
+        let mut unexpanded = crate::walker::UnexpandedModule::new();
+        let crate_unexpanded_modules = dashmap::DashMap::default();
+        let source_root = std::path::PathBuf::from("fake_src/");
+
+        let $ctx = WalkModuleCtx {
+            source_file,
+            module,
+            db: &db,
+            scope: &mut scope,
+            unexpanded: &mut unexpanded,
+            crate_unexpanded_modules: &crate_unexpanded_modules,
+            source_root: &source_root,
+        };
+    };
+}
+
+// A scope.
+// Each scope currently corresponds to a module; that might change if we end up having to handle
+// impl's in function scopes.
+pub struct ModuleImports {
+    /// This module's glob imports.
+    /// `use x::y::z::*` is stored as `x::y::z` pre-resolution,
+    /// and as an AbsolutePath post-resolution.
+    /// Includes the prelude, if any.
+    pub glob_imports: Vec<Path>,
+
+    /// This module's non-glob imports.
+    /// Maps the imported-as ident to a path,
+    /// i.e. `use x::Y;` is stored as `Y => x::Y`,
+    /// `use x::z as w` is stored as `w => x::z`
+    pub imports: Map<Ident, Path>,
+
+    /// This module's `pub` glob imports.
+    /// `use x::y::z::*` is stored as `x::y::z` pre-resolution,
+    /// and as an AbsolutePath post-resolution.
+    /// Includes the prelude, if any.
+    pub pub_glob_imports: Vec<Path>,
+
+    /// This module's non-glob `pub` imports.
+    /// Maps the imported-as ident to a path,
+    /// i.e. `use x::Y;` is stored as `Y => x::Y`,
+    /// `use x::z as w` is stored as `w => x::z`
+    pub pub_imports: Map<Ident, Path>,
+}
+
+impl ModuleImports {
+    /// Create a new set of imports
+    pub fn new() -> ModuleImports {
+        ModuleImports {
+            glob_imports: Vec::new(),
+            imports: Map::default(),
+            pub_glob_imports: Vec::new(),
+            pub_imports: Map::default(),
+        }
+    }
+}
+
+/// A module with macros unexpanded.
+/// We throw all macro-related stuff here when we're walking freshly-parsed modules.
+/// It's not possible to eagerly expand macros because they rely on name resolution to work, and we
+/// can't do name resolution (afaict) until after we've lowered most modules already.
+/// This is ordered because order affects macro name resolution.
+pub struct UnexpandedModule(Vec<UnexpandedItem>);
+impl UnexpandedModule {
+    /// Create an empty unexpanded module.
+    pub fn new() -> Self {
+        UnexpandedModule(vec![])
+    }
+}
+
+/// An item that needs macro expansion.
+/// TODO: do we need to store imports here as well?
+pub enum UnexpandedItem {
+    /// A macro invocation in item position. Note: the macro in question could be `macro_rules!`.
+    MacroInvocation(Span, Tokens),
+    /// Some item that contains a macro in type position.
+    TypeMacro(Span, Tokens),
+    /// Something with an attribute macro applied.
+    AttributeMacro(Span, Tokens),
+    /// Something with a derive macro applied.
+    /// Note: the item itself should already be stored in the main `Db`, and doesn't need to be
+    /// re-added.
+    DeriveMacro(Span, Tokens),
+    /// A sub module that has yet to be expanded.
+    UnexpandedModule { name: Ident, macro_use: bool },
+}
+
 /// Walk a whole crate in parallel, storing all resulting data in the central db.
 pub fn walk_crate(
     crate_: AbsoluteCrate,
     data: &CrateData,
     db: &Db,
-) -> Result<DashMap<AbsolutePath, UnexpandedModule>, ResolveError> {
+) -> Result<DashMap<AbsolutePath, UnexpandedModule>, WalkError> {
     trace!("walking {:?}", crate_);
 
     let mut imports = ModuleImports::new();
@@ -64,7 +186,7 @@ pub fn walk_crate(
 
     let source_root = data.entry.parent().unwrap().to_path_buf();
 
-    let mut ctx = ModuleCtx {
+    let mut ctx = WalkModuleCtx {
         source_file: data.entry.clone(),
         source_root: &source_root,
         module: path.clone(),
@@ -95,7 +217,7 @@ pub fn walk_crate(
 }
 
 /// Walk a set of items, spawning rayon tasks to walk submodules in parallel.
-pub fn walk_items_parallel(ctx: &mut ModuleCtx, items: &[syn::Item]) -> Result<(), ResolveError> {
+pub fn walk_items_parallel(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Result<(), WalkError> {
     // find modules we can walk in parallel
     let parallel_mods: Vec<(ModuleItem, AbsolutePath)> = items
         .iter()
@@ -128,7 +250,7 @@ pub fn walk_items_parallel(ctx: &mut ModuleCtx, items: &[syn::Item]) -> Result<(
             // -- PARALLEL --
 
             // poor man's try:
-            let result = (|| -> Result<(), ResolveError> {
+            let result = (|| -> Result<(), WalkError> {
                 let mut imports = ModuleImports::new();
                 let mut unexpanded = UnexpandedModule::new();
 
@@ -136,7 +258,7 @@ pub fn walk_items_parallel(ctx: &mut ModuleCtx, items: &[syn::Item]) -> Result<(
                 let parsed = parse_file(&source_file)?;
 
                 {
-                    let mut ctx = ModuleCtx {
+                    let mut ctx = WalkModuleCtx {
                         source_file,
                         source_root: ctx.source_root,
                         module: ctx.module.clone().join(mod_.name.clone()),
@@ -209,7 +331,7 @@ pub fn walk_items_parallel(ctx: &mut ModuleCtx, items: &[syn::Item]) -> Result<(
 }
 
 /// Parse a set of items into a database.
-pub fn walk_items(ctx: &mut ModuleCtx, items: &[syn::Item]) -> Result<(), ResolveError> {
+pub fn walk_items(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Result<(), WalkError> {
     let _span = trace_span!("walk_items", path = tracing::field::debug(&ctx.module));
 
     trace!("walking {:?}", ctx.module);
@@ -308,7 +430,7 @@ pub fn walk_items(ctx: &mut ModuleCtx, items: &[syn::Item]) -> Result<(), Resolv
 }
 
 /// Parse a file into a syn::File.
-pub fn parse_file(file: &FsPath) -> Result<syn::File, ResolveError> {
+pub fn parse_file(file: &FsPath) -> Result<syn::File, WalkError> {
     trace!("parsing `{}`", file.display());
 
     let mut file = File::open(file)?;
@@ -320,16 +442,16 @@ pub fn parse_file(file: &FsPath) -> Result<syn::File, ResolveError> {
 
 /// Find the path for a module.
 pub fn find_source_file(
-    parent_ctx: &ModuleCtx,
+    parent_ctx: &WalkModuleCtx,
     item: &mut ModuleItem,
-) -> Result<PathBuf, ResolveError> {
+) -> Result<PathBuf, WalkError> {
     let look_at = if let Some(path) = item.metadata.extract_attribute(&PATH) {
         let string = path
             .get_assigned_string()
-            .ok_or_else(|| ResolveError::MalformedPathAttribute(format!("{:?}", path)))?;
+            .ok_or_else(|| WalkError::MalformedPathAttribute(format!("{:?}", path)))?;
         if string.ends_with(".rs") {
             // TODO are there more places we should check?
-            let dir = parent_ctx.source_file.parent().ok_or(ResolveError::Root)?;
+            let dir = parent_ctx.source_file.parent().ok_or(WalkError::Root)?;
             return Ok(dir.join(string));
         }
         string
@@ -356,7 +478,7 @@ pub fn find_source_file(
         }
     }
 
-    Err(ResolveError::ModuleNotFound)
+    Err(WalkError::ModuleNotFound)
 }
 
 pub fn skip(kind: &str, path: AbsolutePath) {
@@ -365,4 +487,46 @@ pub fn skip(kind: &str, path: AbsolutePath) {
 
 pub fn warn(cause: &dyn Display, span: &Span) {
     warn!("ignoring error [{:?}]: {}", span, cause);
+}
+
+quick_error! {
+    #[derive(Debug)]
+    pub enum WalkError {
+        Io(err: std::io::Error) {
+            from()
+            cause(err)
+            description(err.description())
+            display("io error during walking: {}", err)
+        }
+        Parse(err: syn::Error) {
+            from()
+            cause(err)
+            description(err.description())
+            display("parse error during walking: {}", err)
+        }
+        PathNotFound(namespace: &'static str, path: AbsolutePath) {
+            display("path {:?} not found in {} namespace", path, namespace)
+        }
+        AlreadyDefined(namespace: &'static str, path: AbsolutePath) {
+            display("path {:?} already defined in {} namespace", path, namespace)
+        }
+        Lower(err: LowerError) {
+            from()
+            cause(err)
+            description(err.description())
+            display("{}", err)
+        }
+        CachedError(path: AbsolutePath) {
+            display("path {:?} is invalid due to some previous error", path)
+        }
+        MalformedPathAttribute(tokens: String) {
+            display("malformed `#[path]` attribute: {}", tokens)
+        }
+        Root {
+            display("files at fs root??")
+        }
+        ModuleNotFound {
+            display("couldn't find source file")
+        }
+    }
 }

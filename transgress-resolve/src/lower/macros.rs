@@ -1,6 +1,6 @@
 use super::LowerError;
 use crate::lower::attributes::lower_metadata;
-use crate::resolver::ModuleCtx;
+use crate::walker::WalkModuleCtx;
 use syn::spanned::Spanned;
 use transgress_api::{idents::Ident, items::DeclarativeMacroItem, paths::Path, tokens::Tokens};
 
@@ -11,7 +11,7 @@ lazy_static::lazy_static! {
 
 /// Lower a `macro_rules!` declaration.
 pub fn lower_macro_rules(
-    ctx: &ModuleCtx,
+    ctx: &WalkModuleCtx,
     rules_: &syn::ItemMacro,
 ) -> Result<DeclarativeMacroItem, LowerError> {
     let mut metadata = lower_metadata(ctx, &syn::parse_quote!(pub), &rules_.attrs, rules_.span());

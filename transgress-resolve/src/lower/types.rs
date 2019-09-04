@@ -244,7 +244,7 @@ mod tests {
         assert_match!(lower("dyn Banana<'a, X> + Copy + ?Sized + 'b"), Ok(Type::TraitObject(TraitObjectType { bounds: TypeBounds { lifetimes, traits } })) => {
             assert_eq!(traits.len(), 3);
             assert_eq!(lifetimes.len(), 1);
-            assert_eq!(traits[0].path, Path::fake("Banana"));;
+            assert_eq!(traits[0].path, Path::fake("Banana"));
             assert_eq!(traits[0].params.lifetimes[0].0, Ident::from("a"));
             assert_match!(traits[0].params.types[0], Type::Path(PathType { path, ..}) => {
                 assert_eq!(path, &Path::fake("X"));
@@ -257,7 +257,7 @@ mod tests {
         assert_match!(lower("impl Banana<'a, X> + Copy + ?Sized + 'b"), Ok(Type::ImplTrait(ImplTraitType { bounds: TypeBounds { lifetimes, traits }})) => {
             assert_eq!(traits.len(), 3);
             assert_eq!(lifetimes.len(), 1);
-            assert_eq!(traits[0].path, Path::fake("Banana"));;
+            assert_eq!(traits[0].path, Path::fake("Banana"));
             assert_eq!(traits[0].params.lifetimes[0].0, Ident::from("a"));
             assert_match!(traits[0].params.types[0], Type::Path(PathType { path, ..}) => {
                 assert_eq!(path, &Path::fake("X"));

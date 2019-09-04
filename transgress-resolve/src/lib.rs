@@ -25,6 +25,8 @@
 #[macro_use]
 extern crate quick_error;
 
+use transgress_api::items::{MacroItem, ModuleItem, SymbolItem, TypeItem};
+
 #[cfg(test)]
 /// Helper macro to make working with match trees easier in tests.
 macro_rules! assert_match {
@@ -40,14 +42,38 @@ macro_rules! assert_match {
 }
 
 #[macro_use]
-pub mod resolver;
-
+pub mod walker;
 pub mod expand;
 pub mod lower;
-
+pub mod namespace;
+pub mod resolver;
 pub mod tools;
 
 /// Fast maps.
 pub type Map<K, V> = hashbrown::HashMap<K, V, fxhash::FxBuildHasher>;
 /// Fast sets.
 pub type Set<K> = hashbrown::HashSet<K, fxhash::FxBuildHasher>;
+
+/// A database of all known paths and their contents.
+pub struct Db {
+    pub types: namespace::Namespace<TypeItem>,
+    pub symbols: namespace::Namespace<SymbolItem>,
+    pub macros: namespace::Namespace<MacroItem>,
+    /// `mod` items, mostly just store metadata.
+    pub modules: namespace::Namespace<ModuleItem>,
+    /// Scopes; used in name resolution, then discarded.
+    pub scopes: namespace::Namespace<walker::ModuleImports>,
+}
+
+impl Db {
+    /// Create a new database.
+    pub fn new() -> Db {
+        Db {
+            types: namespace::Namespace::new(),
+            symbols: namespace::Namespace::new(),
+            macros: namespace::Namespace::new(),
+            modules: namespace::Namespace::new(),
+            scopes: namespace::Namespace::new(),
+        }
+    }
+}

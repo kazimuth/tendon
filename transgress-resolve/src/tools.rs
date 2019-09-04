@@ -1,6 +1,5 @@
 //! [Helpers for interfacing with external tools during the binding process.](https://www.youtube.com/watch?v=TjOb5uMJbIM)
 
-use crate::resolver::CrateData;
 use crate::{Map, Set};
 use cargo_metadata::Metadata;
 use std::fs;
@@ -8,6 +7,7 @@ use std::io;
 use std::path::{Path as FsPath, PathBuf};
 use std::process::Command;
 use tracing::{info, warn};
+use transgress_api::idents::Ident;
 use transgress_api::paths::AbsoluteCrate;
 
 /// Run `cargo check` on target project to ensure well-formed input + dependencies.
@@ -81,6 +81,27 @@ pub fn sources_dir(target_dir: &FsPath) -> io::Result<PathBuf> {
     }
 
     Ok(sources)
+}
+
+/// Metadata for a crate instantiation. There's one of these for every separate semver version for
+/// every crate in the dependency tree.
+#[derive(Debug)]
+pub struct CrateData {
+    /// The dependencies of this crate (note: renamed according to Cargo.toml, but NOT according to
+    /// `extern crate ... as ...;` statements
+    pub deps: Map<Ident, AbsoluteCrate>,
+    /// The *activated* features of this crate.
+    pub features: Vec<String>,
+    /// The path to the crate's `Cargo.toml`.
+    pub manifest_path: PathBuf,
+    /// The entry file into the crate.
+    /// Note that this isn't always `crate_root/src/lib.rs`, some crates do other wacky stuff.
+    pub entry: PathBuf,
+    /// The source this crate was downloaded from.
+    /// If not present, the crate is a local dependency and must be referred to by relative path.
+    pub cargo_source: Option<cargo_metadata::Source>,
+    /// If this crate is a proc-macro crate.
+    pub is_proc_macro: bool,
 }
 
 /// Get the sysroot active for some crate.

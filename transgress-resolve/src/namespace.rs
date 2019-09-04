@@ -1,10 +1,10 @@
 //! The Namespace data structure.
 
-use super::ResolveError;
+use crate::walker::WalkError;
 use crate::Set;
 use dashmap::{DashMap, DashMapRefAny};
 use transgress_api::idents::Ident;
-use transgress_api::paths::{AbsoluteCrate, AbsolutePath};
+use transgress_api::paths::AbsolutePath;
 
 /// A namespace, for holding some particular type of item during resolution.
 /// Allows operating on many different items in parallel.
@@ -66,7 +66,7 @@ impl<I: Namespaced> Namespace<I> {
     }
 
     /// Insert an item into the namespace.
-    pub fn insert(&self, path: AbsolutePath, item: I) -> Result<(), ResolveError> {
+    pub fn insert(&self, path: AbsolutePath, item: I) -> Result<(), WalkError> {
         let mut failed = true;
 
         {
@@ -76,7 +76,7 @@ impl<I: Namespaced> Namespace<I> {
             });
         }
         let result = if failed {
-            Err(ResolveError::AlreadyDefined(I::namespace(), path.clone()))
+            Err(WalkError::AlreadyDefined(I::namespace(), path.clone()))
         } else {
             Ok(())
         };
@@ -91,9 +91,9 @@ impl<I: Namespaced> Namespace<I> {
         path: AbsolutePath,
         item: I,
         mut f: F,
-    ) -> Result<(), ResolveError>
+    ) -> Result<(), WalkError>
     where
-        F: FnMut(&mut I, I) -> Result<(), ResolveError>,
+        F: FnMut(&mut I, I) -> Result<(), WalkError>,
         I: Clone,
     {
         if let Some(mut current) = self.items.get_mut(&path) {
@@ -143,32 +143,32 @@ impl<I: Namespaced> Namespace<I> {
     /// Modify the item present at a path.
     /// If the modification fails, you might want to remove the item.
     /// Note: calling this recursively can deadlock!!
-    pub fn modify<R, F: FnOnce(&mut I) -> Result<R, ResolveError>>(
+    pub fn modify<R, F: FnOnce(&mut I) -> Result<R, WalkError>>(
         &self,
         path: &AbsolutePath,
         f: F,
-    ) -> Result<R, ResolveError> {
+    ) -> Result<R, WalkError> {
         if let Some(mut item) = self.items.get_mut(&path) {
             check_modify!();
             f(&mut *item)
         } else {
-            Err(ResolveError::PathNotFound(I::namespace(), path.clone()))
+            Err(WalkError::PathNotFound(I::namespace(), path.clone()))
         }
     }
 
     /// Inspect the item present at a path.
     /// If the modification fails, you might want to remove the item.
     /// Note: calling this and `modify` at the same time can deadlock!!
-    pub fn inspect<R, F: FnOnce(&I) -> Result<R, ResolveError>>(
+    pub fn inspect<R, F: FnOnce(&I) -> Result<R, WalkError>>(
         &self,
         path: &AbsolutePath,
         f: F,
-    ) -> Result<R, ResolveError> {
+    ) -> Result<R, WalkError> {
         if let Some(item) = self.items.get(&path) {
             check_modify!();
             f(&*item)
         } else {
-            Err(ResolveError::PathNotFound(I::namespace(), path.clone()))
+            Err(WalkError::PathNotFound(I::namespace(), path.clone()))
         }
     }
 
@@ -225,7 +225,7 @@ impl Namespaced for transgress_api::items::ModuleItem {
         "module"
     }
 }
-impl Namespaced for super::ModuleImports {
+impl Namespaced for crate::walker::ModuleImports {
     fn namespace() -> &'static str {
         "scope"
     }
@@ -234,7 +234,7 @@ impl Namespaced for super::ModuleImports {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::resolver::ModuleImports;
+    use crate::walker::ModuleImports;
     use transgress_api::paths::AbsoluteCrate;
 
     fn fake_a() -> AbsolutePath {

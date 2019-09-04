@@ -3,7 +3,7 @@
 // TODO: tie warnings to source locations.
 
 use super::LowerError;
-use crate::resolver::ModuleCtx;
+use crate::walker::WalkModuleCtx;
 use lazy_static::lazy_static;
 use tracing::{trace, warn};
 use transgress_api::attributes::Repr;
@@ -38,7 +38,7 @@ lazy_static! {
 
 /// Lower a bunch of syn data structures to the generic `ItemMetadata`.
 pub fn lower_metadata(
-    module: &ModuleCtx,
+    module: &WalkModuleCtx,
     visibility: &syn::Visibility,
     attributes: &[syn::Attribute],
     span: proc_macro2::Span,
@@ -264,7 +264,6 @@ pub fn extract_symbol_metadata(metadata: &mut Metadata) -> Result<SymbolMetadata
 mod tests {
     use super::*;
     use quote::quote;
-    use std::path::PathBuf;
     use syn::{parse_quote, spanned::Spanned};
     use transgress_api::attributes::Deprecation;
 

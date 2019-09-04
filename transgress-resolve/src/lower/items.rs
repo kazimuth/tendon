@@ -7,7 +7,7 @@ use crate::lower::{
     generics::lower_generics,
     types::lower_type,
 };
-use crate::resolver::ModuleCtx;
+use crate::walker::WalkModuleCtx;
 use syn::spanned::Spanned;
 use transgress_api::items::{FunctionArg, FunctionItem, Receiver, Signature};
 use transgress_api::{
@@ -17,7 +17,10 @@ use transgress_api::{
 };
 
 /// Lower a struct.
-pub fn lower_struct(ctx: &ModuleCtx, struct_: &syn::ItemStruct) -> Result<StructItem, LowerError> {
+pub fn lower_struct(
+    ctx: &WalkModuleCtx,
+    struct_: &syn::ItemStruct,
+) -> Result<StructItem, LowerError> {
     let mut metadata =
         super::attributes::lower_metadata(ctx, &struct_.vis, &struct_.attrs, struct_.span());
     let type_metadata = extract_type_metadata(&mut metadata)?;
@@ -48,7 +51,7 @@ pub fn lower_struct(ctx: &ModuleCtx, struct_: &syn::ItemStruct) -> Result<Struct
 }
 
 /// Lower an enum.
-pub fn lower_enum(ctx: &ModuleCtx, enum_: &syn::ItemEnum) -> Result<EnumItem, LowerError> {
+pub fn lower_enum(ctx: &WalkModuleCtx, enum_: &syn::ItemEnum) -> Result<EnumItem, LowerError> {
     let mut metadata =
         super::attributes::lower_metadata(ctx, &enum_.vis, &enum_.attrs, enum_.span());
     let type_metadata = extract_type_metadata(&mut metadata)?;
@@ -95,7 +98,7 @@ pub fn lower_enum(ctx: &ModuleCtx, enum_: &syn::ItemEnum) -> Result<EnumItem, Lo
     })
 }
 
-fn lower_fields(ctx: &ModuleCtx, fields: &syn::Fields) -> Result<Vec<StructField>, LowerError> {
+fn lower_fields(ctx: &WalkModuleCtx, fields: &syn::Fields) -> Result<Vec<StructField>, LowerError> {
     fields
         .iter()
         .enumerate()
@@ -121,7 +124,7 @@ fn lower_fields(ctx: &ModuleCtx, fields: &syn::Fields) -> Result<Vec<StructField
 /// Annoyingly, the data for this is stored in different places for functions / methods
 /// so you just have to pass in a bunch of junk lol.
 pub fn lower_signature(
-    ctx: &ModuleCtx,
+    ctx: &WalkModuleCtx,
     attrs: &[syn::Attribute],
     vis: &syn::Visibility,
     sig: &syn::Signature,
@@ -217,7 +220,7 @@ pub fn lower_signature(
 
 /// Lower a function item.
 pub fn lower_function_item(
-    ctx: &ModuleCtx,
+    ctx: &WalkModuleCtx,
     item: &syn::ItemFn,
 ) -> Result<FunctionItem, LowerError> {
     Ok(FunctionItem(lower_signature(
@@ -232,7 +235,7 @@ pub fn lower_function_item(
 /*
 /// Lower a method.
 pub fn lower_impl_method(
-    ctx: &ModuleCtx,
+    ctx: &WalkModuleCtx,
     item: &syn::ImplItemMethod,
 ) -> Result<Signature, LowerError> {
     Ok(lower_signature(
@@ -251,7 +254,7 @@ pub fn lower_impl_method(
 
 /// Lower a method.
 pub fn lower_trait_method(
-    ctx: &ModuleCtx,
+    ctx: &WalkModuleCtx,
     item: &syn::TraitItemMethod,
     trait_vis: &syn::Visibility,
 ) -> Result<Signature, LowerError> {
