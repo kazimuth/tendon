@@ -1,5 +1,6 @@
 //! The Namespace data structure.
 
+use crate::resolver::ResolveError;
 use crate::walker::WalkError;
 use crate::Set;
 use dashmap::{DashMap, DashMapRefAny};
@@ -91,9 +92,9 @@ impl<I: Namespaced> Namespace<I> {
         path: AbsolutePath,
         item: I,
         mut f: F,
-    ) -> Result<(), WalkError>
+    ) -> Result<(), ResolveError>
     where
-        F: FnMut(&mut I, I) -> Result<(), WalkError>,
+        F: FnMut(&mut I, I) -> Result<(), ResolveError>,
         I: Clone,
     {
         if let Some(mut current) = self.items.get_mut(&path) {
@@ -143,32 +144,32 @@ impl<I: Namespaced> Namespace<I> {
     /// Modify the item present at a path.
     /// If the modification fails, you might want to remove the item.
     /// Note: calling this recursively can deadlock!!
-    pub fn modify<R, F: FnOnce(&mut I) -> Result<R, WalkError>>(
+    pub fn modify<R, F: FnOnce(&mut I) -> Result<R, ResolveError>>(
         &self,
         path: &AbsolutePath,
         f: F,
-    ) -> Result<R, WalkError> {
+    ) -> Result<R, ResolveError> {
         if let Some(mut item) = self.items.get_mut(&path) {
             check_modify!();
             f(&mut *item)
         } else {
-            Err(WalkError::PathNotFound(I::namespace(), path.clone()))
+            Err(ResolveError::PathNotFound(I::namespace(), path.clone()))
         }
     }
 
     /// Inspect the item present at a path.
     /// If the modification fails, you might want to remove the item.
     /// Note: calling this and `modify` at the same time can deadlock!!
-    pub fn inspect<R, F: FnOnce(&I) -> Result<R, WalkError>>(
+    pub fn inspect<R, F: FnOnce(&I) -> Result<R, ResolveError>>(
         &self,
         path: &AbsolutePath,
         f: F,
-    ) -> Result<R, WalkError> {
+    ) -> Result<R, ResolveError> {
         if let Some(item) = self.items.get(&path) {
             check_modify!();
             f(&*item)
         } else {
-            Err(WalkError::PathNotFound(I::namespace(), path.clone()))
+            Err(ResolveError::PathNotFound(I::namespace(), path.clone()))
         }
     }
 

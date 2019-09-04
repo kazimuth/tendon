@@ -1,4 +1,5 @@
-// TODO how to inject syn invisible parens?
+// TODO: add parens when expanding types
+// TODO: $crate
 
 use super::{ast, consume::Binding};
 use crate::{Map, Set};

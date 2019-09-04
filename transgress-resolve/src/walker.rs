@@ -27,6 +27,8 @@ use crate::lower::{attributes::lower_visibility, imports::lower_use, modules::lo
 use crate::tools::CrateData;
 use crate::{Db, Map};
 
+// TODO: ignore all non-`pub` items
+
 lazy_static! {
     static ref MACRO_USE: Path = Path::fake("macro_use");
     static ref PATH: Path = Path::fake("path");
@@ -330,6 +332,13 @@ pub fn walk_items_parallel(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Resu
     result
 }
 
+macro_rules! skip_non_pub {
+    ($vis:expr) => (match &$vis {
+        syn::Visibility::Public(_) => (),
+        _ => continue,
+    })
+}
+
 /// Parse a set of items into a database.
 pub fn walk_items(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Result<(), WalkError> {
     let _span = trace_span!("walk_items", path = tracing::field::debug(&ctx.module));
@@ -340,9 +349,16 @@ pub fn walk_items(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Result<(), Wa
         let span = Span::from_syn(ctx.source_file.clone(), item.span());
 
         match item {
-            syn::Item::Static(static_) => skip("static", ctx.module.clone().join(&static_.ident)),
-            syn::Item::Const(const_) => skip("const", ctx.module.clone().join(&const_.ident)),
+            syn::Item::Static(static_) => {
+                skip_non_pub!(static_.vis);
+                skip("static", ctx.module.clone().join(&static_.ident))
+            },
+            syn::Item::Const(const_) => {
+                skip_non_pub!(const_.vis);
+                skip("const", ctx.module.clone().join(&const_.ident))
+            },
             syn::Item::Fn(fn_) => {
+                skip_non_pub!(fn_.vis);
                 let result = lower_function_item(ctx, fn_);
                 match result {
                     Ok(fn_) => unwrap_or_warn!(
@@ -359,8 +375,12 @@ pub fn walk_items(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Result<(), Wa
                     Err(other) => warn(&other, &span),
                 }
             }
-            syn::Item::Type(type_) => skip("type", ctx.module.clone().join(&type_.ident)),
+            syn::Item::Type(type_) => {
+                skip_non_pub!(type_.vis);
+                skip("type", ctx.module.clone().join(&type_.ident))
+            },
             syn::Item::Struct(struct_) => {
+                skip_non_pub!(struct_.vis);
                 let result = lower_struct(ctx, struct_);
                 match result {
                     Ok(struct_) => unwrap_or_warn!(
@@ -378,6 +398,7 @@ pub fn walk_items(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Result<(), Wa
                 }
             }
             syn::Item::Enum(enum_) => {
+                skip_non_pub!(enum_.vis);
                 let result = lower_enum(ctx, enum_);
                 match result {
                     Ok(enum_) => unwrap_or_warn!(
@@ -393,8 +414,14 @@ pub fn walk_items(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Result<(), Wa
                     Err(other) => warn(&other, &span),
                 }
             }
-            syn::Item::Union(union_) => skip("union", ctx.module.clone().join(&union_.ident)),
-            syn::Item::Trait(trait_) => skip("trait", ctx.module.clone().join(&trait_.ident)),
+            syn::Item::Union(union_) => {
+                skip_non_pub!(union_.vis);
+                skip("union", ctx.module.clone().join(&union_.ident))
+            },
+            syn::Item::Trait(trait_) => {
+                skip_non_pub!(trait_.vis);
+                skip("trait", ctx.module.clone().join(&trait_.ident))
+            },
             syn::Item::TraitAlias(alias_) => {
                 skip("trait alias", ctx.module.clone().join(&alias_.ident))
             }
@@ -504,8 +531,11 @@ quick_error! {
             description(err.description())
             display("parse error during walking: {}", err)
         }
-        PathNotFound(namespace: &'static str, path: AbsolutePath) {
-            display("path {:?} not found in {} namespace", path, namespace)
+        Resolve(err: crate::resolver::ResolveError) {
+            from()
+            cause(err)
+            description(err.description())
+            display("name resolution error during walking: {}", err)
         }
         AlreadyDefined(namespace: &'static str, path: AbsolutePath) {
             display("path {:?} already defined in {} namespace", path, namespace)
@@ -527,6 +557,9 @@ quick_error! {
         }
         ModuleNotFound {
             display("couldn't find source file")
+        }
+        Other {
+            display("other error")
         }
     }
 }
