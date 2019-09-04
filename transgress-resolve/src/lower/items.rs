@@ -387,42 +387,42 @@ mod tests {
         };
         let function_ = lower_function_item(&ctx, &function_);
         let function_ = function_.unwrap();
-        assert!(function_.0.is_const);
-        assert!(function_.0.is_unsafe);
-        assert!(function_.0.is_async);
-        assert_match!(function_.0.abi, Abi::Other(other) => {
+        assert!(function_.signature.is_const);
+        assert!(function_.signature.is_unsafe);
+        assert!(function_.signature.is_async);
+        assert_match!(function_.signature.abi, Abi::Other(other) => {
             assert_eq!(other, "system");
         });
-        assert!(function_.0.variadic);
-        assert!(function_.0.symbol_metadata.no_mangle);
+        assert!(function_.signature.variadic);
+        assert!(function_.symbol_metadata.no_mangle);
         assert_eq!(
-            function_.0.symbol_metadata.export_name,
+            function_.symbol_metadata.export_name,
             Some("orange".into())
         );
         assert_eq!(
-            function_.0.symbol_metadata.link_section,
+            function_.symbol_metadata.link_section,
             Some(".banana".into())
         );
-        assert!(!function_.0.generics.is_empty());
-        assert!(!function_.0.args.is_empty());
-        assert!(!function_.0.ret.is_void());
-        assert_eq!(function_.0.name, Ident::from("f"));
+        assert!(!function_.signature.generics.is_empty());
+        assert!(!function_.signature.args.is_empty());
+        assert!(!function_.signature.ret.is_void());
+        assert_eq!(function_.name, Ident::from("f"));
 
         let function_ = syn::parse_quote! {
             fn g() {}
         };
         let function_ = lower_function_item(&ctx, &function_).unwrap();
-        assert!(!function_.0.is_const);
-        assert!(!function_.0.is_unsafe);
-        assert!(!function_.0.is_async);
-        assert_match!(function_.0.abi, Abi::Rust);
-        assert!(!function_.0.variadic);
-        assert!(!function_.0.symbol_metadata.no_mangle);
-        assert_eq!(function_.0.symbol_metadata.export_name, None);
-        assert_eq!(function_.0.symbol_metadata.link_section, None);
-        assert!(function_.0.generics.is_empty());
-        assert!(function_.0.args.is_empty());
-        assert!(function_.0.ret.is_void());
-        assert_eq!(function_.0.name, Ident::from("g"));
+        assert!(!function_.signature.is_const);
+        assert!(!function_.signature.is_unsafe);
+        assert!(!function_.signature.is_async);
+        assert_match!(function_.signature.abi, Abi::Rust);
+        assert!(!function_.signature.variadic);
+        assert!(!function_.symbol_metadata.no_mangle);
+        assert_eq!(function_.symbol_metadata.export_name, None);
+        assert_eq!(function_.symbol_metadata.link_section, None);
+        assert!(function_.signature.generics.is_empty());
+        assert!(function_.signature.args.is_empty());
+        assert!(function_.signature.ret.is_void());
+        assert_eq!(function_.name, Ident::from("g"));
     }
 }

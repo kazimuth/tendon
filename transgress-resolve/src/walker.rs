@@ -590,3 +590,49 @@ quick_error! {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn walk_no_fs() {
+        let db = Db::new();
+        let crate_ = AbsoluteCrate {
+            name: "fake_crate".into(),
+            version: "0.1.0".into()
+        };
+        let mut scope = ModuleScope::new();
+        let mut unexpanded = UnexpandedModule::new();
+        let crate_unexpanded_modules = DashMap::default();
+        let mut ctx = WalkModuleCtx {
+            source_file: PathBuf::from("/fake/fake_file.rs"),
+            module: AbsolutePath {
+                crate_: crate_.clone(),
+                path: vec![]
+            },
+            db: &db,
+            scope: &mut scope,
+            unexpanded: &mut unexpanded,
+            crate_unexpanded_modules: &crate_unexpanded_modules,
+            source_root: &PathBuf::from("/fake")
+        };
+
+        let fake: syn::File = syn::parse_quote! {
+            extern crate bees as thing;
+
+            fn x(y: i32) -> i32 {}
+
+            enum X {}
+            enum Y {}
+
+            #[derive(Debug)]
+            struct TestStruct {
+                x: X, y: Y
+            }
+        };
+
+        walk_items(&mut ctx, &fake.items).unwrap();
+
+    }
+}
