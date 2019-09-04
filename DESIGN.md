@@ -522,6 +522,8 @@ poetry: https://poetry.eustace.io/
 
 https://eev.ee/blog/2013/09/13/cython-versus-cffi/
 
+pickle integration?
+
 ### rust-rust
 
 https://docs.rs/abi_stable/0.4.1/abi_stable/
@@ -839,4 +841,27 @@ could make use of same code as injecting dynamic linking
 
 ### idea: rpc-style bindings
 ...
+
+can be used to build an ABI as well
+
+### UX
+
+what does the user interaction loop look like?
+    initial run - functional bindings
+    manual annotation of missed features
+    docs + stuff
+    hand polishing, idiomatic translations
+        where possible, learn concepts from these and implement them as passes later
+
+nice thing about this system is that it degrades safely -- binding failures (aim to) always disable features rather than building them incorrectly
+
+language binding seems intuitive at first but the further into the weeds you go the more you discover how completely incompatible languages are -- just because their concepts seem roughly similar to a human doesn't mean that the underpinnings of those concepts can be easily algorithmically mapped to each other
+
+how is handwritten code integrated?
+    ideally can be written in ways that allow use of standard tools
+    ideally we want to avoid this as much as possible, but we should allow it as a contingency
+    just import and wrap the target thing by hand?
+        e.g. TVM-style; eh, it's fine i guess, not sure how well it'll work in languages w/ poor reexport capabilities
+    mix in non-generated code?
+        could be fragile + unsafe
 
