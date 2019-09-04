@@ -11,7 +11,9 @@ addons:
 before_script:
   - rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-gnu
 
-cache: cargo
+# pointless to cache this on nightly
+# TODO: reinstate this when we're on stable
+# cache: cargo
 
 after_success: |
     bash <(curl https://raw.githubusercontent.com/xd009642/tarpaulin/master/travis-install.sh)
