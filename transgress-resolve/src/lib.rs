@@ -62,8 +62,9 @@ pub struct Db {
     /// `mod` items, mostly just store metadata.
     pub modules: namespace::Namespace<ModuleItem>,
     /// Scopes; used in name resolution, then discarded.
-    pub scopes: namespace::Namespace<walker::ModuleImports>,
+    pub scopes: namespace::Namespace<walker::ModuleScope>,
 }
+extern crate syn as syn2;
 
 impl Db {
     /// Create a new database.

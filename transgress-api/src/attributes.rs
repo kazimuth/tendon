@@ -174,6 +174,7 @@ impl fmt::Debug for MetaInner {
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 /// The visibility of an item.
+/// TODO: do we need more rules to handle wacky shadowing situations?
 pub enum Visibility {
     Pub,
     NonPub,
@@ -294,12 +295,7 @@ impl_has_metadata!(struct StructItem);
 impl_has_metadata!(struct EnumItem);
 impl_has_metadata!(struct TraitItem);
 impl_has_metadata!(struct ModuleItem);
-
-impl HasMetadata for FunctionItem {
-    fn metadata(&self) -> &Metadata {
-        &self.0.metadata
-    }
-}
+impl_has_metadata!(struct FunctionItem);
 
 #[cfg(test)]
 mod tests {

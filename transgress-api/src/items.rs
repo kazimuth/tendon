@@ -180,11 +180,7 @@ pub struct InherentImpl {}
 /// A function (or method).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Signature {
-    pub metadata: Metadata,
-    pub symbol_metadata: SymbolMetadata,
     pub generics: Generics,
-    /// The name of this function.
-    pub name: Ident,
     /// The arguments to this function.
     /// Note: this doesn't include `self`, that'll be stored in `Method.receiver` instead
     pub args: Vec<FunctionArg>,
@@ -214,7 +210,14 @@ pub enum Abi {
 
 /// A standalone function.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct FunctionItem(pub Signature);
+pub struct FunctionItem {
+    pub metadata: Metadata,
+    pub symbol_metadata: SymbolMetadata,
+    /// The name of this function.
+    pub name: Ident,
+    /// The signature of this function.
+    pub signature: Signature,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FunctionArg {

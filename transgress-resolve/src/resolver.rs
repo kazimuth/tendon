@@ -1,15 +1,18 @@
-use transgress_api::paths::{AbsolutePath, UnresolvedPath};
+use transgress_api::paths::{AbsoluteCrate, AbsolutePath, UnresolvedPath};
 
 use crate::namespace::{Namespace, Namespaced};
-use crate::walker::ModuleImports;
-use transgress_api::items::{DeclarativeMacroItem, MacroItem};
+use crate::walker::ModuleScope;
 use crate::Map;
+use lazy_static::lazy_static;
 use transgress_api::idents::Ident;
 use transgress_api::items::Receiver::RefSelf;
+use transgress_api::items::{DeclarativeMacroItem, MacroItem};
 
 // https://github.com/rust-lang/rust/tree/master/src/librustc_resolve
 
 pub mod resolvable;
+
+extern crate syn as syn3;
 
 // macro name resolution is affected by order, right?
 //
@@ -28,6 +31,7 @@ pub mod resolvable;
 // TODO: is_safe_for_auto_derive -- trait has no type members
 // TODO: handle rust edition
 // TODO: distinguish between parse / walk failures and deliberately ignored items
+// TODO: for traits, `Self` is a generic; for other things, `Self` should resolve to self
 
 // https://github.com/rust-lang/rustc-guide/blob/master/src/name-resolution.md
 // https://doc.rust-lang.org/reference/items/extern-crates.html
@@ -51,8 +55,6 @@ quick_error! {
 //     - check first segment for weirdness
 //
 
-/*
-
 lazy_static! {
     static ref SUPER: Ident = "super".into();
     static ref CRATE: Ident = "crate".into();
@@ -62,54 +64,109 @@ lazy_static! {
 
 // TODO: pass to strip all non-visible items
 // TODO: how to handle `pub` reexports? original items may not be accessible.
+// TODO: send + sync determination w/ conservative failure for unresolved contents
+// TODO: inject prelude
+// TODO: inject primitives
+// TODO: add all local definitions to `ModuleScope`
 
-/// A resolved path.
-pub struct Resolved {
-    /// The shallow version of this path; may be a reexport. Guaranteed to be accessible from
-    /// outside the crate.
-    shallow: AbsolutePath,
-    /// The actual path of the originating exported item. May not be accessible from outside the
-    /// crate.
-    actual: AbsolutePath,
-}
+// TODO: how does `use` name resolution work??
+// https://doc.rust-lang.org/edition-guide/rust-2018/module-system/path-clarity.html
+// https://github.com/rust-lang/rust/blob/1064d41/src/librustc_resolve/resolve_imports.rs
+//     NameBinding: https://github.com/rust-lang/rust/blob/1064d41/src/librustc_resolve/lib.rs#L563
+//     import resolution: https://github.com/rust-lang/rust/blob/1064d41/src/librustc_resolve/resolve_imports.rs#L179-L416
+//         runs name resolution per-namespace
+//         ident imports over-shadow globs
+//         "blacklisting"? for wrong namespaces maybe?
+// compare: https://github.com/thepowersgang/mrustc/blob/master/src/resolve/use.cpp ; simpler codebase
+//     just converts to absolute path
+// how do `extern crate` statements affect this?
+//     by testing: at root, `extern crate` affects paths used by `use` statements; at other locations,
+//     just behaves like a normal `use` statement. That is:
+//
+//     // (crate root)
+//     extern crate syn as syn2;
+//     mod p {
+//         use syn; // valid
+//         use syn2; // valid
+//         extern crate syn as syn3; // valid
+//         mod q {
+//             use syn; // valid
+//             use syn2; // valid
+//             // use syn3; //invalid!
+//             use super::syn3; // ...but this is valid
+//
+//         }
+//     }
+//
+// also, `extern crate` statements at crate root will overwrite other dependencies in the `use`
+// namespace
 
-/// Attempt to resolve a path, without taking into account local generic parameters.
-/// Guarantees the existence of the target item; returns both the path to the target item and the
-/// path to an accessible reexport of the target item (since the target item may be in a private
-/// module.)
-pub fn resolve<I: Namespaced>(
+// resolution priority:
+//      explicit `use` / local definition
+//      glob import
+//
+
+// TODO: choose "canonical import" for every defined import
+//     prefer short paths
+
+// TODO: fall back to non-pub paths in globs in case of lookup failure
+//     paper over shadowing issues...
+
+/*
+
+// https://github.com/rust-lang/rust/blob/1064d41/src/librustc_resolve/macros.rs
+// https://github.com/rust-lang/rust/blob/1064d41/src/librustc_resolve/late.rs
+
+/// Attempt to resolve a path, following `use` and `pub use` imports. Will give a path to a definition.
+/// Resulting path may not be accessible outside its defining crate.
+pub fn resolve_recursive<I: Namespaced>(
     module: &AbsolutePath,
     path: &UnresolvedPath,
     namespace: &Namespace<I>,
-    imports: &Namespace<ModuleImports>
-) -> Result<Resolved, ResolveError> {
-    let failed = || ResolveError::ResolveFailed(I::namespace(), path.clone(), module.clone());
+    imports: &Namespace<ModuleScope>
+) -> Result<AbsolutePath, ResolveError> {
     let mut path = path.clone();
     let mut module = module.clone();
+    // whether to check in the current crate:
+    let mut check_crate = true;
+    // whether to check in external crates:
+    let mut check_external = true;
+
     if &path.path[0] == &*CRATE {
-        path.is_absolute = true;
+        check_external = false;
         path.path.remove(0);
-    }
-    if &path.path[0] == &*SUPER {
+    } else if &path.path[0] == &*SUPER {
+        check_external = false;
         module.path.pop();
         path.path.remove(0);
-    }
-    if path.is_absolute {
-        module.path.clear();
+    } else if path.is_absolute {
+        check_crate = false;
     }
 
-    panic!()
+    let imported = imports.inspect(&module, |imports| {
+        if imports.pub_imports.contains_key()
+    });
+
+    if check_crate {
+        // TODO: how much validation is needed here?
+        let root_module_exists = imports.contains(&AbsolutePath { crate_: module.crate_.clone(), path: vec![path.path[0].clone()]});
+
+        if root_module_exists {
+            return Ok(AbsolutePath { crate_: module.crate_.clone(), path: path.path.clone()})
+        }
+    }
+    if check_external {
+
+    }
+
+    Err(ResolveError::ResolveFailed(I::namespace(), path.clone(), module.clone()))
 }
 
-/// Resolve a macro.
-/// This will repeatedly follow `use` statements to find the actual path of the macro, unlike
-/// `resolve_absolute` which doesn't follow indirection.
-pub fn resolve_macro<I: Namespaced>(
+pub fn resolve_imports(
+    imports: ModuleScope,
     module: &AbsolutePath,
-    path: &UnresolvedPath,
-    namespace: &Namespace<I>,
-    imports: &Namespace<ModuleImports>,
-) -> Result<AbsolutePath, ResolveError> {
-    unimplemented!()
+
+) -> ModuleScope {
+
 }
 */

@@ -23,6 +23,7 @@ pub fn lower_struct(
 ) -> Result<StructItem, LowerError> {
     let mut metadata =
         super::attributes::lower_metadata(ctx, &struct_.vis, &struct_.attrs, struct_.span());
+
     let type_metadata = extract_type_metadata(&mut metadata)?;
 
     let generics = lower_generics(&struct_.generics)?;
@@ -130,9 +131,6 @@ pub fn lower_signature(
     sig: &syn::Signature,
     span: proc_macro2::Span,
 ) -> Result<Signature, LowerError> {
-    let mut metadata = lower_metadata(ctx, vis, attrs, span);
-    let symbol_metadata = extract_symbol_metadata(&mut metadata)?;
-    let name = Ident::from(&sig.ident);
     let mut receiver = Receiver::None;
     let variadic = sig.variadic.is_some();
 
@@ -209,11 +207,8 @@ pub fn lower_signature(
         is_async,
         is_const,
         is_unsafe,
-        metadata,
-        name,
         receiver,
         ret,
-        symbol_metadata,
         variadic,
     })
 }
@@ -223,13 +218,16 @@ pub fn lower_function_item(
     ctx: &WalkModuleCtx,
     item: &syn::ItemFn,
 ) -> Result<FunctionItem, LowerError> {
-    Ok(FunctionItem(lower_signature(
-        ctx,
-        &item.attrs,
-        &item.vis,
-        &item.sig,
-        item.span(),
-    )?))
+    let mut metadata = lower_metadata(ctx, &item.vis, &item.attrs, item.span());
+    let symbol_metadata = extract_symbol_metadata(&mut metadata)?;
+    let name = Ident::from(&item.sig.ident);
+    let signature = lower_signature(ctx, &item.attrs, &item.vis, &item.sig, item.span())?;
+    Ok(FunctionItem {
+        metadata,
+        symbol_metadata,
+        name,
+        signature,
+    })
 }
 
 /*

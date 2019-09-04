@@ -4,6 +4,7 @@ use smol_str::SmolStr;
 use std::fmt;
 
 // TODO: refactor paths to hide contents + forbid empty paths?
+// TODO: refactor to allow borrowed paths?
 
 /// A (possibly unresolved) path.
 #[derive(Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]

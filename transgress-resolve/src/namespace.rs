@@ -226,7 +226,7 @@ impl Namespaced for transgress_api::items::ModuleItem {
         "module"
     }
 }
-impl Namespaced for crate::walker::ModuleImports {
+impl Namespaced for crate::walker::ModuleScope {
     fn namespace() -> &'static str {
         "scope"
     }
@@ -235,7 +235,7 @@ impl Namespaced for crate::walker::ModuleImports {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::walker::ModuleImports;
+    use crate::walker::ModuleScope;
     use transgress_api::paths::AbsoluteCrate;
 
     fn fake_a() -> AbsolutePath {
@@ -261,10 +261,10 @@ mod tests {
     fn insert_deadlock() {
         spoor::init();
 
-        let namespace = Namespace::<ModuleImports>::new();
+        let namespace = Namespace::<ModuleScope>::new();
 
         // this used to have a deadlock, doesn't anymore
-        namespace.insert(fake_a(), ModuleImports::new()).unwrap();
-        namespace.insert(fake_b(), ModuleImports::new()).unwrap();
+        namespace.insert(fake_a(), ModuleScope::new()).unwrap();
+        namespace.insert(fake_b(), ModuleScope::new()).unwrap();
     }
 }

@@ -57,7 +57,7 @@ pub struct WalkModuleCtx<'a> {
     pub db: &'a Db,
 
     /// The scope for this module.
-    pub scope: &'a mut ModuleImports,
+    pub scope: &'a mut ModuleScope,
 
     /// All items in this module that need to be macro-expanded.
     pub unexpanded: &'a mut UnexpandedModule,
@@ -81,7 +81,7 @@ macro_rules! test_ctx {
             path: vec![],
         };
         let db = crate::Db::new();
-        let mut scope = crate::walker::ModuleImports::new();
+        let mut scope = crate::walker::ModuleScope::new();
         let mut unexpanded = crate::walker::UnexpandedModule::new();
         let crate_unexpanded_modules = dashmap::DashMap::default();
         let source_root = std::path::PathBuf::from("fake_src/");
@@ -101,7 +101,7 @@ macro_rules! test_ctx {
 // A scope.
 // Each scope currently corresponds to a module; that might change if we end up having to handle
 // impl's in function scopes.
-pub struct ModuleImports {
+pub struct ModuleScope {
     /// This module's glob imports.
     /// `use x::y::z::*` is stored as `x::y::z` pre-resolution,
     /// and as an AbsolutePath post-resolution.
@@ -127,10 +127,10 @@ pub struct ModuleImports {
     pub pub_imports: Map<Ident, Path>,
 }
 
-impl ModuleImports {
+impl ModuleScope {
     /// Create a new set of imports
-    pub fn new() -> ModuleImports {
-        ModuleImports {
+    pub fn new() -> ModuleScope {
+        ModuleScope {
             glob_imports: Vec::new(),
             imports: Map::default(),
             pub_glob_imports: Vec::new(),
@@ -177,7 +177,7 @@ pub fn walk_crate(
 ) -> Result<DashMap<AbsolutePath, UnexpandedModule>, WalkError> {
     trace!("walking {:?}", crate_);
 
-    let mut imports = ModuleImports::new();
+    let mut imports = ModuleScope::new();
     let mut unexpanded = UnexpandedModule::new();
     let crate_unexpanded_modules = DashMap::default();
 
@@ -253,7 +253,7 @@ pub fn walk_items_parallel(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Resu
 
             // poor man's try:
             let result = (|| -> Result<(), WalkError> {
-                let mut imports = ModuleImports::new();
+                let mut imports = ModuleScope::new();
                 let mut unexpanded = UnexpandedModule::new();
 
                 let source_file = find_source_file(ctx, &mut mod_)?;
@@ -333,10 +333,24 @@ pub fn walk_items_parallel(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Resu
 }
 
 macro_rules! skip_non_pub {
-    ($vis:expr) => (match &$vis {
-        syn::Visibility::Public(_) => (),
-        _ => continue,
-    })
+    ($item:expr) => {
+        match &$item.vis {
+            syn::Visibility::Public(_) => (),
+            _ => continue,
+        }
+    };
+}
+macro_rules! add_to_scope {
+    ($ctx:ident, $item:ident) => {
+        match &$item.metadata.visibility {
+            Visibility::Pub => {
+                $ctx.scope.pub_imports.insert($item.name.clone(), $ctx.module.clone().join($item.name.clone()).into())
+            }
+            Visibility::NonPub => {
+                $ctx.scope.imports.insert($item.name.clone(), $ctx.module.clone().join($item.name.clone()).into())
+            }
+        }
+    };
 }
 
 /// Parse a set of items into a database.
@@ -350,24 +364,29 @@ pub fn walk_items(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Result<(), Wa
 
         match item {
             syn::Item::Static(static_) => {
-                skip_non_pub!(static_.vis);
+                skip_non_pub!(static_);
                 skip("static", ctx.module.clone().join(&static_.ident))
-            },
+                // TODO: add to scope when implemented
+            }
             syn::Item::Const(const_) => {
-                skip_non_pub!(const_.vis);
+                skip_non_pub!(const_);
                 skip("const", ctx.module.clone().join(&const_.ident))
-            },
+                // TODO: add to scope when implemented
+            }
             syn::Item::Fn(fn_) => {
-                skip_non_pub!(fn_.vis);
+                skip_non_pub!(fn_);
                 let result = lower_function_item(ctx, fn_);
                 match result {
-                    Ok(fn_) => unwrap_or_warn!(
-                        ctx.db.symbols.insert(
-                            ctx.module.clone().join(&fn_.0.name),
-                            SymbolItem::Function(fn_)
-                        ),
-                        &span
-                    ),
+                    Ok(fn_) => {
+                        add_to_scope!(ctx, fn_);
+                        unwrap_or_warn!(
+                            ctx.db.symbols.insert(
+                                ctx.module.clone().join(&fn_.name),
+                                SymbolItem::Function(fn_)
+                            ),
+                            &span
+                        );
+                    }
                     Err(LowerError::TypePositionMacro) => ctx
                         .unexpanded
                         .0
@@ -375,21 +394,25 @@ pub fn walk_items(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Result<(), Wa
                     Err(other) => warn(&other, &span),
                 }
             }
+            // note: we don't skip non-pub items for the rest of this, since we need to know about
+            // all types for send + sync determination
             syn::Item::Type(type_) => {
-                skip_non_pub!(type_.vis);
                 skip("type", ctx.module.clone().join(&type_.ident))
-            },
+                // TODO: add to scope when implemented
+            }
             syn::Item::Struct(struct_) => {
-                skip_non_pub!(struct_.vis);
                 let result = lower_struct(ctx, struct_);
                 match result {
-                    Ok(struct_) => unwrap_or_warn!(
-                        ctx.db.types.insert(
-                            ctx.module.clone().join(&struct_.name),
-                            TypeItem::Struct(struct_)
-                        ),
-                        &span
-                    ),
+                    Ok(struct_) => {
+                        add_to_scope!(ctx, struct_);
+                        unwrap_or_warn!(
+                            ctx.db.types.insert(
+                                ctx.module.clone().join(&struct_.name),
+                                TypeItem::Struct(struct_)
+                            ),
+                            &span
+                        );
+                    }
                     Err(LowerError::TypePositionMacro) => ctx
                         .unexpanded
                         .0
@@ -398,15 +421,18 @@ pub fn walk_items(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Result<(), Wa
                 }
             }
             syn::Item::Enum(enum_) => {
-                skip_non_pub!(enum_.vis);
                 let result = lower_enum(ctx, enum_);
                 match result {
-                    Ok(enum_) => unwrap_or_warn!(
-                        ctx.db
-                            .types
-                            .insert(ctx.module.clone().join(&enum_.name), TypeItem::Enum(enum_)),
-                        &span
-                    ),
+                    Ok(enum_) => {
+                        add_to_scope!(ctx, enum_);
+                        unwrap_or_warn!(
+                            ctx.db.types.insert(
+                                ctx.module.clone().join(&enum_.name),
+                                TypeItem::Enum(enum_)
+                            ),
+                            &span
+                        )
+                    }
                     Err(LowerError::TypePositionMacro) => ctx
                         .unexpanded
                         .0
@@ -415,15 +441,16 @@ pub fn walk_items(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Result<(), Wa
                 }
             }
             syn::Item::Union(union_) => {
-                skip_non_pub!(union_.vis);
                 skip("union", ctx.module.clone().join(&union_.ident))
-            },
+                // TODO: add to scope when implemented
+            }
             syn::Item::Trait(trait_) => {
-                skip_non_pub!(trait_.vis);
                 skip("trait", ctx.module.clone().join(&trait_.ident))
-            },
+                // TODO: add to scope when implemented
+            }
             syn::Item::TraitAlias(alias_) => {
                 skip("trait alias", ctx.module.clone().join(&alias_.ident))
+                // TODO: add to scope when implemented
             }
             syn::Item::Impl(_impl_) => skip("impl", ctx.module.clone()),
             syn::Item::ForeignMod(_foreign_mod) => skip("foreign_mod", ctx.module.clone()),

@@ -178,9 +178,9 @@ impl_resolvable!(struct TraitItem { metadata, inherent_impl });
 impl_resolvable!(
     struct InherentImpl {}
 );
-impl_resolvable!(struct Signature { metadata, symbol_metadata, generics, name, args, ret, is_unsafe, is_async, is_const, abi, receiver, variadic });
+impl_resolvable!(struct Signature { generics, args, ret, is_unsafe, is_async, is_const, abi, receiver, variadic });
 impl_resolvable!(struct FunctionArg { name, type_ });
-impl_resolvable!(struct FunctionItem(_));
+impl_resolvable!(struct FunctionItem { metadata, symbol_metadata, name, signature });
 impl_resolvable!(skip StructKind);
 impl_resolvable!(skip Abi);
 impl_resolvable!(struct Generics {type_params, lifetime_params, const_params, type_bounds, lifetime_bounds});
