@@ -1101,6 +1101,49 @@ dependencies = [
 ]
 
 [[package]]
+name = "tendon"
+version = "0.0.0"
+
+[[package]]
+name = "tendon-api"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "quote 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde 1.0.99 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.40 (registry+https://github.com/rust-lang/crates.io-index)",
+ "smol_str 0.1.12 (registry+https://github.com/rust-lang/crates.io-index)",
+ "syn 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "tendon-resolve"
+version = "0.1.0"
+dependencies = [
+ "cargo_metadata 0.8.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "criterion 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "dashmap 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "failure 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "fxhash 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "hashbrown 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "lazy_static 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parking_lot 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "proc-macro2 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "quick-error 1.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "quote 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rayon 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde 1.0.99 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_derive 1.0.99 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.40 (registry+https://github.com/rust-lang/crates.io-index)",
+ "spoor 0.1.0",
+ "syn 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tendon-api 0.1.0",
+ "toml 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "termcolor"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1236,49 +1279,6 @@ dependencies = [
  "regex 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "smallvec 0.6.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing-core 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "transgress"
-version = "0.1.0"
-
-[[package]]
-name = "transgress-api"
-version = "0.1.0"
-dependencies = [
- "proc-macro2 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "quote 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde 1.0.99 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde_json 1.0.40 (registry+https://github.com/rust-lang/crates.io-index)",
- "smol_str 0.1.12 (registry+https://github.com/rust-lang/crates.io-index)",
- "syn 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "tracing 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "transgress-resolve"
-version = "0.1.0"
-dependencies = [
- "cargo_metadata 0.8.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "criterion 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "dashmap 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "failure 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "fxhash 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "hashbrown 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "lazy_static 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "parking_lot 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "proc-macro2 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "quick-error 1.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "quote 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "rayon 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde 1.0.99 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde_derive 1.0.99 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde_json 1.0.40 (registry+https://github.com/rust-lang/crates.io-index)",
- "spoor 0.1.0",
- "syn 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "toml 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "tracing 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "transgress-api 0.1.0",
 ]
 
 [[package]]

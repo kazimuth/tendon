@@ -16,7 +16,7 @@ before_script:
 # cache: cargo
 
 env:
-  - RUST_LOG=basic=info,transgress=info
+  - RUST_LOG=basic=info,tendon=info
 
 script:
   - cargo build --verbose --all

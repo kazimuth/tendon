@@ -1,0 +1,15 @@
+[package]
+name = "tendon"
+version = "0.0.0"
+authors = ["James Gilles <jhgilles@mit.edu>"]
+edition = "2018"
+readme = "README.md"
+description = "placeholder"
+license = "MIT"
+repository = "https://github.com/kazimuth/tendon"
+
+[badges]
+travis-ci = { repository = "kazimuth/tendon", branch = "master" }
+codecov = { service = "github", repository = "kazimuth/tendon", branch = "master" }
+
+[dependencies]

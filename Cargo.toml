@@ -1,9 +1,9 @@
 [workspace]
 members = [
     "test-crate",
-    "transgress",
-    "transgress-api",
-    "transgress-resolve",
+    "tendon",
+    "tendon-api",
+    "tendon-resolve",
     "prefab",
     "spoor"
 ]

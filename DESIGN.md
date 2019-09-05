@@ -23,24 +23,24 @@ resolve default trait args
 ### usage / user API ideas
 
 - parse .d.rs-style definitions for missing things
-  - maybe just a macro `transgress_metadata!` that can be invoked wherever, will be auto-harvested from dependent crates
-  - makes it easy to make e.g. `transgress-uuid` crates or whatever to help out, ...
+  - maybe just a macro `tendon_metadata!` that can be invoked wherever, will be auto-harvested from dependent crates
+  - makes it easy to make e.g. `tendon-uuid` crates or whatever to help out, ...
   - also, custom things in doc comments?
 - build system integrations
   - automatically generate build files for multiple build systems
-  - generate code for invoking cargo / transgress-rs from other build systems
+  - generate code for invoking cargo / tendon from other build systems
     - bootstrap problem: write the minimum amount of code in all xyz languages to start executing rust
-  - separate crates for different build systems (transgress-gradle, transgress-b
+  - separate crates for different build systems (tendon-gradle, tendon-b
 - custom conversions (convert numpy array to ndarray automatically?)
 
-### [source-scrape](../transgress-source-scrape)
+### [source-scrape](../tendon-source-scrape)
 
 - only resolve public items as-needed until you have the full tree of things needed to access an API
 - propagate resolution failures upwards to minimize the damage they do to an API
   - blacklists
   - unresolvable paths (due to unimplemented macros / #[cfg]s, etc)
   - parser failures
-- lower APIs to simplified [format](#transgress-api) that's easy to serialize / parse
+- lower APIs to simplified [format](#tendon-api) that's easy to serialize / parse
 
 - metadata from closures can only leak to the typesystem through the automatic borrows + send + sync on impl Trait
 
@@ -181,7 +181,7 @@ each module has a list of imports, glob-imports
 
 https://doc.rust-lang.org/nomicon/hrtb.html
 
-### [transgress-api](../transgress-api)
+### [tendon-api](../tendon-api)
 
 - Rust API description format
   - text format for tool consumption
@@ -303,7 +303,7 @@ have a couple layers of IR:
            |
           syn
            |
-    transgress-api
+    tendon-api
     /      |      \
 binding<->abi<->rust backend
 |          |        |
@@ -313,8 +313,8 @@ binding<->abi<->rust backend
 .swig >:)
 ```
 
-can insert synthetic code at the transgress-api level (simple helpers for enums, etc.)
-can scan transgress-api for bindable patterns (error enums, etc.)
+can insert synthetic code at the tendon-api level (simple helpers for enums, etc.)
+can scan tendon-api for bindable patterns (error enums, etc.)
 can check abi for backwards-compatibility
 
 ideally, binding implementors only need to look at api and abi -- rust backend is already done?
@@ -332,14 +332,14 @@ idea: some sort of rule-based API rewriting system?
 Instantly bind your rust code from 7 languages
 
 - no handwritten unsafe ffi code
-- no listing every type and function to bind by hand: just `transgress` and you're done*
+- no listing every type and function to bind by hand: just `tendon` and you're done*
 - generates code, not binaries, to keep your IDE and documentation tools working
 - simple integrations with build systems
 
 example: let's bind the excellent [uuid](https://crates.io/crates/uuid) library from python. [rust parsers good fast raggum fraggum]
 
 ```sh
-$ transgress generate test_crate python-poetry ...
+$ tendon generate test_crate python-poetry ...
 ```
 
 `lib.rs`:
@@ -394,7 +394,7 @@ and c, ...
 The language you want not supported? Write your own integration:
 
 - a simple integration can be written in a few hundred lines of code.
-- implement fancier transgress-rs binding features at your leisure. the more you implement, the better the generated API.
+- implement fancier tendon binding features at your leisure. the more you implement, the better the generated API.
 
 features:
 
@@ -516,7 +516,7 @@ https://github.com/getsentry/milksnake
 -> builds?
 
 how to reacharound from cffi
-e.g. rust code runs python script via cpython api calls back into rust from transgress: how do we make this work?
+e.g. rust code runs python script via cpython api calls back into rust from tendon: how do we make this work?
 
 poetry: https://poetry.eustace.io/
 
@@ -864,4 +864,26 @@ how is handwritten code integrated?
         e.g. TVM-style; eh, it's fine i guess, not sure how well it'll work in languages w/ poor reexport capabilities
     mix in non-generated code?
         could be fragile + unsafe
+
+### names
+primary: memorable + googleable
+secondary: having to do with being a binding system / core, stable system component
+
+tendon
+    as in, trespass, build a monster; kinda just means "sin" though, more 'break rules' than 'trespass'
+    encroach
+    interlope
+    meddle
+
+tendon
+    nothing else has taken this name yet... spicy...
+    "tendon-bind"
+
+regolith
+    the layer of rock between bedrock and the above material
+    "regolith linux" exists
+
+seam
+
+interstice
 
