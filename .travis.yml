@@ -27,16 +27,16 @@ after_success: |
     cargo tarpaulin --out Xml
     bash <(curl -s https://codecov.io/bash)
 
-deploy:
-  - provider: releases
-    api_key:
-      secure: fsIePglJyC2ErcrI0cmcR5uyOaJL7UE6lieipPXBvrN4edJY5v2S3pP+Ylh2tb4TWkB4AwXdPs5wH3b4wp/rPCeFS+bCrbVwXUb5Mepa++3zTLSmHDTpfJFs8zzPJFvII1q476rbN9nMOFX4dFwQdFhI7hPuDB2N4IKOZyHRL+c+zkXu7ndDUOTXyUvgWpCK8G7DqpjZiEGOHgVUujba+mBY4bAKchLwiAWom1W4SLxBFFo1fABbBs5YPIfTfHL25zNJb2Q7wgE46NrFERaZFw3N2hLy481KNDBJBx+fdrDX3IcM7sngd8zeU+ywalqxVDY+9TcQqXhBFHHGuEh25048d2Gy47bsDbFY5GAX5+PQ9JQDqSXOIBqb4Jvntjrxuj1cAJA34A8dqTG9sbA/uG6GmwTtcFyIwlmsibjYKVNp+xVJeYNEsAqvF3Bil+UaJNGGkudqvVDK4T0STwyPXonJR5TSBidEtzEXkzjO2C9gLNlLqDcVjuusKwK6xHwu2FJ4tQ2/X44gDVGtQ3Q+YZdJFHayKuhahIYg/+KvBt//2ah3DpWPe/imLu0fk1DSzE0bjs3AYXRPAAQrsjePekTAaHsUUXf75FNk2h8Fmf7oo36D9PnLlOQ8EZGuCHAEQ4KLd0XNIo8J/NExHwsNhvht9f9hXl9J6VZ98MqffPk=
-    file: TODO
-    on:
-      tags: true
-  - provider: cargo
-    token:
-      secure: RDq9rD5cJm/44Axvd6T9FYRfbaQUfzkJm2IL22LZQgK2Yfrp0BT9FmI8RwVlHR/qNP7g5/zP3Fw3okvR/gFBQ4VyxhPzoZhEDON+cwI/IAl8FBzXA1DNqAftHTRXQuCS7tpr/V0DkmaBjdSrEJ1dKEDlkLT7gv4w79KuQTf9p5GmuCjQvsH0z4BU2iTGqG2D5l7pYsGQ2I+Ezklnq2QwajLWYgNIqUzvlBgrfSkbMfAjxPG2lGNKiQK5vQNyef9UoH3Bmz2v7CVDDybu0V2glY8Y5/J2htciLEu2Uqx6Q47bd4m/jjZnUO6ZZSRLA2dBEaKeMqA/sRBPmaMTd8JzPxegZKAe1rZiZ2HBwvvuLq5wH82UNwNJg9TDuFJJIKNKb8UHxk8uVQ/rRSuTgwf9PBCaAV41/cvVZBIlYnXiTxnbgyz9h7X6bMxOT5axwx5w1SvNyH4yhn2VPM7mVPN0oOuPkJV03X7PsqAOy6OzDr+ciMoD7z8seS7xziAQv9kXb/pVJ43U1Ke5fEUdny0BLLe+MrlBViGzIIBfJVrvy4QCCfhJR7vgo0oAJkppxiD4JeKMhUfG2j6e5D30buIrj5G7m6YSO5FFfgTUYMnebV+PxUYCDoBTzNT7QTRZM0Cb660SiK88aMU37ymv9z3BPDuDQ8nJHpoGlNLsk/13qvk=
-    on:
-      tags: true
+    # deploy:
+    #   - provider: releases
+    #     api_key:
+    #       secure: fsIePglJyC2ErcrI0cmcR5uyOaJL7UE6lieipPXBvrN4edJY5v2S3pP+Ylh2tb4TWkB4AwXdPs5wH3b4wp/rPCeFS+bCrbVwXUb5Mepa++3zTLSmHDTpfJFs8zzPJFvII1q476rbN9nMOFX4dFwQdFhI7hPuDB2N4IKOZyHRL+c+zkXu7ndDUOTXyUvgWpCK8G7DqpjZiEGOHgVUujba+mBY4bAKchLwiAWom1W4SLxBFFo1fABbBs5YPIfTfHL25zNJb2Q7wgE46NrFERaZFw3N2hLy481KNDBJBx+fdrDX3IcM7sngd8zeU+ywalqxVDY+9TcQqXhBFHHGuEh25048d2Gy47bsDbFY5GAX5+PQ9JQDqSXOIBqb4Jvntjrxuj1cAJA34A8dqTG9sbA/uG6GmwTtcFyIwlmsibjYKVNp+xVJeYNEsAqvF3Bil+UaJNGGkudqvVDK4T0STwyPXonJR5TSBidEtzEXkzjO2C9gLNlLqDcVjuusKwK6xHwu2FJ4tQ2/X44gDVGtQ3Q+YZdJFHayKuhahIYg/+KvBt//2ah3DpWPe/imLu0fk1DSzE0bjs3AYXRPAAQrsjePekTAaHsUUXf75FNk2h8Fmf7oo36D9PnLlOQ8EZGuCHAEQ4KLd0XNIo8J/NExHwsNhvht9f9hXl9J6VZ98MqffPk=
+    #     file: TODO
+    #     on:
+    #       tags: true
+    #   - provider: cargo
+    #     token:
+    #       secure: RDq9rD5cJm/44Axvd6T9FYRfbaQUfzkJm2IL22LZQgK2Yfrp0BT9FmI8RwVlHR/qNP7g5/zP3Fw3okvR/gFBQ4VyxhPzoZhEDON+cwI/IAl8FBzXA1DNqAftHTRXQuCS7tpr/V0DkmaBjdSrEJ1dKEDlkLT7gv4w79KuQTf9p5GmuCjQvsH0z4BU2iTGqG2D5l7pYsGQ2I+Ezklnq2QwajLWYgNIqUzvlBgrfSkbMfAjxPG2lGNKiQK5vQNyef9UoH3Bmz2v7CVDDybu0V2glY8Y5/J2htciLEu2Uqx6Q47bd4m/jjZnUO6ZZSRLA2dBEaKeMqA/sRBPmaMTd8JzPxegZKAe1rZiZ2HBwvvuLq5wH82UNwNJg9TDuFJJIKNKb8UHxk8uVQ/rRSuTgwf9PBCaAV41/cvVZBIlYnXiTxnbgyz9h7X6bMxOT5axwx5w1SvNyH4yhn2VPM7mVPN0oOuPkJV03X7PsqAOy6OzDr+ciMoD7z8seS7xziAQv9kXb/pVJ43U1Ke5fEUdny0BLLe+MrlBViGzIIBfJVrvy4QCCfhJR7vgo0oAJkppxiD4JeKMhUfG2j6e5D30buIrj5G7m6YSO5FFfgTUYMnebV+PxUYCDoBTzNT7QTRZM0Cb660SiK88aMU37ymv9z3BPDuDQ8nJHpoGlNLsk/13qvk=
+    #     on:
+    #       tags: true
 
