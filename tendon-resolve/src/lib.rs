@@ -25,6 +25,28 @@
 #[macro_use]
 extern crate quick_error;
 
+/*
+mod syn {
+    pub struct Visibility;
+    pub struct Bananas;
+}
+
+macro_rules! z {
+() => (
+mod q {
+    pub fn t(x: &crate::walker::ModuleScope) -> syn::Bananas {
+        if let syn::Visibility::Public(_) = x {
+            panic!()
+        }
+        panic!()
+    }
+}
+);
+}
+z!();
+use q::t;
+*/
+
 use tendon_api::items::{MacroItem, ModuleItem, SymbolItem, TypeItem};
 
 #[cfg(test)]
@@ -64,7 +86,6 @@ pub struct Db {
     /// Scopes; used in name resolution, then discarded.
     pub scopes: namespace::Namespace<walker::ModuleScope>,
 }
-extern crate syn as syn2;
 
 impl Db {
     /// Create a new database.

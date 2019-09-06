@@ -125,11 +125,7 @@ fn lower_fields(ctx: &WalkModuleCtx, fields: &syn::Fields) -> Result<Vec<StructF
 /// Annoyingly, the data for this is stored in different places for functions / methods
 /// so you just have to pass in a bunch of junk lol.
 pub fn lower_signature(
-    ctx: &WalkModuleCtx,
-    attrs: &[syn::Attribute],
-    vis: &syn::Visibility,
-    sig: &syn::Signature,
-    span: proc_macro2::Span,
+    sig: &syn::Signature
 ) -> Result<Signature, LowerError> {
     let mut receiver = Receiver::None;
     let variadic = sig.variadic.is_some();
@@ -221,7 +217,7 @@ pub fn lower_function_item(
     let mut metadata = lower_metadata(ctx, &item.vis, &item.attrs, item.span());
     let symbol_metadata = extract_symbol_metadata(&mut metadata)?;
     let name = Ident::from(&item.sig.ident);
-    let signature = lower_signature(ctx, &item.attrs, &item.vis, &item.sig, item.span())?;
+    let signature = lower_signature(&item.sig)?;
     Ok(FunctionItem {
         metadata,
         symbol_metadata,

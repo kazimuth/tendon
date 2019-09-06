@@ -822,6 +822,108 @@ https://doc.rust-lang.org/reference/trait-bounds.html#lifetime-bounds
 > T: 'a means that all lifetime parameters of T outlive 'a. For example if 'a is an unconstrained lifetime parameter
 > then i32: 'static and &'static str: 'a are satisfied but Vec<&'a ()>: 'static is not.
 
+### Rust in Large Organizations
+https://gist.github.com/rylev/0e3c3895dcb40b6a1c1cf8c427c01b5e
+
+> ## FFI
+> - two distinct languages invoking one another
+>   - sometimes linked into one process, sometimes cross process (RPC)
+>   - COM requires symbols to be ABI compatible
+> - inline assembly, direct syscalls
+> - "C parity"
+> - FFI with C and C++
+> - FB is doing C++ interop, as is Google
+> - FFI beyond C or C++?
+>   - Java
+>   - syscalls
+>   - C# perhaps
+>   - (Ruby, Python)
+> - Bindings to other languages are often mediated through a C layer
+> - Increasing number of users -- C and C++ wanting to consume Rust APIs
+> - Concerns:
+>   - unwinding
+> - Qumulo: basically spent most of the last year preparing to do bidir FFI between Rust and C
+>   - fairly larger codebase in a dialect of C
+>   - rules you can impose on C side which helps sometimes
+>   - in one direction (Rust calling C) we have been able to use bindgen
+>   - but in the other direction (C calling Rust) we wrote a compiler plugin (uh oh) to generate C headers
+> - Specification questions
+>   - concerned about cross-lang lto revealing a lot of interactions
+> - Cross-lang thin lto
+> - Dynamic testing and static testing
+> - Have aliasing rules proven to be a problem?
+>   - FB: not so much. Mostly mediating rules through bindgen and trying to set things up to get compilation failures
+>   - Google: currently checking for changes
+> - Google: pursuing a bit ways to annotate C and C++ headers so that can generate safe rust signatures from it
+>   - might be an interesting thing to standardize on
+>   - bindgen has a cumbersome mechanism for that (do)
+>   - would be nice to include small shim layers e.g. to translate to `Result`
+> - FB: 
+>   - C++ codebase in FB uses exceptions, have wrappers that captures and converts exceptions, this becomes a `Result` on the Rust side
+>     - manually annotating noexcept functions? basically all of them can
+>     - C headers are manually created with a `try { } except` block in C++
+>   - the code being interop'd is mostly C++ but have to manually write C APIs for it
+>   - build with panic=abort? no, unwind
+>     - also catching Rust exceptions at boundary?
+>       - C code doesn't call into Rust code that often
+>       - happy to make it abort though
+>         - but mozilla wants to handle panics, though it does it by translating it into a swift/java exception
+>           - usually the purpose is wanting to capture the call stack and report it
+>           - in theory could panic=abort if could capture java stack
+>   - FB sets a custom panic handler to report errors, then exits (could use panic=abort)
+> - For COM FFI case? how handling virtual dispatch
+>   - manual adaptation with vtables and things
+>   - on Rust side, does that "look like" a trait?
+>     - active area of investigation
+>     - believe that (with proc macro support) can expose a trait that is actually a struct + vtable
+>     - similar to what GNOME projects are doing for glib bindings
+>     - mozilla does it for XPCOM, which is basically same thing
+>   - various bits of existing crates, but it's mostly nasty
+> - Jeremy: one thing I've been thinking about:
+>   - standard set of library functions corresponding to C++ types
+>   - e.g. some way to use std-string from within rust code
+>   - good to have for templated types (unique-ptr, shared-ptr, and so on)
+>   - all types that can be directly used from Rust in some way
+>   - quite clunky today to have a C++ function that returns something Rust can use
+>   - on C side, it'd use the plain C++ types
+>   - but on Rust side, it'd invoke and do the right things
+>   - one of the pieces needed for C++ interop
+>     - instantiate the vec/string/other impls
+>   - should this part of bindgen?
+>     - missing part: manually instantiating separate things for each specialization
+> - major topics of FFI
+>   - being able to "use header files" and get a "reasonably safe" FFI in Rust
+> - what are building blocks we'd need to move things to user space?
+>   - template instantation list is one building block -- somebody has to write the tool, nothing needed from rustc
+> - expectation is that there is always some work to manually bind
+>   - but what is minimal work we can do to make it easy to translate
+> - annotations might be company specific -- fb vs google?
+>   - maybe? but can we collaborate?
+>   - different C++ dialects and patterns in use
+> - what about from other languages, esp. around C++?
+>   - closest inspiration might come from Swift
+> - rich bindings from Rust to C++ for hashmaps etc
+>   - because FB uses thrift for RPC mechanism (and sometimes FFI)
+>   - would be useful to be able to do tricks like that for hashmap and sets perhaps
+>   - some kind of tool for consuming a C++ header file to automatically produce an interface in Rust
+> - complication in some environments: multiple allocators
+
+- non-cargo support
+    - pretty easy to do; just expose a `transgress-resolve` API at some reasonable level
+        - input a JSON file of crate roots, crate dependencies, and needed features
+        - can rewrite `tools` to generate that file
+    - build.rs: ...wait, do we even support build.rs rn?? `cargo check` runs it, maybe can get the output from that somehow?
+    - out-of-core crates: maybe needed for very large codebases
+        - add an indirection layer to Namespace + look up in slog, won't be hard
+
+- bidirectional bindings to C, C++
+    - how would we do `bindgen` integrations?
+        - recognizing `bindgen`-generated code and customizing bindings?
+        - vice versa, adding `bindgen`-comprehensible annotations to generated code?
+        - perhaps both languages can converge on a target feature set & support code annotations to use it?
+
+
+
 ### idea: autodyn
 a tool that converts object-safe generics into dyn traits in dependencies
 could make use of same code as injecting dynamic linking
@@ -869,15 +971,15 @@ how is handwritten code integrated?
 primary: memorable + googleable
 secondary: having to do with being a binding system / core, stable system component
 
-tendon
+transgress
     as in, trespass, build a monster; kinda just means "sin" though, more 'break rules' than 'trespass'
     encroach
     interlope
     meddle
 
-tendon
+cartilege
     nothing else has taken this name yet... spicy...
-    "tendon-bind"
+    "cartilege-bind"
 
 regolith
     the layer of rock between bedrock and the above material
@@ -886,4 +988,10 @@ regolith
 seam
 
 interstice
+
+tendon *
+    it connects things. duh
+
+### other projects using bindings
+
 

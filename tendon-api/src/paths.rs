@@ -19,8 +19,7 @@ pub enum Path {
 impl Path {
     /// Make a fake path for testing.
     pub fn fake(s: &str) -> Self {
-        let syn_path = &syn::parse_str::<syn::Path>(s).expect("failed to parse fake path");
-        Path::Unresolved(syn_path.into())
+        Path::Unresolved(UnresolvedPath::fake(s))
     }
     /// Make a non-absolute path from a single ident.
     pub fn ident(i: Ident) -> Self {
@@ -64,6 +63,11 @@ pub struct UnresolvedPath {
     pub is_absolute: bool,
 }
 impl UnresolvedPath {
+    /// Make a fake path for testing.
+    pub fn fake(s: &str) -> Self {
+        UnresolvedPath::from(&syn::parse_str::<syn::Path>(s).expect("failed to parse fake path"))
+    }
+
     pub fn join(self, component: Ident) -> UnresolvedPath {
         let UnresolvedPath {
             mut path,
@@ -103,10 +107,19 @@ pub struct AbsolutePath {
     /// The containing crate.
     pub crate_: AbsoluteCrate,
     /// The path within the crate.
+    /// Doesn't include the crate name.
     pub path: Vec<Ident>,
 }
 
 impl AbsolutePath {
+    // Create a new AbsolutePath
+    pub fn new(crate_: AbsoluteCrate, path: Vec<Ident>) -> Self {
+        AbsolutePath {
+            crate_,
+            path
+        }
+    }
+
     /// Add another component to the path.
     pub fn join(self, elem: impl Into<Ident>) -> Self {
         let elem = elem.into();
@@ -152,6 +165,16 @@ pub struct AbsoluteCrate {
     pub name: SmolStr,
     /// The version of the crate.
     pub version: SmolStr,
+}
+
+impl AbsoluteCrate {
+    /// Create a new `AbsoluteCrate`.
+    pub fn new(name: impl Into<SmolStr>, version: impl Into<SmolStr>) -> Self {
+        AbsoluteCrate {
+            name: name.into(),
+            version: version.into()
+        }
+    }
 }
 
 impl fmt::Debug for AbsoluteCrate {

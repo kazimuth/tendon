@@ -97,11 +97,17 @@ pub struct CrateData {
     /// The entry file into the crate.
     /// Note that this isn't always `crate_root/src/lib.rs`, some crates do other wacky stuff.
     pub entry: PathBuf,
-    /// The source this crate was downloaded from.
-    /// If not present, the crate is a local dependency and must be referred to by relative path.
-    pub cargo_source: Option<cargo_metadata::Source>,
     /// If this crate is a proc-macro crate.
     pub is_proc_macro: bool,
+    /// The version of this crate.
+    pub rust_edition: RustEdition
+    // TODO: build script output?
+}
+
+#[derive(Debug)]
+pub enum RustEdition {
+    Rust2015,
+    Rust2018
 }
 
 /// Get the sysroot active for some crate.
@@ -139,10 +145,11 @@ pub fn add_rust_sources(
         CrateData {
             deps: Map::default(),
             is_proc_macro: false,
-            cargo_source: None,
             entry: sources.join("libcore").join("lib.rs"),
             manifest_path: sources.join("libcore").join("Cargo.toml"),
             features: vec![],
+            // TODO check?
+            rust_edition: RustEdition::Rust2018
         },
     );
 
@@ -153,10 +160,11 @@ pub fn add_rust_sources(
         CrateData {
             deps: deps.clone(),
             is_proc_macro: false,
-            cargo_source: None,
             entry: sources.join("liballoc").join("lib.rs"),
             manifest_path: sources.join("liballoc").join("Cargo.toml"),
             features: vec![],
+            // TODO check?
+            rust_edition: RustEdition::Rust2018
         },
     );
 
@@ -166,10 +174,11 @@ pub fn add_rust_sources(
         CrateData {
             deps,
             is_proc_macro: false,
-            cargo_source: None,
             entry: sources.join("libstd").join("lib.rs"),
             manifest_path: sources.join("libstd").join("Cargo.toml"),
             features: vec![],
+            // TODO check?
+            rust_edition: RustEdition::Rust2018
         },
     );
 
@@ -264,7 +273,11 @@ pub fn lower_crates(metadata: &Metadata) -> Map<AbsoluteCrate, CrateData> {
             })
             .collect();
 
-        let cargo_source = package.source.clone();
+        let rust_edition = match &package.edition[..] {
+            "2018" => RustEdition::Rust2018,
+            "2015" => RustEdition::Rust2015,
+            other => panic!("unknown edition: {}", other)
+        };
 
         // TODO edition
 
@@ -275,8 +288,8 @@ pub fn lower_crates(metadata: &Metadata) -> Map<AbsoluteCrate, CrateData> {
                 entry,
                 features,
                 deps,
-                cargo_source,
                 is_proc_macro,
+                rust_edition
             },
         );
     }

@@ -1,18 +1,16 @@
-use tendon_api::paths::{AbsoluteCrate, AbsolutePath, UnresolvedPath};
+use tendon_api::paths::{AbsolutePath, UnresolvedPath};
 
-use crate::namespace::{Namespace, Namespaced};
+use crate::namespace::{Namespace};
 use crate::walker::ModuleScope;
-use crate::Map;
 use lazy_static::lazy_static;
 use tendon_api::idents::Ident;
-use tendon_api::items::Receiver::RefSelf;
-use tendon_api::items::{DeclarativeMacroItem, MacroItem};
+use tendon_api::paths::Path;
+use tendon_api::items::{ModuleItem};
+use crate::tools::CrateData;
 
 // https://github.com/rust-lang/rust/tree/master/src/librustc_resolve
 
 pub mod resolvable;
-
-extern crate syn as syn3;
 
 // macro name resolution is affected by order, right?
 //
@@ -48,6 +46,9 @@ quick_error! {
         ResolveFailed(namespace: &'static str, path: UnresolvedPath, module: AbsolutePath) {
             display("failed to resolve path {:?} in module {:?} [{} namespace]", path, module, namespace)
         }
+        ResolveMaybeFailed {
+            display("resolve may have failed for path")
+        }
     }
 }
 
@@ -68,9 +69,11 @@ lazy_static! {
 // TODO: inject prelude
 // TODO: inject primitives
 // TODO: add all local definitions to `ModuleScope`
+// TODO: rust 2015 support
 
 // TODO: how does `use` name resolution work??
 // https://doc.rust-lang.org/edition-guide/rust-2018/module-system/path-clarity.html
+
 // https://github.com/rust-lang/rust/blob/1064d41/src/librustc_resolve/resolve_imports.rs
 //     NameBinding: https://github.com/rust-lang/rust/blob/1064d41/src/librustc_resolve/lib.rs#L563
 //     import resolution: https://github.com/rust-lang/rust/blob/1064d41/src/librustc_resolve/resolve_imports.rs#L179-L416
@@ -86,13 +89,13 @@ lazy_static! {
 //     // (crate root)
 //     extern crate syn as syn2;
 //     mod p {
-//         use syn; // valid
-//         use syn2; // valid
+//         use syn;
+//         use syn2;
 //         extern crate syn as syn3; // valid
 //         mod q {
-//             use syn; // valid
-//             use syn2; // valid
-//             // use syn3; //invalid!
+//             use syn;
+//             use syn2;
+//             // use syn3; // invalid!
 //             use super::syn3; // ...but this is valid
 //
 //         }
@@ -112,11 +115,10 @@ lazy_static! {
 // TODO: fall back to non-pub paths in globs in case of lookup failure
 //     paper over shadowing issues...
 
-/*
-
 // https://github.com/rust-lang/rust/blob/1064d41/src/librustc_resolve/macros.rs
 // https://github.com/rust-lang/rust/blob/1064d41/src/librustc_resolve/late.rs
 
+/*
 /// Attempt to resolve a path, following `use` and `pub use` imports. Will give a path to a definition.
 /// Resulting path may not be accessible outside its defining crate.
 pub fn resolve_recursive<I: Namespaced>(
@@ -161,12 +163,115 @@ pub fn resolve_recursive<I: Namespaced>(
 
     Err(ResolveError::ResolveFailed(I::namespace(), path.clone(), module.clone()))
 }
-
-pub fn resolve_imports(
-    imports: ModuleScope,
-    module: &AbsolutePath,
-
-) -> ModuleScope {
-
-}
 */
+
+/// Convert a `use`d path to an absolute path, rust 2018 rules.
+/// - if a local module was declared in this scope, it overrides extern crates
+/// - crate-local modules that are children of the root are *not* looked up in a `use` statement
+/// Returns whether the path has been resolved yet (this operation might leave it unchanged, if
+/// e.g. it refers to an unexpanded macro.)
+pub fn absolutize_use_2018(
+    path: &mut Path,
+    module: &AbsolutePath,
+    modules: &Namespace<ModuleItem>,
+    crate_data: &CrateData
+) -> bool {
+    let unresolved = if let Path::Unresolved(unresolved) = path {
+        unresolved
+    } else {
+        return true
+    };
+    let mut segments = unresolved.path.clone();
+    let ident = segments.remove(0);
+
+    // is the `use` a submodule?
+    let mut possible = module.clone().join(ident.clone());
+    if modules.contains(&possible) {
+        possible.path.append(&mut segments);
+        *path = Path::Absolute(possible);
+        return true;
+    }
+
+    possible.path.pop();
+
+    if let Some(crate_) = crate_data.deps.get(&ident) {
+        *path = Path::Absolute(AbsolutePath {
+            crate_: crate_.clone(),
+            path: segments
+        });
+        return true;
+    }
+
+    // Path not found.
+    // It may be the result of macro expansion...
+    return false;
+}
+
+/// Attempt to resolve all `use` statements in a module scope.
+/// Uses Rust 2018 rules.
+pub fn absolutize_imports_2018(
+    scope: &mut ModuleScope,
+    module: &AbsolutePath,
+    modules: &Namespace<ModuleItem>,
+    crate_data: &CrateData
+) -> bool {
+    let &mut ModuleScope {
+        ref mut imports,
+        ref mut pub_imports,
+        ref mut glob_imports,
+        ref mut pub_glob_imports,
+    } = scope;
+    let mut all_success = true;
+    for path in imports.values_mut()
+        .chain(pub_imports.values_mut())
+        .chain(glob_imports.iter_mut())
+        .chain(pub_glob_imports.iter_mut()) {
+        all_success = all_success && absolutize_use_2018(
+            path,
+            module,
+            modules,
+            crate_data
+        );
+    }
+    all_success
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tendon_api::attributes::{Metadata, Span, Visibility};
+    use tendon_api::paths::AbsoluteCrate;
+
+    #[test]
+    fn imports() {
+        //let modules = Namespace::new();
+
+        let fake_module = ModuleItem {
+            metadata: Metadata {
+                visibility: Visibility::Pub,
+                docs: None,
+                must_use: None,
+                deprecated: None,
+                extra_attributes: vec![],
+                span: Span {
+                    source_file: "fake_file.rs".into(),
+                    start_line: 0,
+                    start_column: 0,
+                    end_line: 0,
+                    end_column: 0
+                }
+            },
+            name: "fake_module".into()
+        };
+
+        let crate_1 = AbsoluteCrate {
+            name: "crate_1".into(),
+            version: "0.0.0".into()
+        };
+        let crate_2 = AbsoluteCrate {
+            name: "crate_2".into(),
+            version: "0.0.0".into()
+        };
+
+    }
+}
