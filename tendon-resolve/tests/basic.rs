@@ -78,10 +78,7 @@ fn walk_core() -> Result<(), Box<dyn Error>> {
     let mut crates = resolve::Map::default();
     resolve::tools::add_rust_sources(&mut crates, &test_crate)?;
 
-    let core = AbsoluteCrate {
-        name: "core".into(),
-        version: "0.0.0".into(),
-    };
+    let core = AbsoluteCrate::new("core", "0.0.0");
 
     let db = resolve::Db::new();
 
@@ -109,18 +106,9 @@ fn walk_stdlib() -> Result<(), Box<dyn Error>> {
     let mut crates = resolve::Map::default();
     resolve::tools::add_rust_sources(&mut crates, &test_crate)?;
 
-    let core = AbsoluteCrate {
-        name: "core".into(),
-        version: "0.0.0".into(),
-    };
-    let alloc = AbsoluteCrate {
-        name: "alloc".into(),
-        version: "0.0.0".into(),
-    };
-    let std = AbsoluteCrate {
-        name: "std".into(),
-        version: "0.0.0".into(),
-    };
+    let core = AbsoluteCrate::new("core", "0.0.0");
+    let alloc = AbsoluteCrate::new("alloc", "0.0.0");
+    let std = AbsoluteCrate::new("std", "0.0.0");
 
     let db = resolve::Db::new();
 

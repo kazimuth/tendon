@@ -257,13 +257,10 @@ mod tests {
         assert_eq!(
             format!(
                 "{:?}",
-                Path::Absolute(AbsolutePath {
-                    path: vec!["test".into(), "Thing".into()],
-                    crate_: AbsoluteCrate {
-                        name: "fake_crate".into(),
-                        version: "0.1.0-alpha1".into()
-                    }
-                })
+                Path::Absolute(AbsolutePath::new(
+                    AbsoluteCrate::new("fake_crate", "0.1.0-alpha1"),
+                    vec!["test".into(), "Thing".into()],
+                ))
             ),
             "fake_crate[0.1.0-alpha1]::test::Thing"
         );

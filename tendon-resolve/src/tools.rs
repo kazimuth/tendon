@@ -36,10 +36,10 @@ pub fn check(path: &FsPath) -> io::Result<()> {
 /// Get an absolute crate identifier for a particular package.
 /// We strip out all "-"s here.
 pub fn lower_absolute_crate(package: &cargo_metadata::Package) -> AbsoluteCrate {
-    AbsoluteCrate {
-        name: package.name[..].replace("-", "_").into(),
-        version: package.version.to_string().into(),
-    }
+    AbsoluteCrate::new(
+        package.name[..].replace("-", "_"),
+        package.version.to_string(),
+    )
 }
 
 /// Get the sources dir from the sysroot active for some path.
@@ -121,18 +121,9 @@ pub fn add_rust_sources(
 
     let sources = sources_dir(target_dir)?;
 
-    let libcore = AbsoluteCrate {
-        name: "core".into(),
-        version: "0.0.0".into(),
-    };
-    let libstd = AbsoluteCrate {
-        name: "std".into(),
-        version: "0.0.0".into(),
-    };
-    let liballoc = AbsoluteCrate {
-        name: "alloc".into(),
-        version: "0.0.0".into(),
-    };
+    let libcore = AbsoluteCrate::new("core", "0.0.0");
+    let liballoc = AbsoluteCrate::new("alloc", "0.0.0");
+    let libstd = AbsoluteCrate::new("std", "0.0.0");
 
     for crate_ in crates.values_mut() {
         crate_.deps.insert("core".into(), libcore.clone());

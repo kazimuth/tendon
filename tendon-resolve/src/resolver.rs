@@ -195,10 +195,7 @@ pub fn absolutize_use_2018(
     possible.path.pop();
 
     if let Some(crate_) = crate_data.deps.get(&ident) {
-        *path = Path::Absolute(AbsolutePath {
-            crate_: crate_.clone(),
-            path: segments
-        });
+        *path = Path::Absolute(AbsolutePath::new(crate_.clone(), segments));
         return true;
     }
 
@@ -264,14 +261,8 @@ mod tests {
             name: "fake_module".into()
         };
 
-        let crate_1 = AbsoluteCrate {
-            name: "crate_1".into(),
-            version: "0.0.0".into()
-        };
-        let crate_2 = AbsoluteCrate {
-            name: "crate_2".into(),
-            version: "0.0.0".into()
-        };
+        let crate_1 = AbsoluteCrate::new("crate_1", "0.0.0");
+        let crate_2 = AbsoluteCrate::new("crate_2", "0.0.0");
 
     }
 }

@@ -73,13 +73,10 @@ pub struct WalkModuleCtx<'a> {
 macro_rules! test_ctx {
     ($ctx:ident) => {
         let source_file = std::path::PathBuf::from("fake_file.rs");
-        let module = tendon_api::paths::AbsolutePath {
-            crate_: tendon_api::paths::AbsoluteCrate {
-                name: "fake_crate".into(),
-                version: "0.0.1".into(),
-            },
-            path: vec![],
-        };
+        let module = tendon_api::paths::AbsolutePath::new(
+tendon_api::paths::AbsoluteCrate::new("fake_crate", "0.0.1"),
+vec![]
+);
         let db = crate::Db::new();
         let mut scope = crate::walker::ModuleScope::new();
         let mut unexpanded = crate::walker::UnexpandedModule::new();
@@ -181,10 +178,7 @@ pub fn walk_crate(
     let mut unexpanded = UnexpandedModule::new();
     let crate_unexpanded_modules = DashMap::default();
 
-    let path = AbsolutePath {
-        crate_,
-        path: vec![],
-    };
+    let path = AbsolutePath::new(crate_, vec![]);
 
     let source_root = data.entry.parent().unwrap().to_path_buf();
 
@@ -598,19 +592,13 @@ mod tests {
     #[test]
     fn walk_no_fs() {
         let db = Db::new();
-        let crate_ = AbsoluteCrate {
-            name: "fake_crate".into(),
-            version: "0.1.0".into()
-        };
+        let crate_ = AbsoluteCrate::new("fake_crate", "0.1.0");
         let mut scope = ModuleScope::new();
         let mut unexpanded = UnexpandedModule::new();
         let crate_unexpanded_modules = DashMap::default();
         let mut ctx = WalkModuleCtx {
             source_file: PathBuf::from("/fake/fake_file.rs"),
-            module: AbsolutePath {
-                crate_: crate_.clone(),
-                path: vec![]
-            },
+            module: AbsolutePath::new(crate_.clone(), vec![]),
             db: &db,
             scope: &mut scope,
             unexpanded: &mut unexpanded,
