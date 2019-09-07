@@ -4,7 +4,7 @@ use crate::resolver::ResolveError;
 use crate::walker::WalkError;
 use dashmap::{DashMap, DashMapRefAny};
 use tendon_api::idents::Ident;
-use tendon_api::paths::{AbsolutePath, AbsoluteCrate};
+use tendon_api::paths::{AbsoluteCrate, AbsolutePath};
 
 /// A namespace, for holding some particular type of item during resolution.
 /// Allows operating on many different items in parallel.

@@ -51,19 +51,6 @@ fn walk_test_crate() -> Result<(), Box<dyn Error>> {
         println!("transitive dep: {:?}", id);
     }
 
-    //let db = resolve::Db::new();
-
-    //let start = Instant::now();
-
-    //for dep in &ordered {
-    //    resolve::walker::walk_crate(
-    //        (*dep).clone(),
-    //        &crates[dep],
-    //        &db,
-    //    )?;
-    //}
-    //println!("time to parse all test-crate deps: {}ms", (Instant::now() - start).as_millis());
-
     Ok(())
 }
 
@@ -84,7 +71,8 @@ fn walk_core() -> Result<(), Box<dyn Error>> {
 
     let start = Instant::now();
 
-    let _unresolved = resolve::walker::walk_crate(core.clone(), &crates[&core], &db)?;
+    let _unresolved =
+        resolve::walker::walk_crate(&mut crates.remove(&core).unwrap(), &db)?;
 
     println!(
         "time to parse core: {}ms ({})",
@@ -114,9 +102,9 @@ fn walk_stdlib() -> Result<(), Box<dyn Error>> {
 
     let start = Instant::now();
 
-    resolve::walker::walk_crate(core.clone(), &crates[&core], &db)?;
-    resolve::walker::walk_crate(alloc.clone(), &crates[&alloc], &db)?;
-    resolve::walker::walk_crate(std.clone(), &crates[&std], &db)?;
+    resolve::walker::walk_crate( &mut crates.remove(&core).unwrap(), &db)?;
+    resolve::walker::walk_crate( &mut crates.remove(&alloc).unwrap(), &db)?;
+    resolve::walker::walk_crate( &mut crates.remove(&std).unwrap(), &db)?;
 
     println!(
         "time to parse stdlib: {}ms ({})",
@@ -163,15 +151,12 @@ fn walk_repo_deps() -> Result<(), Box<dyn Error>> {
     let mut crates = resolve::tools::lower_crates(&metadata);
     resolve::tools::add_rust_sources(&mut crates, &test_crate)?;
 
-    let mut all = crates.keys().collect::<Vec<_>>();
-    all.sort();
-
     let db = resolve::Db::new();
 
     let start = Instant::now();
 
-    all.par_iter().for_each(|dep| {
-        let _ = resolve::walker::walk_crate((*dep).clone(), &crates[dep], &db);
+    crates.into_par_iter().for_each(|(dep, mut crate_)| {
+        let _ = resolve::walker::walk_crate( &mut crate_, &db);
     });
     println!(
         "time to parse all repo deps: {}ms",

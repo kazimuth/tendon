@@ -15,7 +15,7 @@ use tracing::{trace, trace_span, warn};
 use tendon_api::attributes::{Metadata, Span, Visibility};
 use tendon_api::idents::Ident;
 use tendon_api::items::{ModuleItem, SymbolItem, TypeItem};
-use tendon_api::paths::{AbsoluteCrate, AbsolutePath, Path};
+use tendon_api::paths::{AbsoluteCrate, AbsolutePath, Path, UnresolvedPath};
 use tendon_api::tokens::Tokens;
 
 use crate::lower::attributes::lower_metadata;
@@ -65,34 +65,8 @@ pub struct WalkModuleCtx<'a> {
     /// Unexpanded modules in this crate.
     pub crate_unexpanded_modules: &'a DashMap<AbsolutePath, UnexpandedModule>,
 
-    /// The source root (i.e. directory containing root lib.rs file) of this crate
-    pub source_root: &'a PathBuf,
-}
-
-#[cfg(test)]
-macro_rules! test_ctx {
-    ($ctx:ident) => {
-        let source_file = std::path::PathBuf::from("fake_file.rs");
-        let module = tendon_api::paths::AbsolutePath::root(tendon_api::paths::AbsoluteCrate::new(
-            "fake_crate",
-            "0.0.1",
-        ));
-        let db = crate::Db::new();
-        let mut scope = crate::walker::ModuleScope::new();
-        let mut unexpanded = crate::walker::UnexpandedModule::new();
-        let crate_unexpanded_modules = dashmap::DashMap::default();
-        let source_root = std::path::PathBuf::from("fake_src/");
-
-        let $ctx = WalkModuleCtx {
-            source_file,
-            module,
-            db: &db,
-            scope: &mut scope,
-            unexpanded: &mut unexpanded,
-            crate_unexpanded_modules: &crate_unexpanded_modules,
-            source_root: &source_root,
-        };
-    };
+    /// The metadata for the current crate, including imports.
+    pub crate_data: &'a CrateData,
 }
 
 // A scope.
@@ -164,35 +138,70 @@ pub enum UnexpandedItem {
     DeriveMacro(Span, Tokens),
     /// A sub module that has yet to be expanded.
     UnexpandedModule { name: Ident, macro_use: bool },
+    /// An import with #[macro_use].
+    MacroUse(AbsoluteCrate),
 }
 
 /// Walk a whole crate in parallel, storing all resulting data in the central db.
+/// Returns a set of UnexpectedModules which should be recursively traversed for macros.
 pub fn walk_crate(
-    crate_: AbsoluteCrate,
-    data: &CrateData,
+    crate_data: &mut CrateData,
     db: &Db,
 ) -> Result<DashMap<AbsolutePath, UnexpandedModule>, WalkError> {
-    trace!("walking {:?}", crate_);
+    trace!("walking {:?}", crate_data.crate_);
 
     let mut imports = ModuleScope::new();
     let mut unexpanded = UnexpandedModule::new();
     let crate_unexpanded_modules = DashMap::default();
 
-    let path = AbsolutePath::root(crate_);
+    let path = AbsolutePath::root(crate_data.crate_.clone());
 
-    let source_root = data.entry.parent().unwrap().to_path_buf();
+    let source_root = crate_data.entry.parent().unwrap().to_path_buf();
 
     let mut ctx = WalkModuleCtx {
-        source_file: data.entry.clone(),
-        source_root: &source_root,
+        source_file: crate_data.entry.clone(),
         module: path.clone(),
         db,
         scope: &mut imports,
         unexpanded: &mut unexpanded,
         crate_unexpanded_modules: &crate_unexpanded_modules,
+        crate_data: &crate_data.clone()
     };
 
-    let file = parse_file(&data.entry)?;
+    let file = parse_file(&crate_data.entry)?;
+
+    // TODO: handle special `extern crate` functionality at root
+    for item in &file.items {
+        let span = Span::from_syn(ctx.source_file.clone(), item.span());
+
+        if let syn::Item::ExternCrate(extern_crate) = item {
+            let mut metadata = lower_metadata(
+                &ctx,
+                &extern_crate.vis,
+                &extern_crate.attrs,
+                extern_crate.span(),
+            );
+
+            let ident = Ident::from(&extern_crate.ident);
+            let crate_ = unwrap_or_warn!(ctx.crate_data.deps.get(&ident)
+                    .ok_or_else(|| WalkError::ExternCrateNotFound(ident.clone())), &span);
+
+            if metadata.extract_attribute(&*MACRO_USE).is_some() {
+                // this miiiight have weird ordering consequences... whatever
+                ctx.unexpanded.0.push(UnexpandedItem::MacroUse(crate_.clone()));
+            }
+
+            if let Some((_, name)) = &extern_crate.rename {
+                // add rename to crate namespace
+                // note that this effect *only* occurs at the crate root: otherwise `extern crate`
+                // just behaves like a `use`
+                crate_data.deps.insert(Ident::from(&name), crate_.clone());
+            }
+        }
+    }
+
+    // patch in data w/ modified extern crate names
+    ctx.crate_data = crate_data;
 
     // Do everything in parallel
     walk_items_parallel(&mut ctx, &file.items)?;
@@ -256,7 +265,7 @@ pub fn walk_items_parallel(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Resu
                 {
                     let mut ctx = WalkModuleCtx {
                         source_file,
-                        source_root: ctx.source_root,
+                        crate_data: ctx.crate_data,
                         module: ctx.module.clone().join(mod_.name.clone()),
 
                         scope: &mut imports,
@@ -458,17 +467,32 @@ pub fn walk_items(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Result<(), Wa
                 ));
             }
             syn::Item::Use(use_) => {
-                if lower_visibility(&use_.vis) == Visibility::Pub {
-                    lower_use(
-                        &use_,
-                        &mut ctx.scope.pub_glob_imports,
-                        &mut ctx.scope.pub_imports,
-                    );
-                } else {
-                    lower_use(&use_, &mut ctx.scope.glob_imports, &mut ctx.scope.imports);
-                }
+                // note: modifies ctx directly!
+                lower_use(ctx, use_);
             }
-            syn::Item::ExternCrate(_extern_crate) => skip("extern crate", ctx.module.clone()),
+            syn::Item::ExternCrate(extern_crate) => {
+                if ctx.module.path.is_empty() {
+                    // crate root `extern crate`s have special semantics
+                    // and have already been handled in walk_crate
+                    continue;
+                }
+                let mut metadata = lower_metadata(
+                    ctx,
+                    &extern_crate.vis,
+                    &extern_crate.attrs,
+                    extern_crate.span(),
+                );
+
+                let ident = Ident::from(&extern_crate.ident);
+                let crate_ = unwrap_or_warn!(ctx.crate_data.deps.get(&ident)
+                    .ok_or_else(|| WalkError::ExternCrateNotFound(ident.clone())), &span);
+                let imports = match metadata.visibility {
+                    Visibility::Pub => &mut ctx.scope.pub_imports,
+                    Visibility::NonPub => &mut ctx.scope.imports,
+                };
+                let no_path: &[&str] = &[];
+                imports.insert(ident, AbsolutePath::new(crate_.clone(), no_path).into());
+            }
             _ => skip("something else", ctx.module.clone()),
         }
     }
@@ -509,7 +533,7 @@ pub fn find_source_file(
         format!("{}", item.name)
     };
 
-    let mut root = parent_ctx.source_root.clone();
+    let mut root = parent_ctx.crate_data.entry.parent().unwrap().to_owned();
 
     for entry in &parent_ctx.module.path {
         root.push(entry.to_string());
@@ -584,7 +608,36 @@ quick_error! {
         Other {
             display("other error")
         }
+        ExternCrateNotFound(ident: Ident) {
+            display("can't find extern crate: {}", ident)
+        }
     }
+}
+
+#[cfg(test)]
+macro_rules! test_ctx {
+    ($ctx:pat) => {
+        let source_file = std::path::PathBuf::from("fake_file.rs");
+        let module = tendon_api::paths::AbsolutePath::root(tendon_api::paths::AbsoluteCrate::new(
+            "fake_crate",
+            "0.0.1",
+        ));
+        let db = crate::Db::new();
+        let mut scope = crate::walker::ModuleScope::new();
+        let mut unexpanded = crate::walker::UnexpandedModule::new();
+        let crate_unexpanded_modules = dashmap::DashMap::default();
+        let crate_data = crate::tools::CrateData::fake();
+
+        let $ctx = WalkModuleCtx {
+            source_file,
+            module,
+            db: &db,
+            scope: &mut scope,
+            unexpanded: &mut unexpanded,
+            crate_unexpanded_modules: &crate_unexpanded_modules,
+            crate_data: &crate_data,
+        };
+    };
 }
 
 #[cfg(test)]
@@ -605,7 +658,7 @@ mod tests {
             scope: &mut scope,
             unexpanded: &mut unexpanded,
             crate_unexpanded_modules: &crate_unexpanded_modules,
-            source_root: &PathBuf::from("/fake"),
+            crate_data: &CrateData::fake()
         };
 
         let fake: syn::File = syn::parse_quote! {

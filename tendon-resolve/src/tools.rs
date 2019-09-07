@@ -85,8 +85,10 @@ pub fn sources_dir(target_dir: &FsPath) -> io::Result<PathBuf> {
 
 /// Metadata for a crate instantiation. There's one of these for every separate semver version for
 /// every crate in the dependency tree.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct CrateData {
+    /// Which crate this is.
+    pub crate_: AbsoluteCrate,
     /// The dependencies of this crate (note: renamed according to Cargo.toml, but NOT according to
     /// `extern crate ... as ...;` statements
     pub deps: Map<Ident, AbsoluteCrate>,
@@ -102,11 +104,25 @@ pub struct CrateData {
     /// The version of this crate.
     pub rust_edition: RustEdition, // TODO: build script output?
 }
+impl CrateData {
+    #[cfg(test)]
+    pub fn fake() -> Self {
+        CrateData {
+            crate_: AbsoluteCrate::new("fake_crate", "0.0.0"),
+            deps: Default::default(),
+            features: Default::default(),
+            manifest_path: "fake_crate/Cargo.toml".into(),
+            entry: "fake_crate/src/lib.rs".into(),
+            is_proc_macro: false,
+            rust_edition: crate::tools::RustEdition::Rust2018,
+        }
+    }
+}
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum RustEdition {
-    Rust2015,
-    Rust2018,
+Rust2015,
+Rust2018,
 }
 
 /// Get the sysroot active for some crate.
@@ -133,6 +149,7 @@ pub fn add_rust_sources(
     crates.insert(
         libcore.clone(),
         CrateData {
+            crate_: libcore.clone(),
             deps: Map::default(),
             is_proc_macro: false,
             entry: sources.join("libcore").join("lib.rs"),
@@ -148,6 +165,7 @@ pub fn add_rust_sources(
     crates.insert(
         liballoc.clone(),
         CrateData {
+            crate_: liballoc.clone(),
             deps: deps.clone(),
             is_proc_macro: false,
             entry: sources.join("liballoc").join("lib.rs"),
@@ -162,6 +180,7 @@ pub fn add_rust_sources(
     crates.insert(
         libstd.clone(),
         CrateData {
+            crate_: libstd.clone(),
             deps,
             is_proc_macro: false,
             entry: sources.join("libstd").join("lib.rs"),
@@ -272,8 +291,9 @@ pub fn lower_crates(metadata: &Metadata) -> Map<AbsoluteCrate, CrateData> {
         // TODO edition
 
         result.insert(
-            abs_crate,
+            abs_crate.clone(),
             CrateData {
+                crate_: abs_crate,
                 manifest_path,
                 entry,
                 features,

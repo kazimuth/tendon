@@ -293,10 +293,15 @@ mod tests {
 
         let modules = Namespace::new();
         modules.insert(module.clone(), fake_module.clone()).unwrap();
-        modules.insert(submodule.clone(), fake_module.clone()).unwrap();
-        modules.insert(module2.clone(), fake_module.clone()).unwrap();
+        modules
+            .insert(submodule.clone(), fake_module.clone())
+            .unwrap();
+        modules
+            .insert(module2.clone(), fake_module.clone())
+            .unwrap();
 
         let mut crate_data = CrateData {
+            crate_: crate_1.clone(),
             deps: Map::default(),
             features: vec![],
             manifest_path: "".into(),
