@@ -9,9 +9,8 @@ goals
 - maximal ease of use
 - some bloat is tolerable
 
-###
+### TODO:
 
-TODO:
 full parse crates for traits
 double parse strings
 doc comment custom annotations / shim macros
@@ -19,6 +18,13 @@ proc_macro shim shim
 dynamic lifetime checker: break cycles?
 resolve qself traits where arguments aren't generic
 resolve default trait args
+
+- whats that python package format?
+  - other package format: node, maven, nuget, ...
+- counts for unrecognized things
+- mtime checks for safety
+  - fail if after cargo check
+  - can cargo crate mtimes change?
 
 ### usage / user API ideas
 
@@ -60,8 +66,6 @@ resolve default trait args
   - https://rust-lang.github.io/rustc-guide/traits/chalk-overview.html
   - https://github.com/rust-analyzer/rust-analyzer/search?q=chalk&unscoped_q=chalk
 - proc-macro-expander: https://github.com/fedochet/rust-proc-macro-expander
-  - can be distributed w/ prefab?
-    assuming
   - use a recent required rust version to solve API compat issues?
     - or just disable on older rust
 
@@ -421,6 +425,8 @@ is it fast?
     across ffi boundary by default (e.g. strings). Some types require runtime checks (e.g. RwLocks on borrows).
     Some binding languages impose very expensive FFI calls (go, mostly.) 
     
+#### pitch aesthetics
+see: https://nbedos.github.io/termtosvg/index.html
 
 #### Usability table
 basic ffi (e.g. strings, numbers, arrays, functions, POD structs, inherent impls) -- great
@@ -909,12 +915,13 @@ https://gist.github.com/rylev/0e3c3895dcb40b6a1c1cf8c427c01b5e
 > - complication in some environments: multiple allocators
 
 - non-cargo support
-    - pretty easy to do; just expose a `transgress-resolve` API at some reasonable level
+    - pretty easy to do; just expose a `tendon-resolve` API at some reasonable level
         - input a JSON file of crate roots, crate dependencies, and needed features
         - can rewrite `tools` to generate that file
     - build.rs: ...wait, do we even support build.rs rn?? `cargo check` runs it, maybe can get the output from that somehow?
     - out-of-core crates: maybe needed for very large codebases
         - add an indirection layer to Namespace + look up in slog, won't be hard
+    - how to distribute runtimes?
 
 - bidirectional bindings to C, C++
     - how would we do `bindgen` integrations?
@@ -971,7 +978,7 @@ how is handwritten code integrated?
 primary: memorable + googleable
 secondary: having to do with being a binding system / core, stable system component
 
-transgress
+tendon
     as in, trespass, build a monster; kinda just means "sin" though, more 'break rules' than 'trespass'
     encroach
     interlope
@@ -993,5 +1000,64 @@ tendon *
     it connects things. duh
 
 ### other projects using bindings
+maybe look for use-cases
+https://github.com/vislyhq/stretch
+
+
+### distribution structure
+
+tendon
+    invocation glue code / build.rs stuff
+    looks for binaries, prefers from-source if found
+
+    feature "binary" -> tendon-cli-bin
+    feature "from-source" -> tendon-cli
+    default-features = ["binary"]
+
+tendon-annotate
+    noop annotation macros; affect binding generation
+
+tendon-cli-bin
+    prebuilt binaries packaged into cargo, if that's allowed
+
+    cfg(windows x86-64) -> tendon-cli-bin-windows-x86-64
+    cfg(os x x86-64) -> tendon-cli-bin-osx-x86-64
+    cfg(linux x86-64) -> tendon-cli-bin-linux-x86-64
+    cfg(none of the above) -> tendon-cli
+
+tendon-cli-bin-windows-x86-64
+tendon-cli-bin-osx-x86-64
+tendon-cli-bin-linux-x86-64 (note: statically linked w/ musl)
+    packages containing CI-built executable binaries per release
+
+tendon-cli
+    the actual main driver for parsing inputs + gene
+    -> tendon-api
+    -> tendon-resolve
+    -> tendon-generate-c
+    -> tendon-generate-python
+    -> tendon-generate-java
+    ...
+
+    how do other generators work?
+        create `tendon-` binaries that are called with input metadata? hmm, TODO
+
+tendon-api
+    internal IR / text format
+tendon-resolve
+    parse source files to IR + macro-expand + resolve
+tendon-generate-utils
+    codegen helpers
+tendon-generate-c
+tendon-generate-python
+tendon-generate-java
+    per-language generation code
+
+tendon-runtime
+    [runtime support helpers]
+tendon-runtime-python
+    [python-specific helpers]
+tendon-runtime-java
+    [java-specific helpers]
 
 

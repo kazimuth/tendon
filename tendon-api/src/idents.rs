@@ -36,11 +36,6 @@ impl From<&str> for Ident {
         Ident(s.into())
     }
 }
-impl From<&Ident> for Ident {
-    fn from(i: &Ident) -> Self {
-        Ident(i.0.clone())
-    }
-}
 impl From<String> for Ident {
     fn from(s: String) -> Self {
         Ident(s.into())
@@ -50,6 +45,11 @@ impl From<&proc_macro2::Ident> for Ident {
     fn from(s: &proc_macro2::Ident) -> Ident {
         // TODO: could optimize this w/ a thread-local string buffer
         Ident(s.to_string().into())
+    }
+}
+impl<T: Into<Ident> + Clone> From<&T> for Ident {
+    fn from(s: &T) -> Ident {
+        s.clone().into()
     }
 }
 

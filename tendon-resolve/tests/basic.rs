@@ -4,7 +4,6 @@ use rayon::prelude::*;
 use std::error::Error;
 use std::path::Path;
 use std::time::Instant;
-use tracing::info;
 use tendon_api::paths::AbsoluteCrate;
 use tendon_resolve as resolve;
 
@@ -21,7 +20,8 @@ fn walk_test_crate() -> Result<(), Box<dyn Error>> {
 
     resolve::tools::check(&test_crate)?;
 
-    info!("Collecting cargo metadata");
+    // todo: tell it about --release??
+    println!("Collecting cargo metadata");
     let metadata = MetadataCommand::new()
         .current_dir(&test_crate)
         .manifest_path(&test_crate.join("Cargo.toml"))
@@ -37,7 +37,7 @@ fn walk_test_crate() -> Result<(), Box<dyn Error>> {
         .unwrap();
     let root = resolve::tools::lower_absolute_crate(root);
 
-    info!("root package {:?}", root);
+    println!("root package {:?}", root);
 
     let mut crates = resolve::tools::lower_crates(&metadata);
     resolve::tools::add_rust_sources(&mut crates, &test_crate)?;
@@ -48,7 +48,7 @@ fn walk_test_crate() -> Result<(), Box<dyn Error>> {
     ordered.sort();
 
     for id in &ordered {
-        info!("transitive dep: {:?}", id);
+        println!("transitive dep: {:?}", id);
     }
 
     //let db = resolve::Db::new();
@@ -62,7 +62,7 @@ fn walk_test_crate() -> Result<(), Box<dyn Error>> {
     //        &db,
     //    )?;
     //}
-    //info!("time to parse all test-crate deps: {}ms", (Instant::now() - start).as_millis());
+    //println!("time to parse all test-crate deps: {}ms", (Instant::now() - start).as_millis());
 
     Ok(())
 }
@@ -86,7 +86,7 @@ fn walk_core() -> Result<(), Box<dyn Error>> {
 
     let _unresolved = resolve::walker::walk_crate(core.clone(), &crates[&core], &db)?;
 
-    info!(
+    println!(
         "time to parse core: {}ms ({})",
         (Instant::now() - start).as_millis(),
         MODE
@@ -118,12 +118,12 @@ fn walk_stdlib() -> Result<(), Box<dyn Error>> {
     resolve::walker::walk_crate(alloc.clone(), &crates[&alloc], &db)?;
     resolve::walker::walk_crate(std.clone(), &crates[&std], &db)?;
 
-    info!(
+    println!(
         "time to parse stdlib: {}ms ({})",
         (Instant::now() - start).as_millis(),
         MODE
     );
-    info!(
+    println!(
         "found in stdlib: {} types, {} symbols, {} modules",
         db.types.len(),
         db.symbols.len(),
@@ -142,7 +142,7 @@ fn walk_repo_deps() -> Result<(), Box<dyn Error>> {
 
     resolve::tools::check(&test_crate)?;
 
-    info!("Collecting cargo metadata");
+    println!("Collecting cargo metadata");
     let metadata = MetadataCommand::new()
         .current_dir(&test_crate)
         .manifest_path(&test_crate.join("Cargo.toml"))
@@ -158,7 +158,7 @@ fn walk_repo_deps() -> Result<(), Box<dyn Error>> {
         .unwrap();
     let root = resolve::tools::lower_absolute_crate(root);
 
-    info!("root package {:?}", root);
+    println!("root package {:?}", root);
 
     let mut crates = resolve::tools::lower_crates(&metadata);
     resolve::tools::add_rust_sources(&mut crates, &test_crate)?;
@@ -173,11 +173,11 @@ fn walk_repo_deps() -> Result<(), Box<dyn Error>> {
     all.par_iter().for_each(|dep| {
         let _ = resolve::walker::walk_crate((*dep).clone(), &crates[dep], &db);
     });
-    info!(
+    println!(
         "time to parse all repo deps: {}ms",
         (Instant::now() - start).as_millis()
     );
-    info!(
+    println!(
         "found in all repo deps: {} types, {} symbols, {} modules",
         db.types.len(),
         db.symbols.len(),

@@ -124,9 +124,7 @@ fn lower_fields(ctx: &WalkModuleCtx, fields: &syn::Fields) -> Result<Vec<StructF
 /// Lower a function.
 /// Annoyingly, the data for this is stored in different places for functions / methods
 /// so you just have to pass in a bunch of junk lol.
-pub fn lower_signature(
-    sig: &syn::Signature
-) -> Result<Signature, LowerError> {
+pub fn lower_signature(sig: &syn::Signature) -> Result<Signature, LowerError> {
     let mut receiver = Receiver::None;
     let variadic = sig.variadic.is_some();
 
@@ -391,10 +389,7 @@ mod tests {
         });
         assert!(function_.signature.variadic);
         assert!(function_.symbol_metadata.no_mangle);
-        assert_eq!(
-            function_.symbol_metadata.export_name,
-            Some("orange".into())
-        );
+        assert_eq!(function_.symbol_metadata.export_name, Some("orange".into()));
         assert_eq!(
             function_.symbol_metadata.link_section,
             Some(".banana".into())

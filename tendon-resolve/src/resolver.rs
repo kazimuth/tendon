@@ -1,12 +1,14 @@
 use tendon_api::paths::{AbsolutePath, UnresolvedPath};
 
-use crate::namespace::{Namespace};
+use crate::namespace::Namespace;
+use crate::tools::CrateData;
+use crate::tools::RustEdition;
 use crate::walker::ModuleScope;
 use lazy_static::lazy_static;
 use tendon_api::idents::Ident;
+use tendon_api::items::ModuleItem;
 use tendon_api::paths::Path;
-use tendon_api::items::{ModuleItem};
-use crate::tools::CrateData;
+use tracing::trace;
 
 // https://github.com/rust-lang/rust/tree/master/src/librustc_resolve
 
@@ -174,28 +176,38 @@ pub fn absolutize_use_2018(
     path: &mut Path,
     module: &AbsolutePath,
     modules: &Namespace<ModuleItem>,
-    crate_data: &CrateData
+    crate_data: &CrateData,
 ) -> bool {
-    let unresolved = if let Path::Unresolved(unresolved) = path {
-        unresolved
+    let mut unresolved = if let Path::Unresolved(unresolved) = path {
+        unresolved.clone()
     } else {
-        return true
+        return true;
     };
-    let mut segments = unresolved.path.clone();
-    let ident = segments.remove(0);
+    let mut module = module.clone();
+    let ident = unresolved.path.remove(0);
+
+    if &ident == &*CRATE {
+        module.path.clear();
+        module.path.append(&mut unresolved.path);
+        *path = Path::Absolute(module);
+        return true;
+    } else if &ident == &*SUPER {
+        module.path.pop();
+        module.path.append(&mut unresolved.path);
+        *path = Path::Absolute(module);
+        return true;
+    }
 
     // is the `use` a submodule?
     let mut possible = module.clone().join(ident.clone());
-    if modules.contains(&possible) {
-        possible.path.append(&mut segments);
+    if !unresolved.is_absolute && modules.contains(&possible) {
+        possible.path.append(&mut unresolved.path);
         *path = Path::Absolute(possible);
         return true;
     }
 
-    possible.path.pop();
-
     if let Some(crate_) = crate_data.deps.get(&ident) {
-        *path = Path::Absolute(AbsolutePath::new(crate_.clone(), segments));
+        *path = Path::Absolute(AbsolutePath::new(crate_.clone(), unresolved.path));
         return true;
     }
 
@@ -206,11 +218,11 @@ pub fn absolutize_use_2018(
 
 /// Attempt to resolve all `use` statements in a module scope.
 /// Uses Rust 2018 rules.
-pub fn absolutize_imports_2018(
+fn absolutize_imports_2018(
     scope: &mut ModuleScope,
     module: &AbsolutePath,
     modules: &Namespace<ModuleItem>,
-    crate_data: &CrateData
+    crate_data: &CrateData,
 ) -> bool {
     let &mut ModuleScope {
         ref mut imports,
@@ -219,29 +231,41 @@ pub fn absolutize_imports_2018(
         ref mut pub_glob_imports,
     } = scope;
     let mut all_success = true;
-    for path in imports.values_mut()
+    for path in imports
+        .values_mut()
         .chain(pub_imports.values_mut())
         .chain(glob_imports.iter_mut())
-        .chain(pub_glob_imports.iter_mut()) {
-        all_success = all_success && absolutize_use_2018(
-            path,
-            module,
-            modules,
-            crate_data
-        );
+        .chain(pub_glob_imports.iter_mut())
+    {
+        let success = absolutize_use_2018(path, module, modules, crate_data);
+        all_success = all_success && success;
     }
     all_success
+}
+
+pub fn absolutize_imports(
+    scope: &mut ModuleScope,
+    module: &AbsolutePath,
+    modules: &Namespace<ModuleItem>,
+    crate_data: &CrateData,
+) -> bool {
+    match crate_data.rust_edition {
+        RustEdition::Rust2018 => absolutize_imports_2018(scope, module, modules, crate_data),
+        // TODO: WRONG! implement this!
+        RustEdition::Rust2015 => absolutize_imports_2018(scope, module, modules, crate_data),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Map;
     use tendon_api::attributes::{Metadata, Span, Visibility};
     use tendon_api::paths::AbsoluteCrate;
 
     #[test]
-    fn imports() {
-        //let modules = Namespace::new();
+    fn imports_2018() {
+        spoor::init();
 
         let fake_module = ModuleItem {
             metadata: Metadata {
@@ -255,14 +279,53 @@ mod tests {
                     start_line: 0,
                     start_column: 0,
                     end_line: 0,
-                    end_column: 0
-                }
+                    end_column: 0,
+                },
             },
-            name: "fake_module".into()
+            name: "fake_module".into(),
         };
 
         let crate_1 = AbsoluteCrate::new("crate_1", "0.0.0");
         let crate_2 = AbsoluteCrate::new("crate_2", "0.0.0");
 
+        let module = AbsolutePath::new(crate_1.clone(), &["module"]);
+        let submodule = AbsolutePath::new(crate_1.clone(), &["module", "submodule"]);
+        let module2 = AbsolutePath::new(crate_1.clone(), &["module2"]);
+
+        let modules = Namespace::new();
+        modules.insert(module.clone(), fake_module.clone()).unwrap();
+        modules.insert(submodule.clone(), fake_module.clone()).unwrap();
+        modules.insert(module2.clone(), fake_module.clone()).unwrap();
+
+        let mut crate_data = CrateData {
+            deps: Map::default(),
+            features: vec![],
+            manifest_path: "".into(),
+            entry: "".into(),
+            is_proc_macro: false,
+            rust_edition: RustEdition::Rust2018,
+        };
+        crate_data.deps.insert("crate_2".into(), crate_2.clone());
+
+        let mut scope = ModuleScope::new();
+        scope.glob_imports.push(Path::fake("crate_2::thing"));
+        scope.glob_imports.push(Path::fake("submodule::thing"));
+        scope.glob_imports.push(Path::fake("crate::module2::thing"));
+
+        assert!(absolutize_imports(
+            &mut scope,
+            &module,
+            &modules,
+            &crate_data
+        ));
+        assert_match!(scope.glob_imports[0], Path::Absolute(abs) => {
+            assert_eq!(abs, &AbsolutePath::new(crate_2, &["thing"]));
+        });
+        assert_match!(scope.glob_imports[1], Path::Absolute(abs) => {
+            assert_eq!(abs, &submodule.clone().join("thing"));
+        });
+        assert_match!(scope.glob_imports[2], Path::Absolute(abs) => {
+            assert_eq!(abs, &module2.clone().join("thing"));
+        });
     }
 }

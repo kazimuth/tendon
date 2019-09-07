@@ -6,17 +6,17 @@ use std::fs;
 use std::io;
 use std::path::{Path as FsPath, PathBuf};
 use std::process::Command;
-use tracing::{info, warn};
 use tendon_api::idents::Ident;
 use tendon_api::paths::AbsoluteCrate;
+use tracing::{trace, warn};
 
 /// Run `cargo check` on target project to ensure well-formed input + dependencies.
 pub fn check(path: &FsPath) -> io::Result<()> {
-    info!("ensuring well-formed input");
+    trace!("ensuring well-formed input");
 
     // TODO different `cargo` invocations?
 
-    info!("$ cd {} && cargo check", path.display());
+    trace!("$ cd {} && cargo check", path.display());
     let path_ = path.to_owned();
     let status = Command::new("cargo")
         .args(&["check"])
@@ -44,7 +44,7 @@ pub fn lower_absolute_crate(package: &cargo_metadata::Package) -> AbsoluteCrate 
 
 /// Get the sources dir from the sysroot active for some path.
 pub fn sources_dir(target_dir: &FsPath) -> io::Result<PathBuf> {
-    info!(
+    trace!(
         "$ cd {} && cargo rustc -- --print-sysroot",
         target_dir.display()
     );
@@ -69,8 +69,8 @@ pub fn sources_dir(target_dir: &FsPath) -> io::Result<PathBuf> {
         .join("rust")
         .join("src");
 
-    info!("sysroot: {}", sysroot.display());
-    info!("sources: {}", sources.display());
+    trace!("sysroot: {}", sysroot.display());
+    trace!("sources: {}", sources.display());
 
     if !fs::metadata(&sources)?.is_dir() {
         // TODO run this automatically?
@@ -100,14 +100,13 @@ pub struct CrateData {
     /// If this crate is a proc-macro crate.
     pub is_proc_macro: bool,
     /// The version of this crate.
-    pub rust_edition: RustEdition
-    // TODO: build script output?
+    pub rust_edition: RustEdition, // TODO: build script output?
 }
 
 #[derive(Debug)]
 pub enum RustEdition {
     Rust2015,
-    Rust2018
+    Rust2018,
 }
 
 /// Get the sysroot active for some crate.
@@ -117,7 +116,7 @@ pub fn add_rust_sources(
     crates: &mut Map<AbsoluteCrate, CrateData>,
     target_dir: &FsPath,
 ) -> io::Result<()> {
-    info!("finding libstd + libcore + liballoc");
+    trace!("finding libstd + libcore + liballoc");
 
     let sources = sources_dir(target_dir)?;
 
@@ -140,7 +139,7 @@ pub fn add_rust_sources(
             manifest_path: sources.join("libcore").join("Cargo.toml"),
             features: vec![],
             // TODO check?
-            rust_edition: RustEdition::Rust2018
+            rust_edition: RustEdition::Rust2018,
         },
     );
 
@@ -155,7 +154,7 @@ pub fn add_rust_sources(
             manifest_path: sources.join("liballoc").join("Cargo.toml"),
             features: vec![],
             // TODO check?
-            rust_edition: RustEdition::Rust2018
+            rust_edition: RustEdition::Rust2018,
         },
     );
 
@@ -169,7 +168,7 @@ pub fn add_rust_sources(
             manifest_path: sources.join("libstd").join("Cargo.toml"),
             features: vec![],
             // TODO check?
-            rust_edition: RustEdition::Rust2018
+            rust_edition: RustEdition::Rust2018,
         },
     );
 
@@ -201,7 +200,7 @@ pub fn transitive_dependencies(
     transitive_deps
 }
 
-/// Lower information from `cargo_metadata` to an intelligible form.
+/// Lower tracermation from `cargo_metadata` to an intelligible form.
 /// Note that `cargo_metadata` stores data in two places, as `Package`s and as `Node`s.
 /// A `Package` is all of the metadata for a crate, as pulled from a cargo.toml, including all
 /// possible features and dependencies; a `Node` is a specific instantiation of a package with some
@@ -267,7 +266,7 @@ pub fn lower_crates(metadata: &Metadata) -> Map<AbsoluteCrate, CrateData> {
         let rust_edition = match &package.edition[..] {
             "2018" => RustEdition::Rust2018,
             "2015" => RustEdition::Rust2015,
-            other => panic!("unknown edition: {}", other)
+            other => panic!("unknown edition: {}", other),
         };
 
         // TODO edition
@@ -280,7 +279,7 @@ pub fn lower_crates(metadata: &Metadata) -> Map<AbsoluteCrate, CrateData> {
                 features,
                 deps,
                 is_proc_macro,
-                rust_edition
+                rust_edition,
             },
         );
     }

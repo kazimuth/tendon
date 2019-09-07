@@ -113,10 +113,22 @@ pub struct AbsolutePath {
 
 impl AbsolutePath {
     // Create a new AbsolutePath
-    pub fn new(crate_: AbsoluteCrate, path: Vec<Ident>) -> Self {
+    pub fn new<P, I>(crate_: AbsoluteCrate, path: P) -> Self
+    where
+        P: IntoIterator<Item = I>,
+        I: Into<Ident>,
+    {
         AbsolutePath {
             crate_,
-            path
+            path: path.into_iter().map(|i| i.into()).collect(),
+        }
+    }
+
+    /// The AbsolutePath at the root of a crate
+    pub fn root(crate_: AbsoluteCrate) -> Self {
+        AbsolutePath {
+            crate_,
+            path: vec![],
         }
     }
 
@@ -130,6 +142,7 @@ impl AbsolutePath {
 
         AbsolutePath { crate_, path }
     }
+
     /// The parent of this path.
     pub fn parent(&self) -> Self {
         debug_assert!(self.path.len() > 0, "no parent of crate root");
@@ -172,7 +185,7 @@ impl AbsoluteCrate {
     pub fn new(name: impl Into<SmolStr>, version: impl Into<SmolStr>) -> Self {
         AbsoluteCrate {
             name: name.into(),
-            version: version.into()
+            version: version.into(),
         }
     }
 }
@@ -259,7 +272,7 @@ mod tests {
                 "{:?}",
                 Path::Absolute(AbsolutePath::new(
                     AbsoluteCrate::new("fake_crate", "0.1.0-alpha1"),
-                    vec!["test".into(), "Thing".into()],
+                    &["test", "Thing"]
                 ))
             ),
             "fake_crate[0.1.0-alpha1]::test::Thing"

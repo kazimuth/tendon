@@ -5,7 +5,6 @@
 use super::LowerError;
 use crate::walker::WalkModuleCtx;
 use lazy_static::lazy_static;
-use tracing::{trace, warn};
 use tendon_api::attributes::Repr;
 use tendon_api::types::Trait;
 use tendon_api::{
@@ -17,6 +16,7 @@ use tendon_api::{
     tokens::Tokens,
     types::GenericParams,
 };
+use tracing::{trace, warn};
 
 lazy_static! {
     // the string used by `syn` for converting doc comments to attributes

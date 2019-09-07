@@ -239,22 +239,10 @@ mod tests {
     use tendon_api::paths::AbsoluteCrate;
 
     fn fake_a() -> AbsolutePath {
-        AbsolutePath::new(
-             AbsoluteCrate::new(
-                 "core",
-                 "0.0.0",
-            ),
-            vec!["a".into()]
-        )
+        AbsolutePath::new(AbsoluteCrate::new("core", "0.0.0"), &["a"])
     }
     fn fake_b() -> AbsolutePath {
-        AbsolutePath::new(
-            AbsoluteCrate::new(
-                "core",
-                "0.0.0",
-            ),
-            vec!["b".into()]
-        )
+        AbsolutePath::new(AbsoluteCrate::new("core", "0.0.0"), &["b"])
     }
 
     #[test]

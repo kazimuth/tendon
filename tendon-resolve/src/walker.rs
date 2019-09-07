@@ -73,10 +73,10 @@ pub struct WalkModuleCtx<'a> {
 macro_rules! test_ctx {
     ($ctx:ident) => {
         let source_file = std::path::PathBuf::from("fake_file.rs");
-        let module = tendon_api::paths::AbsolutePath::new(
-tendon_api::paths::AbsoluteCrate::new("fake_crate", "0.0.1"),
-vec![]
-);
+        let module = tendon_api::paths::AbsolutePath::root(tendon_api::paths::AbsoluteCrate::new(
+            "fake_crate",
+            "0.0.1",
+        ));
         let db = crate::Db::new();
         let mut scope = crate::walker::ModuleScope::new();
         let mut unexpanded = crate::walker::UnexpandedModule::new();
@@ -178,7 +178,7 @@ pub fn walk_crate(
     let mut unexpanded = UnexpandedModule::new();
     let crate_unexpanded_modules = DashMap::default();
 
-    let path = AbsolutePath::new(crate_, vec![]);
+    let path = AbsolutePath::root(crate_);
 
     let source_root = data.entry.parent().unwrap().to_path_buf();
 
@@ -337,12 +337,14 @@ macro_rules! skip_non_pub {
 macro_rules! add_to_scope {
     ($ctx:ident, $item:ident) => {
         match &$item.metadata.visibility {
-            Visibility::Pub => {
-                $ctx.scope.pub_imports.insert($item.name.clone(), $ctx.module.clone().join($item.name.clone()).into())
-            }
-            Visibility::NonPub => {
-                $ctx.scope.imports.insert($item.name.clone(), $ctx.module.clone().join($item.name.clone()).into())
-            }
+            Visibility::Pub => $ctx.scope.pub_imports.insert(
+                $item.name.clone(),
+                $ctx.module.clone().join($item.name.clone()).into(),
+            ),
+            Visibility::NonPub => $ctx.scope.imports.insert(
+                $item.name.clone(),
+                $ctx.module.clone().join($item.name.clone()).into(),
+            ),
         }
     };
 }
@@ -598,12 +600,12 @@ mod tests {
         let crate_unexpanded_modules = DashMap::default();
         let mut ctx = WalkModuleCtx {
             source_file: PathBuf::from("/fake/fake_file.rs"),
-            module: AbsolutePath::new(crate_.clone(), vec![]),
+            module: AbsolutePath::root(crate_.clone()),
             db: &db,
             scope: &mut scope,
             unexpanded: &mut unexpanded,
             crate_unexpanded_modules: &crate_unexpanded_modules,
-            source_root: &PathBuf::from("/fake")
+            source_root: &PathBuf::from("/fake"),
         };
 
         let fake: syn::File = syn::parse_quote! {
@@ -621,6 +623,5 @@ mod tests {
         };
 
         walk_items(&mut ctx, &fake.items).unwrap();
-
     }
 }
