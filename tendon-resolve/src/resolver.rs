@@ -8,7 +8,6 @@ use lazy_static::lazy_static;
 use tendon_api::idents::Ident;
 use tendon_api::items::ModuleItem;
 use tendon_api::paths::Path;
-use tracing::trace;
 
 // https://github.com/rust-lang/rust/tree/master/src/librustc_resolve
 

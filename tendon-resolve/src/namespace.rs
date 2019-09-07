@@ -2,16 +2,16 @@
 
 use crate::resolver::ResolveError;
 use crate::walker::WalkError;
-use crate::Set;
 use dashmap::{DashMap, DashMapRefAny};
 use tendon_api::idents::Ident;
-use tendon_api::paths::AbsolutePath;
+use tendon_api::paths::{AbsolutePath, AbsoluteCrate};
 
 /// A namespace, for holding some particular type of item during resolution.
 /// Allows operating on many different items in parallel.
 pub struct Namespace<I: Namespaced> {
     items: DashMap<AbsolutePath, I>,
-    module_map: DashMap<AbsolutePath, Set<Ident>>,
+    // note: could change this to contain a dashmap as well...
+    crate_map: DashMap<AbsoluteCrate, DashMap<Vec<Ident>, ()>>,
 }
 
 // Modifying multiple items in a namespace at the same time can deadlock.
@@ -62,7 +62,7 @@ impl<I: Namespaced> Namespace<I> {
     pub fn new() -> Self {
         Namespace {
             items: DashMap::default(),
-            module_map: DashMap::default(),
+            crate_map: DashMap::default(),
         }
     }
 
@@ -82,7 +82,7 @@ impl<I: Namespaced> Namespace<I> {
             Ok(())
         };
 
-        self.update_module_map(path);
+        self.update_crate_map(path);
 
         result
     }
@@ -119,26 +119,11 @@ impl<I: Namespaced> Namespace<I> {
         }
     }
 
-    /// Add a path to it's parents list of sub-paths.
-    /// Noop for root crate entry.
-    fn update_module_map(&self, mut path: AbsolutePath) {
-        if let Some(last) = path.path.pop() {
-            {
-                // get a mutable reference
-                if let DashMapRefAny::Unique(mut mut_) =
-                    self.module_map.get_or_insert_with(&path, Set::default)
-                {
-                    // if we get a mutable ref, use it
-                    mut_.insert(last);
-                    return;
-                }
-            }
-
-            {
-                // otherwise, get one explicitly
-                self.module_map.index_mut(&path).insert(last);
-            };
-        }
+    /// Add a path to the list of paths for each crate.
+    fn update_crate_map(&self, path: AbsolutePath) {
+        let AbsolutePath { crate_, path } = path;
+        let submap = self.crate_map.get_or_insert_with(&crate_, DashMap::default);
+        submap.insert(path, ());
     }
 
     /// Modify the item present at a path.
@@ -178,19 +163,20 @@ impl<I: Namespaced> Namespace<I> {
         self.items.contains_key(path)
     }
 
-    /// Iterate through all the known paths in a module.
-    pub fn iter_module<'a>(
+    /// Iterate through all the known paths in a crate.
+    pub fn iter_crate<'a>(
         &'a self,
-        module: &'a AbsolutePath,
+        crate_: &'a AbsoluteCrate,
     ) -> impl Iterator<Item = AbsolutePath> + 'a {
-        self.module_map
-            .get(module)
+        self.crate_map
+            .get(crate_)
             .into_iter()
             .flat_map(move |entries| {
                 entries
-                    .clone()
+                    .iter()
+                    .map(move |entry| AbsolutePath::new(crate_.clone(), &entry.key()[..]))
+                    .collect::<Vec<_>>()
                     .into_iter()
-                    .map(move |entry| module.clone().join(entry))
             })
     }
 
@@ -228,7 +214,7 @@ impl Namespaced for tendon_api::items::ModuleItem {
 }
 impl Namespaced for crate::walker::ModuleScope {
     fn namespace() -> &'static str {
-        "scope"
+        "[implementation detail] scope"
     }
 }
 
