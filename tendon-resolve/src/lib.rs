@@ -99,3 +99,21 @@ impl Db {
         }
     }
 }
+
+quick_error! {
+    #[derive(Debug)]
+    pub enum Error {
+        Walk(err: walker::WalkError) {
+            from()
+            cause(err)
+            description("walk error")
+            display("{}", err)
+        }
+        Resolve(err: resolver::ResolveError) {
+            from()
+            cause(err)
+            description("resolve error")
+            display("{}", err)
+        }
+    }
+}

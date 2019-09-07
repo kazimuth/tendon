@@ -158,6 +158,24 @@ impl<I: Namespaced> Namespace<I> {
         }
     }
 
+    /// Temporarily remove an item from the database to modify it.
+    /// This will allow you to inspect other items in the database while modifying the item.
+    /// However, your item will be mysteriously gone from the database.
+    /// This is only good to use when you *know* nothing else wants to look for your item.
+    pub fn take_modify<R, F: FnOnce(&mut I) -> Result<R, ResolveError>>(
+        &self,
+        path: &AbsolutePath,
+        f: F,
+    ) -> Result<R, ResolveError> {
+        if let Some((path, mut item)) = self.items.remove(&path) {
+            let result = f(&mut item);
+            self.items.insert(path, item);
+            result
+        } else {
+            Err(ResolveError::PathNotFound(I::namespace(), path.clone()))
+        }
+    }
+
     /// Return if the namespace contains a path.
     pub fn contains(&self, path: &AbsolutePath) -> bool {
         self.items.contains_key(path)

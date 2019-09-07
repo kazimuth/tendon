@@ -26,7 +26,8 @@ pub fn lower_macro_rules(
             .as_ref()
             .ok_or(LowerError::NotAMacroDeclaration)?,
     );
-    let tokens = Tokens::from(&rules_.mac);
+    // note: store full declaration in tokens
+    let tokens = Tokens::from(&rules_);
 
     Ok(DeclarativeMacroItem {
         macro_export,

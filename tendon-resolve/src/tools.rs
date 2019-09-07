@@ -121,8 +121,8 @@ impl CrateData {
 
 #[derive(Debug, Clone, Copy)]
 pub enum RustEdition {
-Rust2015,
-Rust2018,
+    Rust2015,
+    Rust2018,
 }
 
 /// Get the sysroot active for some crate.

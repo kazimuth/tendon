@@ -31,8 +31,13 @@
 // TODO: $crate
 
 use proc_macro2 as pm2;
+use quote::quote;
 use syn::spanned::Spanned;
+use tendon_api::attributes::Span;
+use tendon_api::idents::Ident;
 use tendon_api::items::DeclarativeMacroItem;
+use tendon_api::paths::{AbsoluteCrate, AbsolutePath, UnresolvedPath};
+use tendon_api::tokens::Tokens;
 
 mod ast;
 mod consume;
@@ -57,4 +62,95 @@ pub fn apply_once(
         tokens.span(),
         "failed to match any rule to macro input",
     ))
+}
+
+/// A module with macros unexpanded.
+/// We throw all macro-related stuff here when we're walking freshly-parsed modules.
+/// It's not possible to eagerly expand macros because they rely on name resolution to work, and we
+/// can't do name resolution (afaict) until after we've lowered most modules already.
+/// This is ordered because order affects macro name resolution.
+#[derive(Debug)]
+pub struct UnexpandedModule(Vec<UnexpandedItem>);
+impl UnexpandedModule {
+    /// Create an empty unexpanded module.
+    pub fn new() -> Self {
+        UnexpandedModule(vec![])
+    }
+}
+
+#[derive(Debug)]
+/// An item that needs macro expansion.
+/// TODO: do we need to store imports here as well?
+pub enum UnexpandedItem {
+    /// A macro invocation in item position. Note: the macro in question could be `macro_rules!`.
+    MacroInvocation(Span, Tokens),
+    /// Some item that contains a macro in type position.
+    TypeMacro(Span, Tokens),
+    /// Something with an attribute macro applied.
+    AttributeMacro(Span, Tokens),
+    /// Something with a derive macro applied.
+    /// Note: the item itself should already be stored in the main `Db`, and doesn't need to be
+    /// re-added.
+    DeriveMacro(Span, Tokens),
+    /// A sub module that has yet to be expanded.
+    UnexpandedModule { name: Ident, macro_use: bool },
+    /// An import with #[macro_use].
+    MacroUse(AbsoluteCrate),
+}
+
+/// A cursor examining an unexpanded module.
+pub struct UnexpandedCursor<'a> {
+    pub module: &'a mut UnexpandedModule,
+    idx: usize,
+}
+impl<'a> UnexpandedCursor<'a> {
+    /// Crate a cursor into a module.
+    pub fn new(module: &'a mut UnexpandedModule) -> UnexpandedCursor<'a> {
+        let idx = module.0.len();
+        UnexpandedCursor { module, idx }
+    }
+    /// Insert something into the module.
+    pub fn insert(&mut self, item: UnexpandedItem) {
+        self.module.0.insert(self.idx, item);
+        self.idx += 1;
+    }
+    /// Reset to the front of the target module.
+    pub fn reset(&mut self) {
+        self.idx = 0;
+    }
+    /// Pop the item at the cursor position.
+    pub fn pop(&mut self) -> Option<UnexpandedItem> {
+        if self.module.0.len() <= self.idx {
+            None
+        } else {
+            Some(self.module.0.remove(self.idx))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lower::macros::lower_macro_rules;
+    use quote::{quote, ToTokens};
+
+    #[test]
+    fn full_macro() {
+        test_ctx!(ctx);
+
+        let rules: syn::ItemMacro = syn::parse_quote! { macro_rules! test_macro {
+            ($($x:ident $y:ident),+) => ([$($x)+] [$($y)+]);
+        }};
+        println!("{}", rules.to_token_stream());
+
+        let rules = lower_macro_rules(&ctx, &rules).unwrap();
+
+        println!("parsed: {:?}", rules.tokens);
+
+        let input = quote!(a b, c d, e f);
+
+        let output = apply_once(&rules, input).unwrap();
+
+        assert_eq!(output.to_string(), quote!([a c e] [b d f]).to_string());
+    }
 }

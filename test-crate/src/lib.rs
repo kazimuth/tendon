@@ -70,13 +70,18 @@ pub fn uses_other(z: rand_chacha::ChaChaCore) {}
 
 macro_rules! expands_to_item {
     () => {
-        pub const EXPANDED: &'static std::option::Option<i32> = &None;
+        pub struct Expanded {
+            thing: &'static std::option::Option<i32>
+        }
     };
-    ($(($x:expr)) 'f *) => {
-        pub const Z: &'static [i32] = &[$($x),+];
+    ($(($x:ty)) 'f *) => {
+        pub struct ExpandedAlt {
+            thing: &'static std::option::Option<i32>,
+            stuff: ($($x),+)
+        }
     }
 }
-expands_to_item!((1) 'f (2) 'f (3));
+expands_to_item!((i32) 'f (i32) 'f (f64));
 
 expands_to_item!();
 

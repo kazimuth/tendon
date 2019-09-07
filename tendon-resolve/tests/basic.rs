@@ -4,7 +4,7 @@ use rayon::prelude::*;
 use std::error::Error;
 use std::path::Path;
 use std::time::Instant;
-use tendon_api::paths::AbsoluteCrate;
+use tendon_api::paths::{AbsoluteCrate, AbsolutePath};
 use tendon_resolve as resolve;
 
 #[cfg(debug_assertions)]
@@ -37,8 +37,6 @@ fn walk_test_crate() -> Result<(), Box<dyn Error>> {
         .unwrap();
     let root = resolve::tools::lower_absolute_crate(root);
 
-    println!("root package {:?}", root);
-
     let mut crates = resolve::tools::lower_crates(&metadata);
     resolve::tools::add_rust_sources(&mut crates, &test_crate)?;
 
@@ -47,9 +45,48 @@ fn walk_test_crate() -> Result<(), Box<dyn Error>> {
     let mut ordered = transitive_deps.iter().collect::<Vec<_>>();
     ordered.sort();
 
-    for id in &ordered {
-        println!("transitive dep: {:?}", id);
+    let mut hit = resolve::Set::default();
+
+    let db = resolve::Db::new();
+
+    loop {
+        let next = if let Some(next) = ordered.iter()
+            .find(|crate_| {
+                !hit.contains(**crate_) && crates[**crate_].deps.values().all(|dep| hit.contains(dep))
+            }) {
+            next
+        } else {
+            break;
+        };
+        hit.insert((*next).clone());
+        println!("walking {:?}", next);
+
+        if let Err(err) = resolve::walker::walk_crate(crates.get_mut(*next).unwrap(), &db) {
+            println!("crate walk error: {:?}", err);
+        }
     }
+
+    let test_path = |s: &str| AbsolutePath::new(root.clone(), s.split("::"));
+
+    assert!(db.modules.contains(&test_path("x")));
+    assert!(db.modules.contains(&test_path("z")));
+
+    assert!(db.symbols.contains(&test_path("x")));
+    assert!(db.symbols.contains(&test_path("gen1")));
+    assert!(db.symbols.contains(&test_path("gen2")));
+    assert!(db.symbols.contains(&test_path("gen3")));
+    assert!(db.symbols.contains(&test_path("uses_other")));
+
+    assert!(db.types.contains(&test_path("Opaque")));
+    assert!(db.types.contains(&test_path("Borrows")));
+    assert!(db.types.contains(&test_path("NonOpaque")));
+    assert!(db.types.contains(&test_path("PartiallyOpaque")));
+    assert!(db.types.contains(&test_path("ReprC")));
+    assert!(db.types.contains(&test_path("z::InMod")));
+    assert!(db.types.contains(&test_path("WackyTupleStruct")));
+
+    assert!(db.types.contains(&test_path("Expanded")));
+    assert!(db.types.contains(&test_path("ExpandedAlt")));
 
     Ok(())
 }
@@ -71,8 +108,7 @@ fn walk_core() -> Result<(), Box<dyn Error>> {
 
     let start = Instant::now();
 
-    let _unresolved =
-        resolve::walker::walk_crate(&mut crates.remove(&core).unwrap(), &db)?;
+    let _unresolved = resolve::walker::walk_crate(&mut crates.remove(&core).unwrap(), &db)?;
 
     println!(
         "time to parse core: {}ms ({})",
@@ -102,9 +138,9 @@ fn walk_stdlib() -> Result<(), Box<dyn Error>> {
 
     let start = Instant::now();
 
-    resolve::walker::walk_crate( &mut crates.remove(&core).unwrap(), &db)?;
-    resolve::walker::walk_crate( &mut crates.remove(&alloc).unwrap(), &db)?;
-    resolve::walker::walk_crate( &mut crates.remove(&std).unwrap(), &db)?;
+    resolve::walker::walk_crate(&mut crates.remove(&core).unwrap(), &db)?;
+    resolve::walker::walk_crate(&mut crates.remove(&alloc).unwrap(), &db)?;
+    resolve::walker::walk_crate(&mut crates.remove(&std).unwrap(), &db)?;
 
     println!(
         "time to parse stdlib: {}ms ({})",
@@ -156,7 +192,7 @@ fn walk_repo_deps() -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
 
     crates.into_par_iter().for_each(|(dep, mut crate_)| {
-        let _ = resolve::walker::walk_crate( &mut crate_, &db);
+        let _ = resolve::walker::walk_crate(&mut crate_, &db);
     });
     println!(
         "time to parse all repo deps: {}ms",

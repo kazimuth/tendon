@@ -56,8 +56,8 @@ pub fn lower_metadata(
                 if let Attribute::Meta(Meta::Assign { literal, .. }) = attr {
                     extract_string(&literal)
                 } else {
-                    warn!(
-                        "malformed doc attribute {:?} [{:?}]",
+                    trace!(
+                        "unimplemented doc attribute {:?} [{:?}]",
                         attr,
                         Span::from_syn(module.source_file.clone(), span.clone())
                     );
