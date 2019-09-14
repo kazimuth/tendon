@@ -38,7 +38,7 @@ use tendon_api::idents::Ident;
 use tendon_api::items::DeclarativeMacroItem;
 use tendon_api::paths::{AbsoluteCrate, AbsolutePath, UnresolvedPath};
 use tendon_api::tokens::Tokens;
-use tracing::info;
+use tracing::trace;
 use std::path::PathBuf;
 
 mod ast;
@@ -50,18 +50,18 @@ pub fn apply_once(
     macro_: &DeclarativeMacroItem,
     tokens: pm2::TokenStream,
 ) -> syn::Result<pm2::TokenStream> {
-    info!("parse macro: {:?}", macro_.tokens);
+    trace!("parse macro: {:?}", macro_.tokens);
     let rules = syn::parse2::<ast::MacroDef>(macro_.tokens.get_tokens())?;
 
     let mut stomach = consume::Stomach::new();
 
-    info!("apply rules");
+    trace!("apply rules");
     for rule in &rules.rules {
         if let Ok(()) = stomach.consume(&tokens, &rule.matcher) {
-            info!("success, transcribing");
+            trace!("success, transcribing: {:#?}\n    w/ bindings: {:?}", &rule.transcriber, &stomach.bindings);
             return transcribe::transcribe(&stomach.bindings, &rule.transcriber);
         } else {
-            info!("failed, next");
+            trace!("failed, next");
             stomach.reset();
         }
     }
@@ -161,6 +161,7 @@ mod tests {
 
     #[test]
     fn full_macro() {
+        spoor::init();
         test_ctx!(ctx);
 
         let rules: syn::ItemMacro = syn::parse_quote! { macro_rules! test_macro {
@@ -178,6 +179,7 @@ mod tests {
 
     #[test]
     fn empty_macro() {
+        spoor::init();
         test_ctx!(ctx);
 
         let rules: syn::ItemMacro = syn::parse_quote! { macro_rules! test_macro {
@@ -190,5 +192,28 @@ mod tests {
         let output = apply_once(&rules, input).unwrap();
 
         assert_eq!(output.to_string(), quote!(hooray).to_string());
+    }
+
+    #[test]
+    fn keyword_frag() {
+        spoor::init();
+        test_ctx!(ctx);
+
+        let rules: syn::ItemMacro = syn::parse_quote! {
+            macro_rules ! wacky_levels {
+                ( $ ( $ name : ident ) ,+ | $ ( $ type : ty ) ,+ | $ ( $ expr : expr ) ,+ ) =>
+                    { $ ( pub const $ name : $ type = $ expr ; ) + }
+            }
+        };
+        let rules = lower_macro_rules(&ctx, &rules).unwrap();
+
+        let input = quote!(hello, world | i32, i64 | 1, 2);
+
+        let output = apply_once(&rules, input).unwrap();
+
+        assert_eq!(output.to_string(), quote!(
+            pub const hello: i32 = 1;
+            pub const world: i64 = 2;
+        ).to_string());
     }
 }

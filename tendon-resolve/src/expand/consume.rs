@@ -44,7 +44,13 @@ impl std::fmt::Debug for Binding {
         match self {
             Binding::Seq(bs) => {
                 write!(w, "[")?;
+                let mut first = true;
                 for b in bs {
+                    if first {
+                        first = false;
+                    } else {
+                        write!(w, ",")?;
+                    }
                     write!(w, "{:?}", b)?;
                 }
                 write!(w, "]")?;

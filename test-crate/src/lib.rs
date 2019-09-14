@@ -69,15 +69,15 @@ pub use rand_chacha::ChaChaRng as ReexportedThing;
 pub fn uses_other(z: rand_chacha::ChaChaCore) {}
 
 macro_rules! expands_to_item {
-    () => {
-        pub struct Expanded {
-            thing: &'static std::option::Option<i32>
-        }
-    };
-    ($(($x:ty)) 'f *) => {
+    ($(($x:ty)) 'f +) => {
         pub struct ExpandedAlt {
             thing: &'static std::option::Option<i32>,
             stuff: ($($x),+)
+        }
+    };
+    () => {
+        pub struct Expanded {
+            thing: &'static std::option::Option<i32>
         }
     }
 }

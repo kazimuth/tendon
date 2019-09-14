@@ -35,7 +35,10 @@ use syn::{
     parse::{Parse, ParseStream},
     spanned::Spanned,
     token, Token,
+    ext::IdentExt
 };
+
+//use tracing::trace;
 
 /// A full `macro_rules!` definition.
 #[derive(Debug)]
@@ -157,6 +160,7 @@ pub struct TranscribeFragment(pub String);
 
 impl Parse for MacroDef {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        //trace!("MacroDef");
         let syn::ItemMacro {
             ident, mac, attrs, ..
         } = syn::ItemMacro::parse(input)?;
@@ -180,6 +184,7 @@ impl Parse for MacroDef {
 struct MacroRules(Vec<MacroRule>);
 impl Parse for MacroRules {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        //trace!("MacroRules");
         let mut result = MacroRules(vec![]);
         while !input.is_empty() {
             result.0.push(input.parse::<MacroRule>()?);
@@ -190,6 +195,7 @@ impl Parse for MacroRules {
 
 impl Parse for MacroRule {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        //trace!("MacroRule");
         let matcher = input.parse::<pm2::Group>()?;
         let matcher = syn::parse2::<MatcherSeq>(matcher.stream())?;
         input.parse::<Token![=>]>()?;
@@ -209,6 +215,7 @@ impl Parse for MacroRule {
 }
 impl Parse for MatcherSeq {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        //trace!("MatcherSeq");
         let mut result = MatcherSeq(vec![]);
         while !input.is_empty() {
             result.0.push(input.parse::<Matcher>()?);
@@ -218,6 +225,7 @@ impl Parse for MatcherSeq {
 }
 impl Parse for Matcher {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        //trace!("Matcher");
         if input.peek(token::Dollar) {
             if input.peek2(token::Paren) {
                 Ok(Matcher::Repetition(input.parse::<Repetition>()?))
@@ -240,6 +248,7 @@ impl Parse for Matcher {
 }
 impl Parse for Repetition {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        //trace!("Repetition");
         input.parse::<token::Dollar>()?; // $
         let inner;
         parenthesized!(inner in input);
@@ -264,6 +273,7 @@ impl Parse for Repetition {
 }
 impl Parse for Sep {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        //trace!("Sep");
         // there's no easy way to parse "one token" (pm2 is too low-level)
         // so we just accept more than we should; rustc should already have weeded out incorrect seps
         let mut sep = vec![];
@@ -280,8 +290,9 @@ impl Parse for Sep {
 }
 impl Parse for Fragment {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        //trace!("Fragment");
         input.parse::<token::Dollar>()?; // $
-        let ident = input.parse::<pm2::Ident>()?;
+        let ident = input.call(pm2::Ident::parse_any)?;
         let ident = ident.to_string();
         input.parse::<Token![:]>()?;
         let spec = input.parse::<FragSpec>()?;
@@ -291,6 +302,7 @@ impl Parse for Fragment {
 }
 impl Parse for FragSpec {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        //trace!("FragSpec");
         let ident = input.parse::<pm2::Ident>()?;
         if ident == "block" {
             Ok(FragSpec::Block)
@@ -327,34 +339,96 @@ impl Parse for FragSpec {
     }
 }
 
+/// Check if the token 2 items out is an ident or a keyword.
+/// Annoyingly, there's no other way to accomplish this without dipping into syn internals.
+fn peek2_ident_or_kw(stream: ParseStream) -> bool {
+    stream.peek2(syn::Ident)
+    || stream.peek2(Token![abstract])
+    || stream.peek2(Token![as])
+    || stream.peek2(Token![async])
+    || stream.peek2(Token![auto])
+    || stream.peek2(Token![await])
+    || stream.peek2(Token![become])
+    || stream.peek2(Token![box])
+    || stream.peek2(Token![break])
+    || stream.peek2(Token![const])
+    || stream.peek2(Token![continue])
+    || stream.peek2(Token![crate])
+    || stream.peek2(Token![default])
+    || stream.peek2(Token![else])
+    || stream.peek2(Token![enum])
+    || stream.peek2(Token![extern])
+    || stream.peek2(Token![final])
+    || stream.peek2(Token![fn])
+    || stream.peek2(Token![for])
+    || stream.peek2(Token![if])
+    || stream.peek2(Token![impl])
+    || stream.peek2(Token![in])
+    || stream.peek2(Token![let])
+    || stream.peek2(Token![loop])
+    || stream.peek2(Token![macro])
+    || stream.peek2(Token![match])
+    || stream.peek2(Token![mod])
+    || stream.peek2(Token![move])
+    || stream.peek2(Token![mut])
+    || stream.peek2(Token![override])
+    || stream.peek2(Token![priv])
+    || stream.peek2(Token![pub])
+    || stream.peek2(Token![ref])
+    || stream.peek2(Token![return])
+    || stream.peek2(Token![Self])
+    || stream.peek2(Token![self])
+    || stream.peek2(Token![static])
+    || stream.peek2(Token![struct])
+    || stream.peek2(Token![super])
+    || stream.peek2(Token![trait])
+    || stream.peek2(Token![try])
+    || stream.peek2(Token![type])
+    || stream.peek2(Token![typeof])
+    || stream.peek2(Token![union])
+    || stream.peek2(Token![unsafe])
+    || stream.peek2(Token![unsized])
+    || stream.peek2(Token![use])
+    || stream.peek2(Token![virtual])
+    || stream.peek2(Token![where])
+    || stream.peek2(Token![while])
+    || stream.peek2(Token![yield])
+}
+
 impl Parse for Transcribe {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        if input.peek(token::Dollar) && input.peek2(token::Paren) {
-            Ok(Transcribe::Repetition(
-                input.parse::<TranscribeRepetition>()?,
-            ))
-        } else if input.peek(token::Dollar) && input.peek2(syn::Ident) {
-            input.parse::<token::Dollar>()?;
-            Ok(Transcribe::Fragment(TranscribeFragment(
-                input.parse::<pm2::Ident>()?.to_string(),
-            )))
-        } else {
-            let tt = input.parse::<pm2::TokenTree>()?;
-            match tt {
-                pm2::TokenTree::Ident(ident) => Ok(Transcribe::Ident(ident)),
-                pm2::TokenTree::Literal(literal) => Ok(Transcribe::Literal(literal)),
-                pm2::TokenTree::Punct(punct) => Ok(Transcribe::Punct(punct)),
-                pm2::TokenTree::Group(group) => Ok(Transcribe::Group(TranscribeGroup {
-                    delimiter: group.delimiter(),
-                    inner: syn::parse2::<TranscribeSeq>(group.stream())?,
-                })),
+        //trace!("Transcribe");
+        if input.peek(token::Dollar) {
+            if input.peek2(token::Paren) {
+                //trace!("TranscribeRepetition");
+                return Ok(Transcribe::Repetition(
+                    input.parse::<TranscribeRepetition>()?,
+                ));
+            } else if peek2_ident_or_kw(input) {
+                //trace!("TranscribeFragment {:?}", input);
+                input.parse::<token::Dollar>()?;
+                return Ok(Transcribe::Fragment(TranscribeFragment(
+                    input.call(pm2::Ident::parse_any)?.to_string(),
+                )));
             }
+        }
+        //trace!("other Transcribe");
+        let tt = input.parse::<pm2::TokenTree>()?;
+        match tt {
+            pm2::TokenTree::Ident(ident) => Ok(Transcribe::Ident(ident)),
+            pm2::TokenTree::Literal(literal) => Ok(Transcribe::Literal(literal)),
+            pm2::TokenTree::Punct(punct) => Ok(Transcribe::Punct(punct)),
+            pm2::TokenTree::Group(group) => Ok(Transcribe::Group(TranscribeGroup {
+                delimiter: group.delimiter(),
+                inner: syn::parse2::<TranscribeSeq>(group.stream())?,
+            })),
         }
     }
 }
 
 impl Parse for TranscribeRepetition {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        //trace!("TranscribeRepetition");
         input.parse::<token::Dollar>()?; // $
         let inner;
         parenthesized!(inner in input);
@@ -368,6 +442,7 @@ impl Parse for TranscribeRepetition {
 
 impl Parse for TranscribeSeq {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        //trace!("TranscribeSeq");
         let mut result = TranscribeSeq(vec![]);
         while !input.is_empty() {
             result.0.push(input.parse::<Transcribe>()?);
