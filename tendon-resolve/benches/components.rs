@@ -2,6 +2,8 @@ use criterion::*;
 use dashmap::DashMap;
 use tendon_resolve as resolve;
 use tendon_resolve::Map;
+use parking_lot::RwLock;
+use failure::_core::cell::RefCell;
 
 fn compare_hash_maps(c: &mut Criterion) {
     let mut group = c.benchmark_group("compare hash maps");
@@ -79,5 +81,26 @@ fn compare_hash_maps(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, compare_hash_maps);
+fn lock_times(c: &mut Criterion) {
+    let mut group = c.benchmark_group("lock times");
+
+    group.bench_function("uncontested RwLock read", |b| {
+        let lock = RwLock::new(0);
+        b.iter(|| black_box(lock.read()));
+    });
+    group.bench_function("uncontested RwLock write", |b| {
+        let lock = RwLock::new(0);
+        b.iter(|| black_box(lock.write()));
+    });
+    group.bench_function("uncontested RefCell read", |b| {
+        let lock = RefCell::new(0);
+        b.iter(|| black_box(lock.borrow()));
+    });
+    group.bench_function("uncontested RefCell write", |b| {
+        let lock = RefCell::new(0);
+        b.iter(|| black_box(lock.borrow_mut()));
+    });
+}
+
+criterion_group!(benches, compare_hash_maps, lock_times);
 criterion_main!(benches);

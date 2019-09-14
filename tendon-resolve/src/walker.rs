@@ -9,6 +9,7 @@ use std::io::Read;
 use std::path::{Path as FsPath, PathBuf};
 use syn::spanned::Spanned;
 use tracing::{trace, trace_span, warn, info};
+use std::sync::Arc;
 
 use tendon_api::attributes::{Metadata, Span, Visibility};
 use tendon_api::idents::Ident;
@@ -68,6 +69,9 @@ pub struct WalkModuleCtx<'a> {
 
     /// The metadata for the current crate, including imports.
     pub crate_data: &'a CrateData,
+
+    /// If we are currently expanding a macro, the macro we're expanding from.
+    pub macro_invocation: Option<Arc<Span>>
 }
 
 // A scope.
@@ -116,12 +120,13 @@ pub fn walk_crate(crate_data: &mut CrateData, db: &Db) -> Result<(), WalkError> 
     trace!("walking {:?}", crate_data.crate_);
 
     let mut imports = ModuleScope::new();
-    let mut unexpanded = UnexpandedModule::new();
-    let crate_unexpanded_modules = DashMap::default();
 
     let root_path = AbsolutePath::root(crate_data.crate_.clone());
 
     let source_root = crate_data.entry.parent().unwrap().to_path_buf();
+
+    let crate_unexpanded_modules = DashMap::default();
+    let mut unexpanded = UnexpandedModule::new(source_root.clone());
 
     let mut ctx = WalkModuleCtx {
         source_file: crate_data.entry.clone(),
@@ -131,13 +136,16 @@ pub fn walk_crate(crate_data: &mut CrateData, db: &Db) -> Result<(), WalkError> 
         unexpanded: UnexpandedCursor::new(&mut unexpanded),
         crate_unexpanded_modules: &crate_unexpanded_modules,
         crate_data: &crate_data.clone(),
+        macro_invocation: None
     };
 
     let file = parse_file(&crate_data.entry)?;
 
-    // TODO: handle special `extern crate` functionality at root
     for item in &file.items {
-        let span = Span::from_syn(ctx.source_file.clone(), item.span());
+        let span = Span::new(
+            ctx.macro_invocation.clone(),
+            ctx.source_file.clone(), item.span()
+        );
 
         if let syn::Item::ExternCrate(extern_crate) = item {
             let mut metadata = lower_metadata(
@@ -159,13 +167,13 @@ pub fn walk_crate(crate_data: &mut CrateData, db: &Db) -> Result<(), WalkError> 
             if metadata.extract_attribute(&*MACRO_USE).is_some() {
                 // this miiiight have weird ordering consequences... whatever
                 ctx.unexpanded
-                    .insert(UnexpandedItem::MacroUse(crate_.clone()));
+                    .insert(UnexpandedItem::MacroUse(span.clone(), crate_.clone()));
             }
 
             if let Some((_, name)) = &extern_crate.rename {
                 // add rename to crate namespace
                 // note that this effect *only* occurs at the crate root: otherwise `extern crate`
-                // just behaves like a `use`
+                // just behaves like a `use`.
                 crate_data.deps.insert(Ident::from(&name), crate_.clone());
             }
         }
@@ -204,19 +212,18 @@ pub fn walk_items_parallel(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Resu
                       items: &[syn::Item]|
      -> Result<(), WalkError> {
         let mut imports = ModuleScope::new();
-        let mut unexpanded = UnexpandedModule::new();
+        let mut unexpanded = UnexpandedModule::new(source_file.clone());
 
         {
             let mut ctx = WalkModuleCtx {
                 source_file,
                 crate_data: ctx.crate_data,
                 module: ctx.module.clone().join(mod_.name.clone()),
-
                 scope: &mut imports,
                 unexpanded: UnexpandedCursor::new(&mut unexpanded),
-
                 db: &ctx.db,
                 crate_unexpanded_modules: &ctx.crate_unexpanded_modules,
+                macro_invocation: None,
             };
 
             // Invoke children
@@ -351,10 +358,11 @@ pub fn walk_items(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Result<(), Wa
     trace!("walking {:?}", ctx.module);
 
     for item in items {
-        let span = Span::from_syn(ctx.source_file.clone(), item.span());
+        let span = Span::new(ctx.macro_invocation.clone(), ctx.source_file.clone(), item.span());
 
         use quote::ToTokens;
 
+        // TODO: enforce not using `?` here?
         match item {
             syn::Item::Static(static_) => {
                 skip_non_pub!(static_);
@@ -511,9 +519,7 @@ fn expand_module(db: &Db,
     // this won't cause errors because this function is never called more than once for a particular module
     db.scopes.take_modify(&path, |scope| {
         let mut ctx = WalkModuleCtx {
-            // TODO: correct this:
-            source_file: "[some file]".to_owned().into(),
-
+            source_file: unexpanded.source_file.clone(),
             module: path.clone(),
             db,
             scope,
@@ -522,29 +528,24 @@ fn expand_module(db: &Db,
             // the fact that the current module is missing won't be a problem
             crate_unexpanded_modules: unexpanded_modules,
             crate_data,
+            macro_invocation: None
         };
         ctx.unexpanded.reset();
 
         if &*crate_data.crate_.name == "test_crate" {
-            println!("{:?} {:#?}", path, ctx.unexpanded.module);
+            info!("{:?} {:#?}", path, ctx.unexpanded.module);
         }
         while let Some(item) = ctx.unexpanded.pop() {
             if &*crate_data.crate_.name == "test_crate" {
-                println!("{:?} {:#?}", path, ctx.unexpanded.module);
+                info!("{:?} {:#?}", path, ctx.unexpanded.module);
             }
 
-            let result = (|| -> Result<(), WalkError> {
+            let span = item.span().clone();
 
-                // TODO: correct this:
-                let span = Span {
-                    source_file: "[some file]".to_owned().into(),
-                    start_column: 0,
-                    start_line: 0,
-                    end_column: 0,
-                    end_line: 0,
-                };
+            // suppress errors here, don't return them
+            let result = (|| -> Result<(), WalkError> {
                 match item {
-                    UnexpandedItem::MacroUse(crate_) => {
+                    UnexpandedItem::MacroUse(span, crate_) => {
                         for path in db.macros.iter_crate(&crate_) {
                             unwrap_or_warn!(db.macros.inspect(&path, |macro_| {
                             if let MacroItem::Declarative(macro_) = macro_ {
@@ -554,7 +555,7 @@ fn expand_module(db: &Db,
                         }), &span);
                         }
                     }
-                    UnexpandedItem::UnexpandedModule { name, macro_use } => {
+                    UnexpandedItem::UnexpandedModule { span, name, macro_use } => {
                         if macro_use {
                             expand_module(db, unexpanded_modules, path.clone().join(name), crate_data, macros)?;
                         } else {
@@ -583,9 +584,11 @@ fn expand_module(db: &Db,
                                 let result = crate::expand::apply_once(macro_, inv.mac.tokens.clone())?;
                                 let parsed: syn::File = syn::parse2(result)?;
                                 info!("applying macro {}! in {:?}", ident, path);
-                                walk_items_parallel(&mut ctx, &parsed.items[..])?;
+
+                                let result = walk_items_parallel(&mut ctx, &parsed.items[..]);
                                 // make sure we expand anything we discovered next
                                 ctx.unexpanded.reset();
+
                                 return Ok(());
                             }
                         }
@@ -607,7 +610,7 @@ fn expand_module(db: &Db,
             })();
 
             if let Err(err) = result {
-                warn!("macro error: {}", err);
+                warn(&err, &span)
             }
         }
         Ok(())
@@ -737,7 +740,7 @@ macro_rules! test_ctx {
         ));
         let db = crate::Db::new();
         let mut scope = crate::walker::ModuleScope::new();
-        let mut unexpanded = crate::expand::UnexpandedModule::new();
+        let mut unexpanded = crate::expand::UnexpandedModule::new(source_file.clone());
         let crate_unexpanded_modules = dashmap::DashMap::default();
         let crate_data = crate::tools::CrateData::fake();
 
@@ -749,6 +752,7 @@ macro_rules! test_ctx {
             unexpanded: crate::expand::UnexpandedCursor::new(&mut unexpanded),
             crate_unexpanded_modules: &crate_unexpanded_modules,
             crate_data: &crate_data,
+            macro_invocation: None
         };
     };
 }
@@ -762,18 +766,20 @@ mod tests {
         spoor::init();
 
         let db = Db::new();
+        let source_file = PathBuf::from("/fake/fake_file.rs");
         let crate_ = AbsoluteCrate::new("fake_crate", "0.1.0");
         let mut scope = ModuleScope::new();
-        let mut unexpanded = UnexpandedModule::new();
+        let mut unexpanded = UnexpandedModule::new(source_file.clone());
         let crate_unexpanded_modules = DashMap::default();
         let mut ctx = WalkModuleCtx {
-            source_file: PathBuf::from("/fake/fake_file.rs"),
             module: AbsolutePath::root(crate_.clone()),
+            source_file,
             db: &db,
             scope: &mut scope,
             unexpanded: UnexpandedCursor::new(&mut unexpanded),
             crate_unexpanded_modules: &crate_unexpanded_modules,
             crate_data: &CrateData::fake(),
+            macro_invocation: None
         };
 
         let fake: syn::File = syn::parse_quote! {

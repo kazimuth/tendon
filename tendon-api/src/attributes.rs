@@ -8,6 +8,7 @@ use crate::types::Trait;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 /// Metadata available for all items, struct fields, etc.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -42,7 +43,11 @@ impl Metadata {
 /// A span in a source file.
 pub struct Span {
     /// The source file, a path in the local filesystem.
+    /// TODO: memoize these
     pub source_file: PathBuf,
+    /// If we are expanding from a macro invocation, the invocation.
+    /// These must form a DAG.
+    pub macro_invocation: Option<Arc<Span>>,
     /// The starting line.
     pub start_line: u32,
     /// The starting column.
@@ -53,9 +58,23 @@ pub struct Span {
     pub end_column: u32,
 }
 impl Span {
-    pub fn from_syn(source_file: PathBuf, span: proc_macro2::Span) -> Self {
+    pub fn new(mut macro_invocation: Option<Arc<Span>>, source_file: PathBuf, span: proc_macro2::Span) -> Self {
+
+        // collapse a level of macro invocations. by induction, this will keep them at max 1 level deep.
+        // TODO: retain this information? seems kinda pointless once macro expansions are thrown away
+        let macro_invocation = if let Some(inv) = macro_invocation {
+            if let Some(inv) = &inv.macro_invocation {
+                debug_assert!(inv.macro_invocation.is_none(), "too many levels of span information...");
+                Some(inv.clone())
+            } else {
+                Some(inv)
+
+            }
+        } else { None };
+
         Span {
             source_file,
+            macro_invocation,
             start_line: span.start().line as u32,
             start_column: span.start().column as u32,
             end_line: span.end().line as u32,
@@ -65,15 +84,27 @@ impl Span {
 }
 impl fmt::Debug for Span {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(
-            f,
-            "{}[{}:{}-{}:{}]",
-            self.source_file.display(),
-            self.start_line,
-            self.start_column,
-            self.end_line,
-            self.end_column
-        )
+        if let Some(span) = &self.macro_invocation {
+            write!(
+                f,
+                "macro invocation at {}[{}:{}-{}:{}]",
+                span.source_file.display(),
+                span.start_line,
+                span.start_column,
+                span.end_line,
+                span.end_column
+            )
+        } else {
+            write!(
+                f,
+                "{}[{}:{}-{}:{}]",
+                self.source_file.display(),
+                self.start_line,
+                self.start_column,
+                self.end_line,
+                self.end_column
+            )
+        }
     }
 }
 impl fmt::Display for Span {
@@ -306,6 +337,7 @@ mod tests {
     fn debug_span() {
         let span = super::Span {
             source_file: PathBuf::from("fake_file.rs"),
+            macro_invocation: None,
             start_line: 0,
             start_column: 1,
             end_line: 2,

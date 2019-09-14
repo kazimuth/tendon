@@ -1060,4 +1060,13 @@ tendon-runtime-python
 tendon-runtime-java
     [java-specific helpers]
 
+### scaffolding notes
+https://en.wikipedia.org/wiki/Scaffold_(programming)
+https://codeburst.io/a-very-brief-introduction-to-samba-a-modern-scaffolding-tool-for-all-languages-and-frameworks-7ccc880ec7ca?gi=2a1d33460b65
+Yeoman
+
+### safety header
+- check nonzero pointers w/ __unlikely hints
+- lock data passed by reference 
+- 
 

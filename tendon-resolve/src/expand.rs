@@ -38,6 +38,8 @@ use tendon_api::idents::Ident;
 use tendon_api::items::DeclarativeMacroItem;
 use tendon_api::paths::{AbsoluteCrate, AbsolutePath, UnresolvedPath};
 use tendon_api::tokens::Tokens;
+use tracing::info;
+use std::path::PathBuf;
 
 mod ast;
 mod consume;
@@ -48,13 +50,18 @@ pub fn apply_once(
     macro_: &DeclarativeMacroItem,
     tokens: pm2::TokenStream,
 ) -> syn::Result<pm2::TokenStream> {
+    info!("parse macro: {:?}", macro_.tokens);
     let rules = syn::parse2::<ast::MacroDef>(macro_.tokens.get_tokens())?;
+
     let mut stomach = consume::Stomach::new();
 
+    info!("apply rules");
     for rule in &rules.rules {
         if let Ok(()) = stomach.consume(&tokens, &rule.matcher) {
+            info!("success, transcribing");
             return transcribe::transcribe(&stomach.bindings, &rule.transcriber);
         } else {
+            info!("failed, next");
             stomach.reset();
         }
     }
@@ -70,11 +77,17 @@ pub fn apply_once(
 /// can't do name resolution (afaict) until after we've lowered most modules already.
 /// This is ordered because order affects macro name resolution.
 #[derive(Debug)]
-pub struct UnexpandedModule(Vec<UnexpandedItem>);
+pub struct UnexpandedModule {
+    items: Vec<UnexpandedItem>,
+    pub source_file: PathBuf
+}
 impl UnexpandedModule {
     /// Create an empty unexpanded module.
-    pub fn new() -> Self {
-        UnexpandedModule(vec![])
+    pub fn new(source_file: PathBuf) -> Self {
+        UnexpandedModule {
+            items: vec![],
+            source_file
+        }
     }
 }
 
@@ -93,9 +106,21 @@ pub enum UnexpandedItem {
     /// re-added.
     DeriveMacro(Span, Tokens),
     /// A sub module that has yet to be expanded.
-    UnexpandedModule { name: Ident, macro_use: bool },
+    UnexpandedModule { span: Span, name: Ident, macro_use: bool },
     /// An import with #[macro_use].
-    MacroUse(AbsoluteCrate),
+    MacroUse(Span, AbsoluteCrate),
+}
+impl UnexpandedItem {
+    pub fn span(&self) -> &Span {
+        match self {
+            UnexpandedItem::MacroInvocation(span, _) => span,
+            UnexpandedItem::TypeMacro(span, _) => span,
+            UnexpandedItem::AttributeMacro(span, _) => span,
+            UnexpandedItem::DeriveMacro(span, _) => span,
+            UnexpandedItem::UnexpandedModule { span, .. } => span,
+            UnexpandedItem::MacroUse(span, _) => span,
+        }
+    }
 }
 
 /// A cursor examining an unexpanded module.
@@ -106,12 +131,12 @@ pub struct UnexpandedCursor<'a> {
 impl<'a> UnexpandedCursor<'a> {
     /// Crate a cursor into a module.
     pub fn new(module: &'a mut UnexpandedModule) -> UnexpandedCursor<'a> {
-        let idx = module.0.len();
+        let idx = module.items.len();
         UnexpandedCursor { module, idx }
     }
     /// Insert something into the module.
     pub fn insert(&mut self, item: UnexpandedItem) {
-        self.module.0.insert(self.idx, item);
+        self.module.items.insert(self.idx, item);
         self.idx += 1;
     }
     /// Reset to the front of the target module.
@@ -120,10 +145,10 @@ impl<'a> UnexpandedCursor<'a> {
     }
     /// Pop the item at the cursor position.
     pub fn pop(&mut self) -> Option<UnexpandedItem> {
-        if self.module.0.len() <= self.idx {
+        if self.module.items.len() <= self.idx {
             None
         } else {
-            Some(self.module.0.remove(self.idx))
+            Some(self.module.items.remove(self.idx))
         }
     }
 }
@@ -141,16 +166,29 @@ mod tests {
         let rules: syn::ItemMacro = syn::parse_quote! { macro_rules! test_macro {
             ($($x:ident $y:ident),+) => ([$($x)+] [$($y)+]);
         }};
-        println!("{}", rules.to_token_stream());
 
         let rules = lower_macro_rules(&ctx, &rules).unwrap();
-
-        println!("parsed: {:?}", rules.tokens);
 
         let input = quote!(a b, c d, e f);
 
         let output = apply_once(&rules, input).unwrap();
 
         assert_eq!(output.to_string(), quote!([a c e] [b d f]).to_string());
+    }
+
+    #[test]
+    fn empty_macro() {
+        test_ctx!(ctx);
+
+        let rules: syn::ItemMacro = syn::parse_quote! { macro_rules! test_macro {
+            () => (hooray);
+        }};
+        let rules = lower_macro_rules(&ctx, &rules).unwrap();
+
+        let input = quote!();
+
+        let output = apply_once(&rules, input).unwrap();
+
+        assert_eq!(output.to_string(), quote!(hooray).to_string());
     }
 }

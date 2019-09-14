@@ -38,7 +38,7 @@ lazy_static! {
 
 /// Lower a bunch of syn data structures to the generic `ItemMetadata`.
 pub fn lower_metadata(
-    module: &WalkModuleCtx,
+    ctx: &WalkModuleCtx,
     visibility: &syn::Visibility,
     attributes: &[syn::Attribute],
     span: proc_macro2::Span,
@@ -59,7 +59,7 @@ pub fn lower_metadata(
                     trace!(
                         "unimplemented doc attribute {:?} [{:?}]",
                         attr,
-                        Span::from_syn(module.source_file.clone(), span.clone())
+                        Span::new(ctx.macro_invocation.clone(), ctx.source_file.clone(), span.clone())
                     );
                     "".into()
                 },
@@ -103,7 +103,7 @@ pub fn lower_metadata(
         }
     }
 
-    let span = Span::from_syn(module.source_file.to_path_buf(), span);
+    let span = Span::new(ctx.macro_invocation.clone(), ctx.source_file.to_path_buf(), span);
 
     Metadata {
         visibility,

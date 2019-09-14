@@ -197,7 +197,9 @@ impl Parse for MacroRule {
         let transcriber = input.parse::<pm2::Group>()?;
         let transcriber = syn::parse2::<TranscribeSeq>(transcriber.stream())?;
 
-        input.parse::<Token![;]>()?;
+        if input.lookahead1().peek(Token![;]) {
+            input.parse::<Token![;]>()?;
+        }
 
         Ok(MacroRule {
             matcher,
