@@ -38,7 +38,6 @@ use tendon_api::idents::Ident;
 use tendon_api::items::DeclarativeMacroItem;
 use tendon_api::paths::{AbsoluteCrate, AbsolutePath, UnresolvedPath};
 use tendon_api::tokens::Tokens;
-use tracing::trace;
 use std::path::PathBuf;
 
 mod ast;
@@ -50,19 +49,15 @@ pub fn apply_once(
     macro_: &DeclarativeMacroItem,
     tokens: pm2::TokenStream,
 ) -> syn::Result<pm2::TokenStream> {
-    trace!("parse macro: {:?}", macro_.tokens);
     let rules = syn::parse2::<ast::MacroDef>(macro_.tokens.get_tokens())?;
 
     let mut stomach = consume::Stomach::new();
 
-    trace!("apply rules");
     for rule in &rules.rules {
         let result = stomach.consume(&tokens, &rule.matcher);
         if let Ok(()) = result {
-            trace!("success, transcribing: {:#?}\n    w/ bindings: {:?}", &rule.transcriber, &stomach.bindings);
             return transcribe::transcribe(&stomach.bindings, &rule.transcriber);
         } else if let Err(e) = result {
-            trace!("failed ({}), next", e);
             stomach.reset();
         }
     }
@@ -254,6 +249,96 @@ mod tests {
             pub struct ExpandedAlt {
                 thing: &'static std::option::Option<i32>,
                 stuff: (i32, i32, f64)
+            }
+        ).to_string());
+    }
+
+    #[test]
+    fn simple_frag() {
+        spoor::init();
+        test_ctx!(ctx);
+
+        let rules: syn::ItemMacro = syn::parse_quote! {
+            macro_rules ! wacky_levels {
+                ($i:ident) => ($i);
+            }
+        };
+        let rules = lower_macro_rules(&ctx, &rules).unwrap();
+
+        let input = quote!(hello);
+
+        let output = apply_once(&rules, input).unwrap();
+
+        assert_eq!(output.to_string(), quote!(hello).to_string());
+    }
+
+    #[test]
+    fn rand() {
+        // sample macro from `rand`.
+
+        spoor::init();
+        test_ctx!(ctx);
+
+        let rules: syn::ItemMacro = syn::parse_quote! {
+            macro_rules! impl_as_byte_slice {
+                ($t:ty) => {
+                    impl AsByteSliceMut for [$t] {
+                        fn as_byte_slice_mut(&mut self) -> &mut [u8] {
+                            if self.len() == 0 {
+                                unsafe {
+                                    // must not use null pointer
+                                    slice::from_raw_parts_mut(0x1 as *mut u8, 0)
+                                }
+                            } else {
+                                unsafe {
+                                    slice::from_raw_parts_mut(&mut self[0]
+                                        as *mut $t
+                                        as *mut u8,
+                                        self.len() * mem::size_of::<$t>()
+                                    )
+                                }
+                            }
+                        }
+
+                        fn to_le(&mut self) {
+                            for x in self {
+                                *x = x.to_le();
+                            }
+                        }
+                    }
+                }
+            }
+        };
+        let rules = lower_macro_rules(&ctx, &rules).unwrap();
+
+        let input = quote!(i32);
+
+        let output = apply_once(&rules, input).unwrap();
+
+        assert_eq!(output.to_string(), quote!(
+            impl AsByteSliceMut for [i32] {
+                fn as_byte_slice_mut(&mut self) -> &mut [u8] {
+                    if self.len() == 0 {
+                        unsafe {
+                            // must not use null pointer
+                            slice::from_raw_parts_mut(0x1 as *mut u8, 0)
+                        }
+                    } else {
+                        unsafe {
+                            slice::from_raw_parts_mut(&mut self[0]
+                                as *mut i32
+                                as *mut u8,
+                                self.len() * mem::size_of::<i32>()
+                            )
+                        }
+                    }
+                }
+
+                fn to_le(&mut self) {
+                    for x in self {
+                        *x = x.to_le();
+                    }
+                }
             }
         ).to_string());
     }

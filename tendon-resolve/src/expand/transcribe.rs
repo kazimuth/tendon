@@ -112,8 +112,8 @@ impl Transcriber for ast::TranscribeRepetition {
         let reps = if let Some(reps) = reps {
             reps
         } else {
-            // TODO un-fake span
-            return Err(syn::Error::new(quote!(_).span(), "nothing to repeat?"));
+            // nothing to do
+            return Ok(());
         };
 
         for i in 0..reps {

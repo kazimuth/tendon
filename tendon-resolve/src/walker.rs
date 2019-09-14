@@ -532,14 +532,7 @@ fn expand_module(db: &Db,
         };
         ctx.unexpanded.reset();
 
-        if &*crate_data.crate_.name == "test_crate" {
-            info!("{:?} {:#?}", path, ctx.unexpanded.module);
-        }
         while let Some(item) = ctx.unexpanded.pop() {
-            if &*crate_data.crate_.name == "test_crate" {
-                info!("{:?} {:#?}", path, ctx.unexpanded.module);
-            }
-
             let span = item.span().clone();
 
             // suppress errors here, don't return them

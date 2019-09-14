@@ -7,7 +7,6 @@ use proc_macro2 as pm2;
 use quote::ToTokens;
 use std::fmt::{Display, Write};
 use syn::{self, ext::IdentExt, parse::ParseStream};
-use tracing::trace;
 
 use crate::expand::ast;
 use crate::Map;
@@ -65,27 +64,40 @@ impl std::fmt::Debug for Binding {
     }
 }
 impl Binding {
-    /// Get a nested binding.
+    /// Insert a binding.
     /// Inserts Binding::Seqs as it goes as needed to get to the requested location.
-    /// Returns None if the binding has a leaf in any of the intervening levels.
-    pub fn get_mut(&mut self, indices: &[usize]) -> Option<&mut Binding> {
+    /// returns whether the insert was successful.
+    pub fn insert(&mut self, indices: &[usize], tokens: pm2::TokenStream) -> bool {
+        if indices.len() == 0 {
+            *self = Binding::Leaf(tokens);
+            return true;
+        }
         let mut result = self;
-        for index in indices {
+        for index in &indices[0..indices.len() - 1] {
             if let Binding::Seq(seq) = result {
                 // necessary if we're looking up a slot for a binding that hasn't been bound yet.
                 while seq.len() <= *index {
                     seq.push(Binding::Seq(vec![]))
                 }
 
-                result = seq.get_mut(*index)?;
+                result = &mut seq[*index];
             } else {
-                return None;
+                return false;
             }
         }
-        Some(result)
+
+        if let Binding::Seq(seq) = result {
+            let index = indices[indices.len() - 1];
+            if seq.len() == index {
+                seq.push(Binding::Leaf(tokens));
+                return true;
+            }
+        }
+        false
     }
     /// Same as get_mut but doesn't ever modify the input binding.
-    pub fn get(&self, indices: &[usize]) -> Option<&Binding> {
+    pub fn get(&self, mut indices: &[usize]) -> Option<&Binding> {
+        // this is slightly hacky but it works...
         let mut result = self;
         for index in indices {
             if let Binding::Seq(seq) = result {
@@ -145,7 +157,6 @@ impl Stomach {
         input: &pm2::TokenStream,
         matchers: &ast::MatcherSeq,
     ) -> syn::Result<()> {
-        trace!("matching {:?} against {:?}", input, matchers);
         // kinda a hack to convert a tokenstream to a parsestream... whatever
         syn::parse::Parser::parse2(
             |stream: ParseStream| -> syn::Result<()> { matchers.consume(self, stream) },
@@ -153,12 +164,12 @@ impl Stomach {
         )
     }
 
-    fn debug(&mut self, name: &str, stream: ParseStream) {
-        trace!("=== {}", stream.cursor().token_stream());
-        if self.speculating {
-            trace!("SPEC ");
-        }
-        trace!("{}", name);
+    fn debug(&mut self, _name: &str, _stream: ParseStream) {
+        //trace!("=== {}", stream.cursor().token_stream());
+        //if self.speculating {
+        //    trace!("SPEC ");
+        //}
+        //trace!("{}", name);
     }
 
     /// Enter a repetition.
@@ -273,8 +284,7 @@ impl Consumer for ast::Fragment {
         // If it doesn't exist, we create one, consisting of nested empty seqs to the current stack level.
         let binding = bindings.entry(name).or_insert_with(|| Binding::Seq(vec![]));
 
-        if let Some(Binding::Seq(seq)) = binding.get_mut(&stack[0..stack.len().saturating_sub(1)]) {
-            seq.push(Binding::Leaf(tokens));
+        if binding.insert(&stack[..], tokens) {
             Ok(())
         } else {
             Err(stream.error(format!(
@@ -402,8 +412,6 @@ impl Consumer for pm2::Punct {
 
         let actual = stream.parse::<pm2::TokenTree>()?;
 
-        trace!("{:?}", actual);
-
         let actual = if let pm2::TokenTree::Punct(p) = actual {
             p
         } else {
@@ -523,7 +531,7 @@ mod tests {
 
         assert_eq!(
             &format!("{:?}", bindings["x"]),
-            "[`1 + 1 * ( 37 + _umlaut [ & | | { } ] )`]"
+            "`1 + 1 * ( 37 + _umlaut [ & | | { } ] )`"
         );
 
         Ok(())
