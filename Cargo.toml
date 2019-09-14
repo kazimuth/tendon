@@ -1,3 +1,4 @@
+cargo-features = ["profile-overrides"]
 [workspace]
 members = [
     "test-crate",
@@ -9,3 +10,6 @@ members = [
 
 [profile.release]
 debug = true
+
+[profile.dev.overrides."*"]
+opt-level = 2

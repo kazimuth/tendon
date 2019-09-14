@@ -83,7 +83,7 @@ pub struct Repetition {
 }
 
 /// Kind of macro repetition: `+`, `*`, or `?`.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum RepeatKind {
     Plus,
     Star,

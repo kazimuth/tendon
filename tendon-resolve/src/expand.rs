@@ -57,11 +57,12 @@ pub fn apply_once(
 
     trace!("apply rules");
     for rule in &rules.rules {
-        if let Ok(()) = stomach.consume(&tokens, &rule.matcher) {
+        let result = stomach.consume(&tokens, &rule.matcher);
+        if let Ok(()) = result {
             trace!("success, transcribing: {:#?}\n    w/ bindings: {:?}", &rule.transcriber, &stomach.bindings);
             return transcribe::transcribe(&stomach.bindings, &rule.transcriber);
-        } else {
-            trace!("failed, next");
+        } else if let Err(e) = result {
+            trace!("failed ({}), next", e);
             stomach.reset();
         }
     }
@@ -214,6 +215,46 @@ mod tests {
         assert_eq!(output.to_string(), quote!(
             pub const hello: i32 = 1;
             pub const world: i64 = 2;
+        ).to_string());
+    }
+
+    #[test]
+    fn multiple_rules() {
+        spoor::init();
+        test_ctx!(ctx);
+        let rules : syn::ItemMacro = syn::parse_quote!(
+            macro_rules! expands_to_item {
+                ($(($x:ty)) 'f +) => {
+                    pub struct ExpandedAlt {
+                        thing: &'static std::option::Option<i32>,
+                        stuff: ($($x),+)
+                    }
+                };
+                () => {
+                    pub struct Expanded {
+                        thing: &'static std::option::Option<i32>
+                    }
+                }
+            }
+        );
+
+        let rules = lower_macro_rules(&ctx, &rules).unwrap();
+
+        let input = quote!();
+        let output = apply_once(&rules, input).unwrap();
+        assert_eq!(output.to_string(), quote!(
+            pub struct Expanded {
+                thing: &'static std::option::Option<i32>
+            }
+        ).to_string());
+
+        let input = quote!((i32) 'f (i32) 'f (f64));
+        let output = apply_once(&rules, input).unwrap();
+        assert_eq!(output.to_string(), quote!(
+            pub struct ExpandedAlt {
+                thing: &'static std::option::Option<i32>,
+                stuff: (i32, i32, f64)
+            }
         ).to_string());
     }
 }

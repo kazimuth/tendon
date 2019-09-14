@@ -7,9 +7,11 @@ use proc_macro2 as pm2;
 use quote::ToTokens;
 use std::fmt::{Display, Write};
 use syn::{self, ext::IdentExt, parse::ParseStream};
+use tracing::trace;
 
 use crate::expand::ast;
 use crate::Map;
+use crate::expand::ast::RepeatKind;
 
 /// A fragment binding.
 ///
@@ -143,6 +145,7 @@ impl Stomach {
         input: &pm2::TokenStream,
         matchers: &ast::MatcherSeq,
     ) -> syn::Result<()> {
+        trace!("matching {:?} against {:?}", input, matchers);
         // kinda a hack to convert a tokenstream to a parsestream... whatever
         syn::parse::Parser::parse2(
             |stream: ParseStream| -> syn::Result<()> { matchers.consume(self, stream) },
@@ -150,14 +153,12 @@ impl Stomach {
         )
     }
 
-    fn debug(&mut self, _name: &str, _stream: ParseStream) {
-        /*
-        println!("=== {}", stream.cursor().token_stream());
+    fn debug(&mut self, name: &str, stream: ParseStream) {
+        trace!("=== {}", stream.cursor().token_stream());
         if self.speculating {
-            print!("SPEC ");
+            trace!("SPEC ");
         }
-        println!("{}", name);
-        */
+        trace!("{}", name);
     }
 
     /// Enter a repetition.
@@ -316,8 +317,12 @@ impl Consumer for ast::Group {
 impl Consumer for ast::Repetition {
     fn consume(&self, inv: &mut Stomach, stream: ParseStream) -> syn::Result<()> {
         inv.debug("Repetition", stream);
+        let mut count = 0;
         let result = inv.enter_repetition(|inv| {
             loop {
+                if self.kind == RepeatKind::Question && count == 1 {
+                    break;
+                }
                 let forked = stream.fork();
                 let should_continue = inv.speculate(|inv| {
                     if inv.is_first_repetition() || self.sep.0.len() == 0 {
@@ -334,9 +339,13 @@ impl Consumer for ast::Repetition {
                 }
                 self.inner.consume(inv, stream)?;
                 inv.next_repetition(stream)?;
+                count += 1
             }
             Ok(())
         });
+        if self.kind == RepeatKind::Plus && count == 0 {
+            return Err(stream.error("not enough repetitions of kleene plus"));
+        }
         result
     }
     fn peek(&self, inv: &mut Stomach, stream: ParseStream) -> bool {
@@ -391,7 +400,23 @@ impl Consumer for pm2::Punct {
     fn consume(&self, inv: &mut Stomach, stream: ParseStream) -> syn::Result<()> {
         inv.debug("Punct", stream);
 
-        let actual = &stream.parse::<pm2::Punct>()?;
+        let actual = stream.parse::<pm2::TokenTree>()?;
+
+        trace!("{:?}", actual);
+
+        let actual = if let pm2::TokenTree::Punct(p) = actual {
+            p
+        } else {
+            return Err(syn::Error::new(
+                actual.span(),
+                format!("pm2::Punct: expected {}, got {}", self, actual),
+            ));
+        };
+
+        //let actual = &stream.step(|cursor| {
+        //    cursor.punct().ok_or_else(|| cursor.error("expected punct"))
+        //})?;
+
         // don't bother with spacing...
         if self.as_char() != actual.as_char() {
             return Err(syn::Error::new(
@@ -470,6 +495,8 @@ mod tests {
         consume(quote! { $(_)bees+ }, quote! { _ bees _ bees _ bees _ })?;
         // group sep (forbidden)
         assert_match!(consume(quote! { $(_)[]* }, quote! {}), Err(..));
+        // kleene+
+        assert_match!(consume(quote! { hello $(bees)+ }, quote! {hello}), Err(..));
 
         Ok(())
     }

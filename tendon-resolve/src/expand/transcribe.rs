@@ -120,6 +120,11 @@ impl Transcriber for ast::TranscribeRepetition {
             ctx.repetition_stack.push(i);
             let ok = self.inner.transcribe(ctx);
             ctx.repetition_stack.pop();
+            if i < reps-1 {
+                for sep in &self.sep.0 {
+                    ctx.write(sep);
+                }
+            }
             ok?;
         }
 
