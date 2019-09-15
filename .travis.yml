@@ -23,8 +23,9 @@ script:
   - cargo test --verbose --all -- --nocapture
 
 after_success: |
+    echo 'Running cargo-tarpaulin...'
     bash <(curl https://raw.githubusercontent.com/xd009642/tarpaulin/master/travis-install.sh)
-    cargo tarpaulin --out Xml
+    cargo tarpaulin --out Xml --timeout 3600 # 1 hour
     bash <(curl -s https://codecov.io/bash)
 
     # deploy:
