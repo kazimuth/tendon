@@ -14,7 +14,7 @@ pub fn lower_macro_rules(
     ctx: &WalkModuleCtx,
     rules_: &syn::ItemMacro,
 ) -> Result<DeclarativeMacroItem, LowerError> {
-    let mut metadata = lower_metadata(ctx, &syn::parse_quote!(pub), &rules_.attrs, rules_.span());
+    let mut metadata = lower_metadata(ctx, &syn::parse_quote!(pub), &rules_.attrs, rules_.span())?;
     let macro_export = metadata.extract_attribute(&*MACRO_EXPORT).is_some();
 
     if &Path::from(&rules_.mac.path) != &*MACRO_RULES {

@@ -1,8 +1,8 @@
-use crate::lower::attributes::{lower_visibility};
+use crate::lower::attributes::lower_visibility;
 use crate::walker::WalkModuleCtx;
 use tendon_api::attributes::Visibility;
+use tendon_api::idents::Ident;
 use tendon_api::paths::UnresolvedPath;
-use tendon_api::{idents::Ident};
 
 /// Lower a use tree into a set of globs and imports.
 pub fn lower_use(ctx: &mut WalkModuleCtx, use_: &syn::ItemUse) {

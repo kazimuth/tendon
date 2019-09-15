@@ -49,11 +49,12 @@ fn walk_test_crate() -> Result<(), Box<dyn Error>> {
 
     let db = resolve::Db::new();
 
+    let start = Instant::now();
+
     loop {
-        let next = if let Some(next) = ordered.iter()
-            .find(|crate_| {
-                !hit.contains(**crate_) && crates[**crate_].deps.values().all(|dep| hit.contains(dep))
-            }) {
+        let next = if let Some(next) = ordered.iter().find(|crate_| {
+            !hit.contains(**crate_) && crates[**crate_].deps.values().all(|dep| hit.contains(dep))
+        }) {
             next
         } else {
             break;
@@ -65,6 +66,8 @@ fn walk_test_crate() -> Result<(), Box<dyn Error>> {
             println!("crate walk error: {:?}", err);
         }
     }
+
+    println!("parse all deps (serial) elapsed time: {}ms", start.elapsed().as_millis());
 
     let test_path = |s: &str| AbsolutePath::new(root.clone(), s.split("::"));
 
@@ -193,7 +196,7 @@ fn walk_repo_deps() -> Result<(), Box<dyn Error>> {
 
     let start = Instant::now();
 
-    crates.into_par_iter().for_each(|(dep, mut crate_)| {
+    crates.into_par_iter().for_each(|(_, mut crate_)| {
         let _ = resolve::walker::walk_crate(&mut crate_, &db);
     });
     println!(

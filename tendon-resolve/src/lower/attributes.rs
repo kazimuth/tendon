@@ -16,7 +16,7 @@ use tendon_api::{
     tokens::Tokens,
     types::GenericParams,
 };
-use tracing::{trace, warn};
+use tracing::{info_span, trace, warn};
 
 mod interp_cfg;
 
@@ -36,6 +36,7 @@ lazy_static! {
     static ref REPR_C: Path = Path::fake("C");
     static ref REPR_TRANSPARENT: Path = Path::fake("transparent");
     static ref REPR_PACKED: Path = Path::fake("packed");
+    static ref CFG: Path = Path::fake("cfg");
 }
 
 /// Lower a bunch of syn data structures to the generic `ItemMetadata`.
@@ -44,12 +45,21 @@ pub fn lower_metadata(
     visibility: &syn::Visibility,
     attributes: &[syn::Attribute],
     span: proc_macro2::Span,
-) -> Metadata {
+) -> Result<Metadata, LowerError> {
     let visibility = lower_visibility(visibility);
     let mut docs = None;
     let mut must_use = None;
     let mut deprecated = None;
     let mut extra_attributes = vec![];
+
+    let span_ = Span::new(
+        ctx.macro_invocation.clone(),
+        ctx.source_file.to_path_buf(),
+        span,
+    );
+
+    let _s = info_span!("lowering", span = &format!("{:?}", span_)[..]);
+    let _s = _s.enter();
 
     for syn_attr in attributes {
         let attr = lower_attribute(syn_attr);
@@ -61,7 +71,11 @@ pub fn lower_metadata(
                     trace!(
                         "unimplemented doc attribute {:?} [{:?}]",
                         attr,
-                        Span::new(ctx.macro_invocation.clone(), ctx.source_file.clone(), span.clone())
+                        Span::new(
+                            ctx.macro_invocation.clone(),
+                            ctx.source_file.clone(),
+                            span.clone()
+                        )
                     );
                     "".into()
                 },
@@ -105,16 +119,28 @@ pub fn lower_metadata(
         }
     }
 
-    let span = Span::new(ctx.macro_invocation.clone(), ctx.source_file.to_path_buf(), span);
-
-    Metadata {
+    let mut result = Metadata {
         visibility,
         docs,
         must_use,
         deprecated,
         extra_attributes,
-        span,
+        span: span_,
+    };
+
+    while let Some(cfg) = result.extract_attribute(&*CFG) {
+        match cfg {
+            Attribute::Meta(meta) => {
+                interp_cfg::interp_cfg(ctx, &meta)?;
+            }
+            Attribute::Other { input, .. } => {
+                warn!("bad cfg: {:?}", input);
+                return Err(LowerError::CfgdOut);
+            }
+        }
     }
+
+    Ok(result)
 }
 
 /// Lower a visibility. Assumes inherited visibilities aren't `pub`; you'll need to correct that
@@ -286,7 +312,8 @@ mod tests {
                 parse_quote!(#[other_attribute_weird 2 + 2 / 3 - 4]),
             ],
             quote!(_).span(),
-        );
+        )
+        .unwrap();
         assert_match!(all, Metadata {
             visibility: Visibility::Pub,
             docs: Some(docs),
@@ -333,7 +360,8 @@ mod tests {
                 parse_quote!(#[deprecated(flim_flam = "funsy parlor")]),
             ],
             quote!(_).span(),
-        );
+        )
+        .unwrap();
 
         assert_eq!(funky.visibility, Visibility::NonPub);
     }

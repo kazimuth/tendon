@@ -9,8 +9,8 @@ use std::fmt::{Display, Write};
 use syn::{self, ext::IdentExt, parse::ParseStream};
 
 use crate::expand::ast;
-use crate::Map;
 use crate::expand::ast::RepeatKind;
+use crate::Map;
 
 /// A fragment binding.
 ///

@@ -1,4 +1,5 @@
 use super::attributes::lower_metadata;
+use super::LowerError;
 use crate::walker::WalkModuleCtx;
 use syn::spanned::Spanned;
 use tendon_api::idents::Ident;
@@ -6,8 +7,8 @@ use tendon_api::items::ModuleItem;
 
 /// Lower a module declaration.
 /// Does not handle internal attributes.
-pub fn lower_module(ctx: &WalkModuleCtx, mod_: &syn::ItemMod) -> ModuleItem {
-    let metadata = lower_metadata(ctx, &mod_.vis, &mod_.attrs, mod_.span());
+pub fn lower_module(ctx: &WalkModuleCtx, mod_: &syn::ItemMod) -> Result<ModuleItem, LowerError> {
+    let metadata = lower_metadata(ctx, &mod_.vis, &mod_.attrs, mod_.span())?;
     let name = Ident::from(&mod_.ident);
-    ModuleItem { name, metadata }
+    Ok(ModuleItem { name, metadata })
 }

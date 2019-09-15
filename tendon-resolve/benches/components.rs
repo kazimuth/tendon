@@ -1,9 +1,9 @@
 use criterion::*;
 use dashmap::DashMap;
+use failure::_core::cell::RefCell;
+use parking_lot::RwLock;
 use tendon_resolve as resolve;
 use tendon_resolve::Map;
-use parking_lot::RwLock;
-use failure::_core::cell::RefCell;
 
 fn compare_hash_maps(c: &mut Criterion) {
     let mut group = c.benchmark_group("compare hash maps");

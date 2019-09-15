@@ -58,19 +58,26 @@ pub struct Span {
     pub end_column: u32,
 }
 impl Span {
-    pub fn new(mut macro_invocation: Option<Arc<Span>>, source_file: PathBuf, span: proc_macro2::Span) -> Self {
-
+    pub fn new(
+        macro_invocation: Option<Arc<Span>>,
+        source_file: PathBuf,
+        span: proc_macro2::Span,
+    ) -> Self {
         // collapse a level of macro invocations. by induction, this will keep them at max 1 level deep.
         // TODO: retain this information? seems kinda pointless once macro expansions are thrown away
         let macro_invocation = if let Some(inv) = macro_invocation {
             if let Some(inv) = &inv.macro_invocation {
-                debug_assert!(inv.macro_invocation.is_none(), "too many levels of span information...");
+                debug_assert!(
+                    inv.macro_invocation.is_none(),
+                    "too many levels of span information..."
+                );
                 Some(inv.clone())
             } else {
                 Some(inv)
-
             }
-        } else { None };
+        } else {
+            None
+        };
 
         Span {
             source_file,

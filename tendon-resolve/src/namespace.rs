@@ -2,7 +2,7 @@
 
 use crate::resolver::ResolveError;
 use crate::walker::WalkError;
-use dashmap::{DashMap};
+use dashmap::DashMap;
 use tendon_api::idents::Ident;
 use tendon_api::paths::{AbsoluteCrate, AbsolutePath};
 

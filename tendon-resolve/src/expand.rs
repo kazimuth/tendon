@@ -31,13 +31,13 @@
 // TODO: $crate
 
 use proc_macro2 as pm2;
+use std::path::PathBuf;
 use syn::spanned::Spanned;
 use tendon_api::attributes::Span;
 use tendon_api::idents::Ident;
 use tendon_api::items::DeclarativeMacroItem;
-use tendon_api::paths::{AbsoluteCrate};
+use tendon_api::paths::AbsoluteCrate;
 use tendon_api::tokens::Tokens;
-use std::path::PathBuf;
 
 mod ast;
 mod consume;
@@ -74,14 +74,14 @@ pub fn apply_once(
 #[derive(Debug)]
 pub struct UnexpandedModule {
     items: Vec<UnexpandedItem>,
-    pub source_file: PathBuf
+    pub source_file: PathBuf,
 }
 impl UnexpandedModule {
     /// Create an empty unexpanded module.
     pub fn new(source_file: PathBuf) -> Self {
         UnexpandedModule {
             items: vec![],
-            source_file
+            source_file,
         }
     }
 }
@@ -101,7 +101,11 @@ pub enum UnexpandedItem {
     /// re-added.
     DeriveMacro(Span, Tokens),
     /// A sub module that has yet to be expanded.
-    UnexpandedModule { span: Span, name: Ident, macro_use: bool },
+    UnexpandedModule {
+        span: Span,
+        name: Ident,
+        macro_use: bool,
+    },
     /// An import with #[macro_use].
     MacroUse(Span, AbsoluteCrate),
 }
@@ -152,7 +156,7 @@ impl<'a> UnexpandedCursor<'a> {
 mod tests {
     use super::*;
     use crate::lower::macros::lower_macro_rules;
-    use quote::{quote};
+    use quote::quote;
 
     #[test]
     fn full_macro() {
@@ -206,26 +210,30 @@ mod tests {
 
         let output = apply_once(&rules, input).unwrap();
 
-        assert_eq!(output.to_string(), quote!(
-            pub const hello: i32 = 1;
-            pub const world: i64 = 2;
-        ).to_string());
+        assert_eq!(
+            output.to_string(),
+            quote!(
+                pub const hello: i32 = 1;
+                pub const world: i64 = 2;
+            )
+            .to_string()
+        );
     }
 
     #[test]
     fn multiple_rules() {
         spoor::init();
         test_ctx!(ctx);
-        let rules : syn::ItemMacro = syn::parse_quote!(
+        let rules: syn::ItemMacro = syn::parse_quote!(
             macro_rules! expands_to_item {
                 ($(($x:ty)) 'f +) => {
-                    pub struct ExpandedAlt {
+                    ExpandedAlt {
                         thing: &'static std::option::Option<i32>,
                         stuff: ($($x),+)
                     }
                 };
                 () => {
-                    pub struct Expanded {
+                    Expanded {
                         thing: &'static std::option::Option<i32>
                     }
                 }
@@ -236,20 +244,28 @@ mod tests {
 
         let input = quote!();
         let output = apply_once(&rules, input).unwrap();
-        assert_eq!(output.to_string(), quote!(
-            pub struct Expanded {
-                thing: &'static std::option::Option<i32>
-            }
-        ).to_string());
+        assert_eq!(
+            output.to_string(),
+            quote!(
+                Expanded {
+                    thing: &'static std::option::Option<i32>
+                }
+            )
+            .to_string()
+        );
 
         let input = quote!((i32) 'f (i32) 'f (f64));
         let output = apply_once(&rules, input).unwrap();
-        assert_eq!(output.to_string(), quote!(
-            pub struct ExpandedAlt {
-                thing: &'static std::option::Option<i32>,
-                stuff: (i32, i32, f64)
-            }
-        ).to_string());
+        assert_eq!(
+            output.to_string(),
+            quote!(
+                ExpandedAlt {
+                    thing: &'static std::option::Option<i32>,
+                    stuff: (i32, i32, f64)
+                }
+            )
+            .to_string()
+        );
     }
 
     #[test]
@@ -314,31 +330,35 @@ mod tests {
 
         let output = apply_once(&rules, input).unwrap();
 
-        assert_eq!(output.to_string(), quote!(
-            impl AsByteSliceMut for [i32] {
-                fn as_byte_slice_mut(&mut self) -> &mut [u8] {
-                    if self.len() == 0 {
-                        unsafe {
-                            // must not use null pointer
-                            slice::from_raw_parts_mut(0x1 as *mut u8, 0)
-                        }
-                    } else {
-                        unsafe {
-                            slice::from_raw_parts_mut(&mut self[0]
-                                as *mut i32
-                                as *mut u8,
-                                self.len() * mem::size_of::<i32>()
-                            )
+        assert_eq!(
+            output.to_string(),
+            quote!(
+                impl AsByteSliceMut for [i32] {
+                    fn as_byte_slice_mut(&mut self) -> &mut [u8] {
+                        if self.len() == 0 {
+                            unsafe {
+                                // must not use null pointer
+                                slice::from_raw_parts_mut(0x1 as *mut u8, 0)
+                            }
+                        } else {
+                            unsafe {
+                                slice::from_raw_parts_mut(&mut self[0]
+                                    as *mut i32
+                                    as *mut u8,
+                                    self.len() * mem::size_of::<i32>()
+                                )
+                            }
                         }
                     }
-                }
 
-                fn to_le(&mut self) {
-                    for x in self {
-                        *x = x.to_le();
+                    fn to_le(&mut self) {
+                        for x in self {
+                            *x = x.to_le();
+                        }
                     }
                 }
-            }
-        ).to_string());
+            )
+            .to_string()
+        );
     }
 }

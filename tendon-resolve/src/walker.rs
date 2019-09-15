@@ -3,17 +3,16 @@
 use dashmap::DashMap;
 use lazy_static::lazy_static;
 use rayon::prelude::*;
-use std::fmt::Display;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path as FsPath, PathBuf};
-use syn::spanned::Spanned;
-use tracing::{trace, trace_span, warn, info};
 use std::sync::Arc;
+use syn::spanned::Spanned;
+use tracing::{info, trace, trace_span, warn};
 
 use tendon_api::attributes::{Metadata, Span, Visibility};
 use tendon_api::idents::Ident;
-use tendon_api::items::{ModuleItem, SymbolItem, TypeItem, DeclarativeMacroItem, MacroItem};
+use tendon_api::items::{DeclarativeMacroItem, MacroItem, ModuleItem, SymbolItem, TypeItem};
 use tendon_api::paths::{AbsolutePath, Path, UnresolvedPath};
 use tendon_api::tokens::Tokens;
 
@@ -34,18 +33,6 @@ lazy_static! {
     static ref MACRO_USE: Path = Path::fake("macro_use");
     static ref PATH: Path = Path::fake("path");
     static ref MACRO_RULES: Ident = "macro_rules".into();
-}
-
-macro_rules! unwrap_or_warn {
-    ($result:expr, $span:expr) => {
-        match $result {
-            Ok(result) => result,
-            Err(err) => {
-                warn(&err, $span);
-                continue;
-            }
-        }
-    };
 }
 
 /// Context for lowering items in an individual module.
@@ -71,7 +58,7 @@ pub struct WalkModuleCtx<'a> {
     pub crate_data: &'a CrateData,
 
     /// If we are currently expanding a macro, the macro we're expanding from.
-    pub macro_invocation: Option<Arc<Span>>
+    pub macro_invocation: Option<Arc<Span>>,
 }
 
 // A scope.
@@ -136,7 +123,7 @@ pub fn walk_crate(crate_data: &mut CrateData, db: &Db) -> Result<(), WalkError> 
         unexpanded: UnexpandedCursor::new(&mut unexpanded),
         crate_unexpanded_modules: &crate_unexpanded_modules,
         crate_data: &crate_data.clone(),
-        macro_invocation: None
+        macro_invocation: None,
     };
 
     let file = parse_file(&crate_data.entry)?;
@@ -144,38 +131,44 @@ pub fn walk_crate(crate_data: &mut CrateData, db: &Db) -> Result<(), WalkError> 
     for item in &file.items {
         let span = Span::new(
             ctx.macro_invocation.clone(),
-            ctx.source_file.clone(), item.span()
+            ctx.source_file.clone(),
+            item.span(),
         );
 
-        if let syn::Item::ExternCrate(extern_crate) = item {
-            let mut metadata = lower_metadata(
-                &ctx,
-                &extern_crate.vis,
-                &extern_crate.attrs,
-                extern_crate.span(),
-            );
+        let result = (|| -> Result<(), WalkError> {
+            if let syn::Item::ExternCrate(extern_crate) = item {
+                let mut metadata = lower_metadata(
+                    &ctx,
+                    &extern_crate.vis,
+                    &extern_crate.attrs,
+                    extern_crate.span(),
+                )?;
 
-            let ident = Ident::from(&extern_crate.ident);
-            let crate_ = unwrap_or_warn!(
-                ctx.crate_data
+                let ident = Ident::from(&extern_crate.ident);
+                let crate_ = ctx
+                    .crate_data
                     .deps
                     .get(&ident)
-                    .ok_or_else(|| WalkError::ExternCrateNotFound(ident.clone())),
-                &span
-            );
+                    .ok_or_else(|| WalkError::ExternCrateNotFound(ident.clone()))?;
 
-            if metadata.extract_attribute(&*MACRO_USE).is_some() {
-                // this miiiight have weird ordering consequences... whatever
-                ctx.unexpanded
-                    .insert(UnexpandedItem::MacroUse(span.clone(), crate_.clone()));
-            }
+                if metadata.extract_attribute(&*MACRO_USE).is_some() {
+                    // this miiiight have weird ordering consequences... whatever
+                    ctx.unexpanded
+                        .insert(UnexpandedItem::MacroUse(span.clone(), crate_.clone()));
+                }
 
-            if let Some((_, name)) = &extern_crate.rename {
-                // add rename to crate namespace
-                // note that this effect *only* occurs at the crate root: otherwise `extern crate`
-                // just behaves like a `use`.
-                crate_data.deps.insert(Ident::from(&name), crate_.clone());
+                if let Some((_, name)) = &extern_crate.rename {
+                    // add rename to crate namespace
+                    // note that this effect *only* occurs at the crate root: otherwise `extern crate`
+                    // just behaves like a `use`.
+                    crate_data.deps.insert(Ident::from(&name), crate_.clone());
+                }
             }
+            Ok(())
+        })();
+
+        if let Err(err) = result {
+            warn(err, &span);
         }
     }
 
@@ -186,7 +179,7 @@ pub fn walk_crate(crate_data: &mut CrateData, db: &Db) -> Result<(), WalkError> 
     walk_items_parallel(&mut ctx, &file.items)?;
 
     // get metadata for root crate entry
-    let metadata = lower_metadata(&mut ctx, &syn::parse_quote!(pub), &file.attrs, file.span());
+    let metadata = lower_metadata(&mut ctx, &syn::parse_quote!(pub), &file.attrs, file.span())?;
     let module = ModuleItem {
         name: Ident::from(root_path.crate_.name.to_string()),
         metadata,
@@ -199,7 +192,13 @@ pub fn walk_crate(crate_data: &mut CrateData, db: &Db) -> Result<(), WalkError> 
 
     let mut macros = Map::default();
 
-    expand_module(db, &crate_unexpanded_modules, root_path.clone(), crate_data, &mut macros)?;
+    expand_module(
+        db,
+        &crate_unexpanded_modules,
+        root_path.clone(),
+        crate_data,
+        &mut macros,
+    )?;
 
     Ok(())
 }
@@ -249,6 +248,12 @@ pub fn walk_items_parallel(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Resu
         .filter_map(|item| {
             if let syn::Item::Mod(mod_) = item {
                 let lowered = lower_module(ctx, mod_);
+                let lowered = if let Ok(lowered) = lowered {
+                    lowered
+                } else {
+                    // cfg'd out?
+                    return None;
+                };
                 if mod_.content.is_none() {
                     return Some((lowered, ctx.module.clone().join(Ident::from(&mod_.ident))));
                 } else if let Some((_, content)) = &mod_.content {
@@ -262,7 +267,8 @@ pub fn walk_items_parallel(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Resu
 
                     if let Err(err) = result {
                         // TODO use span
-                        warn!("error parsing module {:?}: {}", path, err);
+
+                        warn(err, &lowered.metadata.span);
                     }
                 }
             }
@@ -282,6 +288,7 @@ pub fn walk_items_parallel(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Resu
     parallel_mods
         .into_par_iter()
         .for_each(|(mut mod_, path): (ModuleItem, AbsolutePath)| {
+            let orig_span = mod_.metadata.span.clone();
             // -- PARALLEL --
             // poor man's try:
             let result = (|| -> Result<(), WalkError> {
@@ -296,7 +303,7 @@ pub fn walk_items_parallel(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Resu
                     docs,
                     must_use: _,
                     span: _,
-                } = lower_metadata(&ctx, &syn::parse_quote!(), &parsed.attrs, parsed.span());
+                } = lower_metadata(&ctx, &syn::parse_quote!(), &parsed.attrs, parsed.span())?;
                 mod_.metadata
                     .extra_attributes
                     .extend(extra_attributes.into_iter());
@@ -312,8 +319,7 @@ pub fn walk_items_parallel(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Resu
             })();
 
             if let Err(err) = result {
-                // TODO use span
-                warn!("error parsing module {:?}: {}", path, err);
+                warn(err, &orig_span);
             }
         });
 
@@ -332,7 +338,7 @@ macro_rules! skip_non_pub {
     ($item:expr) => {
         match &$item.vis {
             syn::Visibility::Public(_) => (),
-            _ => continue,
+            _ => return Ok(()),
         }
     };
 }
@@ -358,138 +364,148 @@ pub fn walk_items(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Result<(), Wa
     trace!("walking {:?}", ctx.module);
 
     for item in items {
-        let span = Span::new(ctx.macro_invocation.clone(), ctx.source_file.clone(), item.span());
-
-        // TODO: enforce not using `?` here?
-        match item {
-            syn::Item::Static(static_) => {
-                skip_non_pub!(static_);
-                skip("static", ctx.module.clone().join(&static_.ident))
-                // TODO: add to scope when implemented
-            }
-            syn::Item::Const(const_) => {
-                skip_non_pub!(const_);
-                skip("const", ctx.module.clone().join(&const_.ident))
-                // TODO: add to scope when implemented
-            }
-            syn::Item::Fn(fn_) => {
-                skip_non_pub!(fn_);
-                let result = lower_function_item(ctx, fn_);
-                match result {
-                    Ok(fn_) => {
-                        add_to_scope!(ctx, fn_);
-                        unwrap_or_warn!(
+        let result = (|| -> Result<(), WalkError> {
+            let span = Span::new(
+                ctx.macro_invocation.clone(),
+                ctx.source_file.clone(),
+                item.span(),
+            );
+            // TODO: enforce not using `?` here?
+            match item {
+                syn::Item::Static(static_) => {
+                    skip_non_pub!(static_);
+                    skip("static", ctx.module.clone().join(&static_.ident))
+                    // TODO: add to scope when implemented
+                }
+                syn::Item::Const(const_) => {
+                    skip_non_pub!(const_);
+                    skip("const", ctx.module.clone().join(&const_.ident))
+                    // TODO: add to scope when implemented
+                }
+                syn::Item::Fn(fn_) => {
+                    skip_non_pub!(fn_);
+                    let result = lower_function_item(ctx, fn_);
+                    match result {
+                        Ok(fn_) => {
+                            add_to_scope!(ctx, fn_);
                             ctx.db.symbols.insert(
                                 ctx.module.clone().join(&fn_.name),
-                                SymbolItem::Function(fn_)
-                            ),
-                            &span
-                        );
+                                SymbolItem::Function(fn_),
+                            )?
+                        }
+                        Err(LowerError::TypePositionMacro) => ctx
+                            .unexpanded
+                            .insert(UnexpandedItem::TypeMacro(span, Tokens::from(fn_))),
+                        err => {
+                            err?;
+                        }
                     }
-                    Err(LowerError::TypePositionMacro) => ctx
-                        .unexpanded
-                        .insert(UnexpandedItem::TypeMacro(span, Tokens::from(fn_))),
-                    Err(other) => warn(&other, &span),
                 }
-            }
-            // note: we don't skip non-pub items for the rest of this, since we need to know about
-            // all types for send + sync determination
-            syn::Item::Type(type_) => {
-                skip("type", ctx.module.clone().join(&type_.ident))
-                // TODO: add to scope when implemented
-            }
-            syn::Item::Struct(struct_) => {
-                let result = lower_struct(ctx, struct_);
-                match result {
-                    Ok(struct_) => {
-                        add_to_scope!(ctx, struct_);
-                        unwrap_or_warn!(
+                // note: we don't skip non-pub items for the rest of this, since we need to know about
+                // all types for send + sync determination
+                syn::Item::Type(type_) => {
+                    skip("type", ctx.module.clone().join(&type_.ident))
+                    // TODO: add to scope when implemented
+                }
+                syn::Item::Struct(struct_) => {
+                    let result = lower_struct(ctx, struct_);
+                    match result {
+                        Ok(struct_) => {
+                            add_to_scope!(ctx, struct_);
                             ctx.db.types.insert(
                                 ctx.module.clone().join(&struct_.name),
-                                TypeItem::Struct(struct_)
-                            ),
-                            &span
-                        );
+                                TypeItem::Struct(struct_),
+                            )?
+                        }
+                        Err(LowerError::TypePositionMacro) => ctx
+                            .unexpanded
+                            .insert(UnexpandedItem::TypeMacro(span, Tokens::from(struct_))),
+                        err => {
+                            err?;
+                        }
                     }
-                    Err(LowerError::TypePositionMacro) => ctx
-                        .unexpanded
-                        .insert(UnexpandedItem::TypeMacro(span, Tokens::from(struct_))),
-                    Err(other) => warn(&other, &span),
                 }
-            }
-            syn::Item::Enum(enum_) => {
-                let result = lower_enum(ctx, enum_);
-                match result {
-                    Ok(enum_) => {
-                        add_to_scope!(ctx, enum_);
-                        unwrap_or_warn!(
+                syn::Item::Enum(enum_) => {
+                    let result = lower_enum(ctx, enum_);
+                    match result {
+                        Ok(enum_) => {
+                            add_to_scope!(ctx, enum_);
                             ctx.db.types.insert(
                                 ctx.module.clone().join(&enum_.name),
-                                TypeItem::Enum(enum_)
-                            ),
-                            &span
-                        )
+                                TypeItem::Enum(enum_),
+                            )?;
+                        }
+                        Err(LowerError::TypePositionMacro) => ctx
+                            .unexpanded
+                            .insert(UnexpandedItem::TypeMacro(span, Tokens::from(enum_))),
+                        err => {
+                            err?;
+                        }
                     }
-                    Err(LowerError::TypePositionMacro) => ctx
-                        .unexpanded
-                        .insert(UnexpandedItem::TypeMacro(span, Tokens::from(enum_))),
-                    Err(other) => warn(&other, &span),
                 }
-            }
-            syn::Item::Union(union_) => {
-                skip("union", ctx.module.clone().join(&union_.ident))
-                // TODO: add to scope when implemented
-            }
-            syn::Item::Trait(trait_) => {
-                skip("trait", ctx.module.clone().join(&trait_.ident))
-                // TODO: add to scope when implemented
-            }
-            syn::Item::TraitAlias(alias_) => {
-                skip("trait alias", ctx.module.clone().join(&alias_.ident))
-                // TODO: add to scope when implemented
-            }
-            syn::Item::Impl(_impl_) => skip("impl", ctx.module.clone()),
-            syn::Item::ForeignMod(_foreign_mod) => skip("foreign_mod", ctx.module.clone()),
-            syn::Item::Verbatim(_verbatim_) => skip("verbatim", ctx.module.clone()),
-            syn::Item::Macro(macro_rules_) => {
-                ctx.unexpanded.insert(UnexpandedItem::MacroInvocation(
-                    span,
-                    Tokens::from(macro_rules_),
-                ));
-            }
-            syn::Item::Use(use_) => {
-                // note: modifies ctx directly!
-                lower_use(ctx, use_);
-            }
-            syn::Item::ExternCrate(extern_crate) => {
-                if ctx.module.path.is_empty() {
-                    // crate root `extern crate`s have special semantics
-                    // and have already been handled in walk_crate
-                    continue;
+                syn::Item::Union(union_) => {
+                    skip("union", ctx.module.clone().join(&union_.ident))
+                    // TODO: add to scope when implemented
                 }
-                let metadata = lower_metadata(
-                    ctx,
-                    &extern_crate.vis,
-                    &extern_crate.attrs,
-                    extern_crate.span(),
-                );
+                syn::Item::Trait(trait_) => {
+                    skip("trait", ctx.module.clone().join(&trait_.ident))
+                    // TODO: add to scope when implemented
+                }
+                syn::Item::TraitAlias(alias_) => {
+                    skip("trait alias", ctx.module.clone().join(&alias_.ident))
+                    // TODO: add to scope when implemented
+                }
+                syn::Item::Impl(_impl_) => skip("impl", ctx.module.clone()),
+                syn::Item::ForeignMod(_foreign_mod) => skip("foreign_mod", ctx.module.clone()),
+                syn::Item::Verbatim(_verbatim_) => skip("verbatim", ctx.module.clone()),
+                syn::Item::Macro(macro_rules_) => {
+                    ctx.unexpanded.insert(UnexpandedItem::MacroInvocation(
+                        span,
+                        Tokens::from(macro_rules_),
+                    ));
+                }
+                syn::Item::Use(use_) => {
+                    // note: modifies ctx directly!
+                    lower_use(ctx, use_);
+                }
+                syn::Item::ExternCrate(extern_crate) => {
+                    if ctx.module.path.is_empty() {
+                        // crate root `extern crate`s have special semantics
+                        // and have already been handled in walk_crate
+                        return Ok(());
+                    }
+                    let metadata = lower_metadata(
+                        ctx,
+                        &extern_crate.vis,
+                        &extern_crate.attrs,
+                        extern_crate.span(),
+                    )?;
 
-                let ident = Ident::from(&extern_crate.ident);
-                let crate_ = unwrap_or_warn!(
-                    ctx.crate_data
+                    let ident = Ident::from(&extern_crate.ident);
+                    let crate_ = ctx
+                        .crate_data
                         .deps
                         .get(&ident)
-                        .ok_or_else(|| WalkError::ExternCrateNotFound(ident.clone())),
-                    &span
-                );
-                let imports = match metadata.visibility {
-                    Visibility::Pub => &mut ctx.scope.pub_imports,
-                    Visibility::NonPub => &mut ctx.scope.imports,
-                };
-                let no_path: &[&str] = &[];
-                imports.insert(ident, AbsolutePath::new(crate_.clone(), no_path).into());
+                        .ok_or_else(|| WalkError::ExternCrateNotFound(ident.clone()))?;
+                    let imports = match metadata.visibility {
+                        Visibility::Pub => &mut ctx.scope.pub_imports,
+                        Visibility::NonPub => &mut ctx.scope.imports,
+                    };
+                    let no_path: &[&str] = &[];
+                    imports.insert(ident, AbsolutePath::new(crate_.clone(), no_path).into());
+                }
+                _ => skip("something else", ctx.module.clone()),
             }
-            _ => skip("something else", ctx.module.clone()),
+            Ok(())
+        })();
+
+        if let Err(err) = result {
+            let span = Span::new(
+                ctx.macro_invocation.clone(),
+                ctx.source_file.clone(),
+                item.span(),
+            );
+            warn(err, &span)
         }
     }
 
@@ -501,11 +517,12 @@ pub fn walk_items(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Result<(), Wa
 
 /// Walk a modules, expanding all encountered macros as we go.
 /// This should be run *after* a full initial parsing run. It will operate serially.
-fn expand_module(db: &Db,
-                 unexpanded_modules: &DashMap<AbsolutePath, UnexpandedModule>,
-                 path: AbsolutePath,
-                 crate_data: &CrateData,
-                 macros: &mut Map<Ident, DeclarativeMacroItem>,
+fn expand_module(
+    db: &Db,
+    unexpanded_modules: &DashMap<AbsolutePath, UnexpandedModule>,
+    path: AbsolutePath,
+    crate_data: &CrateData,
+    macros: &mut Map<Ident, DeclarativeMacroItem>,
 ) -> Result<(), WalkError> {
     let unexpanded = unexpanded_modules.remove(&path);
     let mut unexpanded = if let Some((_, unexpanded)) = unexpanded {
@@ -526,7 +543,7 @@ fn expand_module(db: &Db,
             // the fact that the current module is missing won't be a problem
             crate_unexpanded_modules: unexpanded_modules,
             crate_data,
-            macro_invocation: None
+            macro_invocation: None,
         };
         ctx.unexpanded.reset();
 
@@ -536,25 +553,39 @@ fn expand_module(db: &Db,
             // suppress errors here, don't return them
             let result = (|| -> Result<(), WalkError> {
                 match item {
-                    UnexpandedItem::MacroUse(span, crate_) => {
+                    UnexpandedItem::MacroUse(_, crate_) => {
                         for path in db.macros.iter_crate(&crate_) {
-                            unwrap_or_warn!(db.macros.inspect(&path, |macro_| {
+                            db.macros.inspect(&path, |macro_| {
                                 if let MacroItem::Declarative(macro_) = macro_ {
                                     macros.insert(macro_.name.clone(), macro_.clone());
                                 }
                                 Ok(())
-                            }), &span);
+                            })?;
                         }
                     }
-                    UnexpandedItem::UnexpandedModule { name, macro_use, .. } => {
+                    UnexpandedItem::UnexpandedModule {
+                        name, macro_use, ..
+                    } => {
                         if macro_use {
-                            expand_module(db, unexpanded_modules, path.clone().join(name), crate_data, macros)?;
+                            expand_module(
+                                db,
+                                unexpanded_modules,
+                                path.clone().join(name),
+                                crate_data,
+                                macros,
+                            )?;
                         } else {
                             let mut macros = macros.clone();
-                            expand_module(db, unexpanded_modules, path.clone().join(name), crate_data, &mut macros)?;
+                            expand_module(
+                                db,
+                                unexpanded_modules,
+                                path.clone().join(name),
+                                crate_data,
+                                &mut macros,
+                            )?;
                         }
-                    },
-                    UnexpandedItem::MacroInvocation(_, inv) => {
+                    }
+                    UnexpandedItem::MacroInvocation(span, inv) => {
                         let inv = inv.parse::<syn::ItemMacro>().unwrap();
 
                         // TODO: attributes?
@@ -565,16 +596,22 @@ fn expand_module(db: &Db,
                             if ident == &*MACRO_RULES {
                                 let def = lower_macro_rules(&ctx, &inv)?;
                                 if def.macro_export {
-                                    let path = AbsolutePath::new(ctx.crate_data.crate_.clone(), &[def.name.clone()]);
-                                    ctx.db.macros.insert(path, MacroItem::Declarative(def.clone()))?;
+                                    let path = AbsolutePath::new(
+                                        ctx.crate_data.crate_.clone(),
+                                        &[def.name.clone()],
+                                    );
+                                    ctx.db
+                                        .macros
+                                        .insert(path, MacroItem::Declarative(def.clone()))?;
                                 }
-                                info!("found macro {}", def.name);
+                                trace!("found macro {}", def.name);
                                 macros.insert(def.name.clone(), def);
                                 return Ok(());
                             } else if let Some(macro_) = macros.get(ident) {
-                                let result = crate::expand::apply_once(macro_, inv.mac.tokens.clone())?;
+                                let result =
+                                    crate::expand::apply_once(macro_, inv.mac.tokens.clone())?;
                                 let parsed: syn::File = syn::parse2(result)?;
-                                info!("applying macro {}! in {:?}", ident, path);
+                                trace!("applying macro {}! in {:?}", ident, path);
 
                                 let result = walk_items_parallel(&mut ctx, &parsed.items[..]);
                                 // make sure we expand anything we discovered next
@@ -586,7 +623,7 @@ fn expand_module(db: &Db,
                             }
                         }
 
-                        warn!("failed to resolve macro: {:?}", target);
+                        warn!("[{:?}]: failed to resolve macro: {:?}", span, target);
                         // TODO: path lookups
                     }
                     UnexpandedItem::TypeMacro(span, _) => {
@@ -603,7 +640,7 @@ fn expand_module(db: &Db,
             })();
 
             if let Err(err) = result {
-                warn(&err, &span)
+                warn(err, &span)
             }
         }
         Ok(())
@@ -642,21 +679,23 @@ pub fn find_source_file(
         format!("{}", item.name)
     };
 
-    let mut root = parent_ctx.crate_data.entry.parent().unwrap().to_owned();
-
+    let mut root_normal = parent_ctx.crate_data.entry.parent().unwrap().to_owned();
     for entry in &parent_ctx.module.path {
-        root.push(entry.to_string());
+        root_normal.push(entry.to_string());
     }
 
-    let to_try = [
-        root.join(format!("{}.rs", look_at)),
-        root.join(look_at).join("mod.rs"),
-    ];
+    let root_renamed = parent_ctx.source_file.parent().unwrap().to_owned();
 
-    for to_try in to_try.iter() {
-        if let Ok(metadata) = fs::metadata(to_try) {
-            if metadata.is_file() {
-                return Ok(to_try.clone());
+    for root in [root_normal, root_renamed].iter() {
+        let to_try = [
+            root.join(format!("{}.rs", look_at)),
+            root.join(look_at.clone()).join("mod.rs"),
+        ];
+        for to_try in to_try.iter() {
+            if let Ok(metadata) = fs::metadata(to_try) {
+                if metadata.is_file() {
+                    return Ok(to_try.clone());
+                }
             }
         }
     }
@@ -668,8 +707,13 @@ pub fn skip(kind: &str, path: AbsolutePath) {
     trace!("skipping {} {:?}", kind, &path);
 }
 
-pub fn warn(cause: &dyn Display, span: &Span) {
-    warn!("ignoring error [{:?}]: {}", span, cause);
+pub fn warn(cause: impl Into<WalkError>, span: &Span) {
+    let cause = cause.into();
+    if let WalkError::Lower(LowerError::CfgdOut) = cause {
+        // can just suppress this
+        return;
+    }
+    warn!("[{:?}]: suppressing error: {}", span, cause);
 }
 
 quick_error! {
@@ -745,7 +789,7 @@ macro_rules! test_ctx {
             unexpanded: crate::expand::UnexpandedCursor::new(&mut unexpanded),
             crate_unexpanded_modules: &crate_unexpanded_modules,
             crate_data: &crate_data,
-            macro_invocation: None
+            macro_invocation: None,
         };
     };
 }
@@ -773,7 +817,7 @@ mod tests {
             unexpanded: UnexpandedCursor::new(&mut unexpanded),
             crate_unexpanded_modules: &crate_unexpanded_modules,
             crate_data: &CrateData::fake(),
-            macro_invocation: None
+            macro_invocation: None,
         };
 
         let fake: syn::File = syn::parse_quote! {

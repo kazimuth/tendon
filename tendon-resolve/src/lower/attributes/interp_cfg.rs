@@ -1,6 +1,6 @@
 use super::{Meta, MetaInner};
-use crate::walker::{WalkModuleCtx};
-use crate::lower::{LowerError};
+use crate::lower::LowerError;
+use crate::walker::WalkModuleCtx;
 use tendon_api::idents::Ident;
 use tracing::warn;
 
@@ -9,6 +9,7 @@ lazy_static::lazy_static! {
     static ref ANY: Ident = "any".into();
     static ref NOT: Ident = "not".into();
     static ref FEATURE: Ident = "feature".into();
+    static ref CFG: Ident = "cfg".into();
 }
 
 // TODO: other #[cfg] stuff; harvest options from build scripts somehow?
@@ -42,14 +43,17 @@ pub fn interp_cfg(ctx: &WalkModuleCtx, meta: &Meta) -> Result<(), LowerError> {
 
             let mut failed = false;
 
-            let args = args.iter().filter_map(|inner| match inner {
-                MetaInner::Meta(meta) => Some(meta),
-                MetaInner::Literal(lit) => {
-                    warn!("tokens in cfg: {:?}", lit);
-                    failed = true;
-                    None
-                }
-            }).collect::<Vec<_>>();
+            let args = args
+                .iter()
+                .filter_map(|inner| match inner {
+                    MetaInner::Meta(meta) => Some(meta),
+                    MetaInner::Literal(lit) => {
+                        warn!("tokens in cfg: {:?}", lit);
+                        failed = true;
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
 
             if failed {
                 return bool_err(false);
@@ -63,16 +67,14 @@ pub fn interp_cfg(ctx: &WalkModuleCtx, meta: &Meta) -> Result<(), LowerError> {
                 } else {
                     (|a, b| a || b) as fn(bool, bool) -> bool
                 };
-                let mut current = if ident == &*ALL {
-                    true
-                } else {
-                    false
-                };
+                let mut current = if ident == &*ALL { true } else { false };
                 for arg in args {
                     current = op(current, interp_cfg(ctx, arg).is_ok());
                 }
 
                 bool_err(current)
+            } else if ident == &*CFG {
+                interp_cfg(ctx, args.get(0).ok_or(CfgdOut)?)
             } else {
                 warn!("unknown cfg op: {}", ident);
                 bool_err(false)
@@ -92,9 +94,9 @@ fn bool_err(b: bool) -> Result<(), LowerError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lower::attributes::lower_meta;
     use crate::tools::{CrateData, RustEdition};
     use tendon_api::paths::AbsoluteCrate;
-    use crate::lower::attributes::lower_meta;
     use tracing::info;
 
     #[test]
@@ -109,15 +111,15 @@ mod tests {
             is_proc_macro: false,
             rust_edition: RustEdition::Rust2018,
 
-            features
+            features,
         };
-        
+
         test_ctx!(mut ctx);
 
         ctx.crate_data = &crate_data;
 
         macro_rules! assert_meta {
-            ($ctx:ident, #[cfg($($elem:tt)+)], $val:expr) => {
+            ($ctx:ident, #[$($elem:tt)+], $val:expr) => {
                 let lowered = lower_meta(&syn::parse_quote!($($elem)+));
                 assert_eq!(interp_cfg(&$ctx, &lowered).is_ok(), $val);
             }
@@ -136,7 +138,5 @@ mod tests {
         info!("all");
         assert_meta!(ctx, #[cfg(all(feature = "a", feature = "bananas"))], false);
         assert_meta!(ctx, #[cfg(all(feature = "a", feature = "b"))], true);
-
-
     }
 }

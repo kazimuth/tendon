@@ -22,7 +22,7 @@ pub fn lower_struct(
     struct_: &syn::ItemStruct,
 ) -> Result<StructItem, LowerError> {
     let mut metadata =
-        super::attributes::lower_metadata(ctx, &struct_.vis, &struct_.attrs, struct_.span());
+        super::attributes::lower_metadata(ctx, &struct_.vis, &struct_.attrs, struct_.span())?;
 
     let type_metadata = extract_type_metadata(&mut metadata)?;
 
@@ -54,7 +54,7 @@ pub fn lower_struct(
 /// Lower an enum.
 pub fn lower_enum(ctx: &WalkModuleCtx, enum_: &syn::ItemEnum) -> Result<EnumItem, LowerError> {
     let mut metadata =
-        super::attributes::lower_metadata(ctx, &enum_.vis, &enum_.attrs, enum_.span());
+        super::attributes::lower_metadata(ctx, &enum_.vis, &enum_.attrs, enum_.span())?;
     let type_metadata = extract_type_metadata(&mut metadata)?;
 
     let generics = lower_generics(&enum_.generics)?;
@@ -65,7 +65,7 @@ pub fn lower_enum(ctx: &WalkModuleCtx, enum_: &syn::ItemEnum) -> Result<EnumItem
         .map(|variant| {
             // Note: we copy the parent's visibility:
             let metadata =
-                super::attributes::lower_metadata(ctx, &enum_.vis, &variant.attrs, variant.span());
+                super::attributes::lower_metadata(ctx, &enum_.vis, &variant.attrs, variant.span())?;
 
             let kind = match variant.fields {
                 syn::Fields::Named(..) => StructKind::Named,
@@ -104,7 +104,7 @@ fn lower_fields(ctx: &WalkModuleCtx, fields: &syn::Fields) -> Result<Vec<StructF
         .iter()
         .enumerate()
         .map(|(i, field)| {
-            let metadata = lower_metadata(ctx, &field.vis, &field.attrs, field.span());
+            let metadata = lower_metadata(ctx, &field.vis, &field.attrs, field.span())?;
             let name = field
                 .ident
                 .as_ref()
@@ -212,7 +212,7 @@ pub fn lower_function_item(
     ctx: &WalkModuleCtx,
     item: &syn::ItemFn,
 ) -> Result<FunctionItem, LowerError> {
-    let mut metadata = lower_metadata(ctx, &item.vis, &item.attrs, item.span());
+    let mut metadata = lower_metadata(ctx, &item.vis, &item.attrs, item.span())?;
     let symbol_metadata = extract_symbol_metadata(&mut metadata)?;
     let name = Ident::from(&item.sig.ident);
     let signature = lower_signature(&item.sig)?;
