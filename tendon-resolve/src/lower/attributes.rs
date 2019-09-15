@@ -18,6 +18,8 @@ use tendon_api::{
 };
 use tracing::{trace, warn};
 
+mod interp_cfg;
+
 lazy_static! {
     // the string used by `syn` for converting doc comments to attributes
     static ref DOCS: Path = Path::fake("doc");

@@ -205,7 +205,6 @@ impl Resolvable for Receiver {
 mod tests {
     use super::*;
     use crate::lower::items::{lower_enum, lower_function_item, lower_struct};
-    use crate::walker::WalkModuleCtx;
     use crate::Set;
 
     #[test]

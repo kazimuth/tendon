@@ -31,12 +31,11 @@
 // TODO: $crate
 
 use proc_macro2 as pm2;
-use quote::quote;
 use syn::spanned::Spanned;
 use tendon_api::attributes::Span;
 use tendon_api::idents::Ident;
 use tendon_api::items::DeclarativeMacroItem;
-use tendon_api::paths::{AbsoluteCrate, AbsolutePath, UnresolvedPath};
+use tendon_api::paths::{AbsoluteCrate};
 use tendon_api::tokens::Tokens;
 use std::path::PathBuf;
 
@@ -57,7 +56,7 @@ pub fn apply_once(
         let result = stomach.consume(&tokens, &rule.matcher);
         if let Ok(()) = result {
             return transcribe::transcribe(&stomach.bindings, &rule.transcriber);
-        } else if let Err(e) = result {
+        } else if let Err(_) = result {
             stomach.reset();
         }
     }
@@ -153,7 +152,7 @@ impl<'a> UnexpandedCursor<'a> {
 mod tests {
     use super::*;
     use crate::lower::macros::lower_macro_rules;
-    use quote::{quote, ToTokens};
+    use quote::{quote};
 
     #[test]
     fn full_macro() {

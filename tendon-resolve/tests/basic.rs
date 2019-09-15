@@ -92,6 +92,7 @@ fn walk_test_crate() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+#[ignore]
 fn walk_core() -> Result<(), Box<dyn Error>> {
     spoor::init();
     let manifest_dir: &Path = env!("CARGO_MANIFEST_DIR").as_ref();
@@ -120,6 +121,7 @@ fn walk_core() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+#[ignore]
 fn walk_stdlib() -> Result<(), Box<dyn Error>> {
     spoor::init();
     let manifest_dir: &Path = env!("CARGO_MANIFEST_DIR").as_ref();

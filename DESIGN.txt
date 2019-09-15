@@ -26,6 +26,9 @@ resolve default trait args
   - fail if after cargo check
   - can cargo crate mtimes change?
 
+add data to cargo.toml for informing resolver about crate cfg flags
+harvest linked native libraries somehow
+
 ### usage / user API ideas
 
 - parse .d.rs-style definitions for missing things
@@ -1070,3 +1073,5 @@ Yeoman
 - lock data passed by reference 
 - 
 
+### cross-compilation
+https://github.com/japaric/rust-cross

@@ -1,15 +1,13 @@
-use crate::lower::attributes::{lower_metadata, lower_visibility};
-use crate::lower::LowerError;
+use crate::lower::attributes::{lower_visibility};
 use crate::walker::WalkModuleCtx;
-use crate::Map;
-use syn::spanned::Spanned;
 use tendon_api::attributes::Visibility;
 use tendon_api::paths::UnresolvedPath;
-use tendon_api::{idents::Ident, paths::Path};
+use tendon_api::{idents::Ident};
 
 /// Lower a use tree into a set of globs and imports.
 pub fn lower_use(ctx: &mut WalkModuleCtx, use_: &syn::ItemUse) {
-    let metadata = lower_metadata(ctx, &use_.vis, &use_.attrs, use_.span());
+    // TODO: use this?
+    // let metadata = lower_metadata(ctx, &use_.vis, &use_.attrs, use_.span());
     let vis = lower_visibility(&use_.vis);
     lower_use_tree(
         ctx,
@@ -75,6 +73,7 @@ fn lower_use_tree(
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use tendon_api::paths::Path;
 
     #[test]
     fn lowering() {

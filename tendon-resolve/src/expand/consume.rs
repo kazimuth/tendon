@@ -96,7 +96,7 @@ impl Binding {
         false
     }
     /// Same as get_mut but doesn't ever modify the input binding.
-    pub fn get(&self, mut indices: &[usize]) -> Option<&Binding> {
+    pub fn get(&self, indices: &[usize]) -> Option<&Binding> {
         // this is slightly hacky but it works...
         let mut result = self;
         for index in indices {

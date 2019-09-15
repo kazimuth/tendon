@@ -14,7 +14,7 @@ use std::sync::Arc;
 use tendon_api::attributes::{Metadata, Span, Visibility};
 use tendon_api::idents::Ident;
 use tendon_api::items::{ModuleItem, SymbolItem, TypeItem, DeclarativeMacroItem, MacroItem};
-use tendon_api::paths::{AbsoluteCrate, AbsolutePath, Path, UnresolvedPath};
+use tendon_api::paths::{AbsolutePath, Path, UnresolvedPath};
 use tendon_api::tokens::Tokens;
 
 use crate::expand::{UnexpandedCursor, UnexpandedItem, UnexpandedModule};
@@ -24,7 +24,7 @@ use crate::lower::items::lower_function_item;
 use crate::lower::items::lower_struct;
 use crate::lower::macros::lower_macro_rules;
 use crate::lower::LowerError;
-use crate::lower::{attributes::lower_visibility, imports::lower_use, modules::lower_module};
+use crate::lower::{imports::lower_use, modules::lower_module};
 use crate::tools::CrateData;
 use crate::{Db, Map};
 
@@ -206,7 +206,7 @@ pub fn walk_crate(crate_data: &mut CrateData, db: &Db) -> Result<(), WalkError> 
 
 /// Walk a set of items, spawning rayon tasks to walk submodules in parallel.
 pub fn walk_items_parallel(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Result<(), WalkError> {
-    let walk_child = |mut mod_: ModuleItem,
+    let walk_child = |mod_: ModuleItem,
                       source_file: PathBuf,
                       path: AbsolutePath,
                       items: &[syn::Item]|
@@ -360,8 +360,6 @@ pub fn walk_items(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Result<(), Wa
     for item in items {
         let span = Span::new(ctx.macro_invocation.clone(), ctx.source_file.clone(), item.span());
 
-        use quote::ToTokens;
-
         // TODO: enforce not using `?` here?
         match item {
             syn::Item::Static(static_) => {
@@ -469,7 +467,7 @@ pub fn walk_items(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Result<(), Wa
                     // and have already been handled in walk_crate
                     continue;
                 }
-                let mut metadata = lower_metadata(
+                let metadata = lower_metadata(
                     ctx,
                     &extern_crate.vis,
                     &extern_crate.attrs,
@@ -541,14 +539,14 @@ fn expand_module(db: &Db,
                     UnexpandedItem::MacroUse(span, crate_) => {
                         for path in db.macros.iter_crate(&crate_) {
                             unwrap_or_warn!(db.macros.inspect(&path, |macro_| {
-                            if let MacroItem::Declarative(macro_) = macro_ {
-                                macros.insert(macro_.name.clone(), macro_.clone());
-                            }
-                            Ok(())
-                        }), &span);
+                                if let MacroItem::Declarative(macro_) = macro_ {
+                                    macros.insert(macro_.name.clone(), macro_.clone());
+                                }
+                                Ok(())
+                            }), &span);
                         }
                     }
-                    UnexpandedItem::UnexpandedModule { span, name, macro_use } => {
+                    UnexpandedItem::UnexpandedModule { name, macro_use, .. } => {
                         if macro_use {
                             expand_module(db, unexpanded_modules, path.clone().join(name), crate_data, macros)?;
                         } else {
@@ -556,7 +554,7 @@ fn expand_module(db: &Db,
                             expand_module(db, unexpanded_modules, path.clone().join(name), crate_data, &mut macros)?;
                         }
                     },
-                    UnexpandedItem::MacroInvocation(span, inv) => {
+                    UnexpandedItem::MacroInvocation(_, inv) => {
                         let inv = inv.parse::<syn::ItemMacro>().unwrap();
 
                         // TODO: attributes?
@@ -568,7 +566,7 @@ fn expand_module(db: &Db,
                                 let def = lower_macro_rules(&ctx, &inv)?;
                                 if def.macro_export {
                                     let path = AbsolutePath::new(ctx.crate_data.crate_.clone(), &[def.name.clone()]);
-                                    ctx.db.macros.insert(path, MacroItem::Declarative(def.clone()));
+                                    ctx.db.macros.insert(path, MacroItem::Declarative(def.clone()))?;
                                 }
                                 info!("found macro {}", def.name);
                                 macros.insert(def.name.clone(), def);
@@ -582,6 +580,8 @@ fn expand_module(db: &Db,
                                 // make sure we expand anything we discovered next
                                 ctx.unexpanded.reset();
 
+                                result?;
+
                                 return Ok(());
                             }
                         }
@@ -589,13 +589,13 @@ fn expand_module(db: &Db,
                         warn!("failed to resolve macro: {:?}", target);
                         // TODO: path lookups
                     }
-                    UnexpandedItem::TypeMacro(span, inv) => {
+                    UnexpandedItem::TypeMacro(span, _) => {
                         trace!("skipping type-position macro at {:?}, unimplemented", span)
                     }
-                    UnexpandedItem::AttributeMacro(span, inv) => {
+                    UnexpandedItem::AttributeMacro(span, _) => {
                         trace!("skipping attribute macro at {:?}, unimplemented", span)
                     }
-                    UnexpandedItem::DeriveMacro(span, inv) => {
+                    UnexpandedItem::DeriveMacro(span, _) => {
                         trace!("skipping #[derive] at {:?}, unimplemented", span)
                     }
                 }
@@ -753,6 +753,7 @@ macro_rules! test_ctx {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tendon_api::paths::AbsoluteCrate;
 
     #[test]
     fn walk_no_fs() {

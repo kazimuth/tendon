@@ -43,6 +43,9 @@ quick_error! {
         TypePositionMacro {
             display("type-position macro")
         }
+        CfgdOut {
+            display("item is #[cfg]'d out")
+        }
     }
 }
 
