@@ -8,7 +8,7 @@ use std::io::Read;
 use std::path::{Path as FsPath, PathBuf};
 use std::sync::Arc;
 use syn::spanned::Spanned;
-use tracing::{info, trace, trace_span, warn};
+use tracing::{trace, trace_span, warn};
 
 use tendon_api::attributes::{Metadata, Span, Visibility};
 use tendon_api::idents::Ident;

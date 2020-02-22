@@ -67,7 +67,10 @@ fn walk_test_crate() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    println!("parse all deps (serial) elapsed time: {}ms", start.elapsed().as_millis());
+    println!(
+        "parse all deps (serial) elapsed time: {}ms",
+        start.elapsed().as_millis()
+    );
 
     let test_path = |s: &str| AbsolutePath::new(root.clone(), s.split("::"));
 

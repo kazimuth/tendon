@@ -23,7 +23,6 @@
 //>     that can begin a type, or a metavariable with a ident, ty, or path fragment specifier.
 //> All other fragment specifiers have no restrictions.
 
-
 use proc_macro2 as pm2;
 use std::path::PathBuf;
 use syn::spanned::Spanned;

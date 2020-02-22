@@ -2,7 +2,7 @@
 
 /// Init a basic env-logger based tracing system.
 pub fn init() {
-    let _ = tracing_env_logger::try_init();
-    let subscriber = tracing_fmt::FmtSubscriber::builder().finish();
-    let _ = tracing::subscriber::set_global_default(subscriber);
+    let _ = tracing_subscriber::fmt::try_init();
+    let subscriber = tracing_subscriber::fmt::Subscriber::builder().finish();
+    let _ = tracing::dispatcher::set_global_default(tracing::Dispatch::new(subscriber));
 }
