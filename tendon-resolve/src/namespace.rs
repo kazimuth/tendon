@@ -202,8 +202,6 @@ impl<I: Namespaced> Namespace<I> {
     pub fn len(&self) -> usize {
         self.items.len()
     }
-
-    // TODO remove
 }
 
 pub trait Namespaced {

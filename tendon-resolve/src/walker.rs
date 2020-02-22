@@ -27,8 +27,6 @@ use crate::lower::{imports::lower_use, modules::lower_module};
 use crate::tools::CrateData;
 use crate::{Db, Map};
 
-// TODO: rearrange names so that they match >:(
-
 lazy_static! {
     static ref MACRO_USE: Path = Path::fake("macro_use");
     static ref PATH: Path = Path::fake("path");
@@ -205,6 +203,8 @@ pub fn walk_crate(crate_data: &mut CrateData, db: &Db) -> Result<(), WalkError> 
 
 /// Walk a set of items, spawning rayon tasks to walk submodules in parallel.
 pub fn walk_items_parallel(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Result<(), WalkError> {
+    // TODO: check edition?
+
     let walk_child = |mod_: ModuleItem,
                       source_file: PathBuf,
                       path: AbsolutePath,
@@ -511,7 +511,6 @@ pub fn walk_items(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Result<(), Wa
 
     trace!("done walking items");
 
-    // TODO: check edition?
     Ok(())
 }
 
@@ -624,6 +623,7 @@ fn expand_module(
                         }
 
                         warn!("[{:?}]: failed to resolve macro: {:?}", span, target);
+
                         // TODO: path lookups
                     }
                     UnexpandedItem::TypeMacro(span, _) => {

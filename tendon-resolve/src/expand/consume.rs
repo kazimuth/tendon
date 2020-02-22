@@ -34,8 +34,6 @@ use crate::Map;
 ///     ]
 /// ]
 /// ```
-/// Note that there's always an extra single-level Seq at the bottom for implementation convenience.
-/// TODO: remove that, lol
 pub enum Binding {
     Seq(Vec<Binding>),
     Leaf(pm2::TokenStream),

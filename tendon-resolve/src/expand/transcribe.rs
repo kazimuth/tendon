@@ -1,6 +1,3 @@
-// TODO: add parens when expanding types
-// TODO: $crate
-
 use super::{ast, consume::Binding};
 use crate::{Map, Set};
 use proc_macro2 as pm2;

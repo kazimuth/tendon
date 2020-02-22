@@ -210,8 +210,5 @@ fn walk_repo_deps() -> Result<(), Box<dyn Error>> {
         db.modules.len()
     );
 
-    // TODO: add similar to ^ output in console stdout
-    // TODO: measure # of relevant parse / lowering failures
-
     Ok(())
 }

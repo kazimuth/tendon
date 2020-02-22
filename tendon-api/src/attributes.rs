@@ -43,7 +43,6 @@ impl Metadata {
 /// A span in a source file.
 pub struct Span {
     /// The source file, a path in the local filesystem.
-    /// TODO: memoize these
     pub source_file: PathBuf,
     /// If we are expanding from a macro invocation, the invocation.
     /// These must form a DAG.

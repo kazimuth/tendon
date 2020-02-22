@@ -133,7 +133,6 @@ pub struct Group {
 /// Everything that a macro can transcribe.
 #[derive(Debug)]
 pub enum Transcribe {
-    // TODO: can be a false match?
     Fragment(TranscribeFragment),
     Repetition(TranscribeRepetition),
     Group(TranscribeGroup),

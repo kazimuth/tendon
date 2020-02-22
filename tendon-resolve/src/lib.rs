@@ -11,8 +11,6 @@
 //! want to block codegen on features we haven't implemented yet. The `cargo_metadata` crate is used
 //! to find source code in the filesystem, and the `syn` crate is used for parsing.
 //!
-//! TODO: macro expansion
-//!
 //! The core of the algorithm is the `Db`: a map from `tendon_api::AbsolutePath`s to partially-
 //! resolved items -- structs, functions, macros, etc., containing resolved and unresolved paths.
 //!

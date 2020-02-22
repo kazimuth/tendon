@@ -14,8 +14,6 @@ use tracing::{trace, warn};
 pub fn check(path: &FsPath) -> io::Result<()> {
     trace!("ensuring well-formed input");
 
-    // TODO different `cargo` invocations?
-
     trace!("$ cd {} && cargo check", path.display());
     let path_ = path.to_owned();
     let status = Command::new("cargo")
@@ -49,17 +47,12 @@ pub fn sources_dir(target_dir: &FsPath) -> io::Result<PathBuf> {
         target_dir.display()
     );
 
-    // TODO different `cargo` invocations?
-
     let target_dir = target_dir.to_owned();
     let sysroot = Command::new("cargo")
         .args(&["rustc", "--", "--print", "sysroot"])
         .current_dir(target_dir)
         .output()?
         .stdout;
-
-    // TODO does this work on windows?
-    // TODO non-UTF8 paths
 
     let sysroot = PathBuf::from(String::from_utf8_lossy(&sysroot).trim());
     let sources = sysroot
@@ -73,7 +66,6 @@ pub fn sources_dir(target_dir: &FsPath) -> io::Result<PathBuf> {
     trace!("sources: {}", sources.display());
 
     if !fs::metadata(&sources)?.is_dir() {
-        // TODO run this automatically?
         return Err(io::Error::new(
             io::ErrorKind::NotFound,
             "can't find rust sources, did you run rustup component add rust-src?",
@@ -102,7 +94,7 @@ pub struct CrateData {
     /// If this crate is a proc-macro crate.
     pub is_proc_macro: bool,
     /// The version of this crate.
-    pub rust_edition: RustEdition, // TODO: build script output?
+    pub rust_edition: RustEdition,
 }
 impl CrateData {
     #[cfg(test)]
@@ -127,7 +119,6 @@ pub enum RustEdition {
 
 /// Get the sysroot active for some crate.
 /// This is necessary to harvest data from std / core.
-/// TODO: no_std, pre-distribute metadata for these crates?
 pub fn add_rust_sources(
     crates: &mut Map<AbsoluteCrate, CrateData>,
     target_dir: &FsPath,
@@ -287,8 +278,6 @@ pub fn lower_crates(metadata: &Metadata) -> Map<AbsoluteCrate, CrateData> {
             "2015" => RustEdition::Rust2015,
             other => panic!("unknown edition: {}", other),
         };
-
-        // TODO edition
 
         result.insert(
             abs_crate.clone(),

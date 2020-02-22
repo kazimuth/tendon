@@ -1,4 +1,4 @@
-//! Simple datastructures describing a rust program's interface: types, function signatures, consts, etc.
+//! Simple data structures describing a rust program's interface: types, function signatures, consts, etc.
 //! Produced and consumed by other `tendon` crates.
 //!
 //! Some inspiration taken from https://github.com/rust-lang/rls/tree/master/rls-data, although we represent
@@ -16,10 +16,6 @@
 //! - [Name resolution](https://rust-lang.github.io/rustc-guide/name-resolution.html)
 //! - [Name resolution impl](https://github.com/rust-lang/rust/blob/master/src/librustc_resolve/lib.rs)
 //! - [Paths](https://doc.rust-lang.org/stable/reference/paths.html)
-
-// TODO: impls on non-local types??
-//       can do custom handling for e.g. IntoIterator for now
-// TODO: constexprs grumble grumble
 
 macro_rules! debug {
     ($name:ty, $fmt:literal $(, $arg:ident)*) => (

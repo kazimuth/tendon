@@ -23,12 +23,6 @@
 //>     that can begin a type, or a metavariable with a ident, ty, or path fragment specifier.
 //> All other fragment specifiers have no restrictions.
 
-// TODO: set macro recursion depth high
-// TODO: multiple matchers per level?
-// TODO: repro weird trace span-drops
-// TODO: make ast Send + Serialize + store in DeclarativeMacroItem
-// TODO: ensure sensible spans + error messages
-// TODO: $crate
 
 use proc_macro2 as pm2;
 use std::path::PathBuf;
@@ -88,7 +82,6 @@ impl UnexpandedModule {
 
 #[derive(Debug)]
 /// An item that needs macro expansion.
-/// TODO: do we need to store imports here as well?
 pub enum UnexpandedItem {
     /// A macro invocation in item position. Note: the macro in question could be `macro_rules!`.
     MacroInvocation(Span, Tokens),

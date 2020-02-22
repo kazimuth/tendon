@@ -1,7 +1,5 @@
 //! Attribute lowering.
 
-// TODO: tie warnings to source locations.
-
 use super::LowerError;
 use crate::walker::WalkModuleCtx;
 use lazy_static::lazy_static;
@@ -199,6 +197,7 @@ fn extract_string(lit: &Tokens) -> String {
 /// Given a metadata, strip all the `extra_attributes` that go into a TypeMetadata.
 pub fn extract_type_metadata(metadata: &mut Metadata) -> Result<TypeMetadata, LowerError> {
     // TODO: repr(align(n))
+
     let mut derives = vec![];
     let mut repr = Repr::Rust;
     metadata.extra_attributes.retain(|attribute| {

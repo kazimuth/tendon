@@ -3,9 +3,6 @@
 //! Note: syn's datastructure's aren't thread-safe, so we can never include them in the output data.
 //! Style note: always prefix syn types with "syn" in this crate.
 
-// TODO trait lowering: https://rust-lang.github.io/rustc-guide/traits/index.html
-// rules reference: https://rust-lang.github.io/rustc-guide/traits/lowering-rules.html
-
 use std::fmt;
 use tendon_api::tokens::Tokens;
 

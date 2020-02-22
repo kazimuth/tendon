@@ -7,7 +7,6 @@ use std::ops::Deref;
 
 /// A rust identifier.
 /// Represented using a small-string optimization.
-/// TODO: make sure raw idents work.
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct Ident(SmolStr);
@@ -43,7 +42,6 @@ impl From<String> for Ident {
 }
 impl From<&proc_macro2::Ident> for Ident {
     fn from(s: &proc_macro2::Ident) -> Ident {
-        // TODO: could optimize this w/ a thread-local string buffer
         Ident(s.to_string().into())
     }
 }

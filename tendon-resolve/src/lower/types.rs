@@ -209,7 +209,6 @@ pub fn path_to_parts(path: &syn::Path) -> Result<(Path, GenericParams), LowerErr
                     .map(|ty| lower_type(ty))
                     .collect::<Result<Vec<Type>, LowerError>>()?,
             }));
-            // TODO is it always `Output`?
             args.type_bindings
                 .push((Ident::from("Output"), lower_return_type(&parened.output)?));
         }
@@ -343,7 +342,6 @@ mod tests {
         assert_match!(lower("fn(i32) -> i32"), Ok(Type::BareFn(..)));
         assert_match!(lower("Fn(i32) -> i32"), Ok(Type::Path(..)));
 
-        // TODO: handle macros in type position
         assert_match!(lower("Macro![Thing]"), Err(..));
     }
 }
