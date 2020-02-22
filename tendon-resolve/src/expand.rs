@@ -59,91 +59,8 @@ pub fn apply_once(
     ))
 }
 
-/// A module with macros unexpanded.
-/// We throw all macro-related stuff here when we're walking freshly-parsed modules.
-/// It's not possible to eagerly expand macros because they rely on name resolution to work, and we
-/// can't do name resolution (afaict) until after we've lowered most modules already.
-/// This is ordered because order affects macro name resolution.
-#[derive(Debug)]
-pub struct UnexpandedModule {
-    items: Vec<UnexpandedItem>,
-    pub source_file: PathBuf,
-}
-impl UnexpandedModule {
-    /// Create an empty unexpanded module.
-    pub fn new(source_file: PathBuf) -> Self {
-        UnexpandedModule {
-            items: vec![],
-            source_file,
-        }
-    }
-}
-
-#[derive(Debug)]
-/// An item that needs macro expansion.
-pub enum UnexpandedItem {
-    /// A macro invocation in item position. Note: the macro in question could be `macro_rules!`.
-    MacroInvocation(Span, Tokens),
-    /// Some item that contains a macro in type position.
-    TypeMacro(Span, Tokens),
-    /// Something with an attribute macro applied.
-    AttributeMacro(Span, Tokens),
-    /// Something with a derive macro applied.
-    /// Note: the item itself should already be stored in the main `Db`, and doesn't need to be
-    /// re-added.
-    DeriveMacro(Span, Tokens),
-    /// A sub module that has yet to be expanded.
-    UnexpandedModule {
-        span: Span,
-        name: Ident,
-        macro_use: bool,
-    },
-    /// An import with #[macro_use].
-    MacroUse(Span, AbsoluteCrate),
-}
-impl UnexpandedItem {
-    pub fn span(&self) -> &Span {
-        match self {
-            UnexpandedItem::MacroInvocation(span, _) => span,
-            UnexpandedItem::TypeMacro(span, _) => span,
-            UnexpandedItem::AttributeMacro(span, _) => span,
-            UnexpandedItem::DeriveMacro(span, _) => span,
-            UnexpandedItem::UnexpandedModule { span, .. } => span,
-            UnexpandedItem::MacroUse(span, _) => span,
-        }
-    }
-}
-
-/// A cursor examining an unexpanded module.
-pub struct UnexpandedCursor<'a> {
-    pub module: &'a mut UnexpandedModule,
-    idx: usize,
-}
-impl<'a> UnexpandedCursor<'a> {
-    /// Crate a cursor into a module.
-    pub fn new(module: &'a mut UnexpandedModule) -> UnexpandedCursor<'a> {
-        let idx = module.items.len();
-        UnexpandedCursor { module, idx }
-    }
-    /// Insert something into the module.
-    pub fn insert(&mut self, item: UnexpandedItem) {
-        self.module.items.insert(self.idx, item);
-        self.idx += 1;
-    }
-    /// Reset to the front of the target module.
-    pub fn reset(&mut self) {
-        self.idx = 0;
-    }
-    /// Pop the item at the cursor position.
-    pub fn pop(&mut self) -> Option<UnexpandedItem> {
-        if self.module.items.len() <= self.idx {
-            None
-        } else {
-            Some(self.module.items.remove(self.idx))
-        }
-    }
-}
-
+/*
+// TODO reinstate
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -354,3 +271,4 @@ mod tests {
         );
     }
 }
+*/

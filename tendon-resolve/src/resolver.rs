@@ -53,6 +53,7 @@ quick_error! {
     }
 }
 
+/*
 // if not absolute:
 //     - check first segment for weirdness
 //
@@ -334,3 +335,4 @@ mod tests {
         });
     }
 }
+*/

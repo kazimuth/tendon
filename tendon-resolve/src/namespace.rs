@@ -228,11 +228,6 @@ impl Namespaced for tendon_api::items::ModuleItem {
         "module"
     }
 }
-impl Namespaced for crate::walker::ModuleScope {
-    fn namespace() -> &'static str {
-        "[implementation detail] scope"
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -251,10 +246,18 @@ mod tests {
     fn insert_deadlock() {
         spoor::init();
 
-        let namespace = Namespace::<ModuleScope>::new();
+        struct T {}
+
+        impl Namespaced for T {
+            fn namespace() -> &'static str {
+                "module"
+            }
+        }
+
+        let namespace = Namespace::<T>::new();
 
         // this used to have a deadlock, doesn't anymore
-        namespace.insert(fake_a(), ModuleScope::new()).unwrap();
-        namespace.insert(fake_b(), ModuleScope::new()).unwrap();
+        namespace.insert(fake_a(), T {}).unwrap();
+        namespace.insert(fake_b(), T {}).unwrap();
     }
 }

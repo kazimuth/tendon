@@ -7,7 +7,7 @@ use crate::lower::{
     generics::lower_generics,
     types::lower_type,
 };
-use crate::walker::WalkModuleCtx;
+use crate::walker::LocationMetadata;
 use syn::spanned::Spanned;
 use tendon_api::items::{FunctionArg, FunctionItem, Receiver, Signature};
 use tendon_api::{
@@ -17,12 +17,12 @@ use tendon_api::{
 };
 
 /// Lower a struct.
-pub fn lower_struct(
-    ctx: &WalkModuleCtx,
+pub(crate) fn lower_struct(
+    loc: &LocationMetadata,
     struct_: &syn::ItemStruct,
 ) -> Result<StructItem, LowerError> {
     let mut metadata =
-        super::attributes::lower_metadata(ctx, &struct_.vis, &struct_.attrs, struct_.span())?;
+        super::attributes::lower_metadata(loc, &struct_.vis, &struct_.attrs, struct_.span())?;
 
     let type_metadata = extract_type_metadata(&mut metadata)?;
 
@@ -34,7 +34,7 @@ pub fn lower_struct(
         syn::Fields::Unit => StructKind::Unit,
     };
 
-    let fields = lower_fields(ctx, &struct_.fields)?;
+    let fields = lower_fields(loc, &struct_.fields)?;
 
     let inherent_impl = InherentImpl {};
 
@@ -52,9 +52,12 @@ pub fn lower_struct(
 }
 
 /// Lower an enum.
-pub fn lower_enum(ctx: &WalkModuleCtx, enum_: &syn::ItemEnum) -> Result<EnumItem, LowerError> {
+pub(crate) fn lower_enum(
+    loc: &LocationMetadata,
+    enum_: &syn::ItemEnum,
+) -> Result<EnumItem, LowerError> {
     let mut metadata =
-        super::attributes::lower_metadata(ctx, &enum_.vis, &enum_.attrs, enum_.span())?;
+        super::attributes::lower_metadata(loc, &enum_.vis, &enum_.attrs, enum_.span())?;
     let type_metadata = extract_type_metadata(&mut metadata)?;
 
     let generics = lower_generics(&enum_.generics)?;
@@ -65,7 +68,7 @@ pub fn lower_enum(ctx: &WalkModuleCtx, enum_: &syn::ItemEnum) -> Result<EnumItem
         .map(|variant| {
             // Note: we copy the parent's visibility:
             let metadata =
-                super::attributes::lower_metadata(ctx, &enum_.vis, &variant.attrs, variant.span())?;
+                super::attributes::lower_metadata(loc, &enum_.vis, &variant.attrs, variant.span())?;
 
             let kind = match variant.fields {
                 syn::Fields::Named(..) => StructKind::Named,
@@ -73,7 +76,7 @@ pub fn lower_enum(ctx: &WalkModuleCtx, enum_: &syn::ItemEnum) -> Result<EnumItem
                 syn::Fields::Unit => StructKind::Unit,
             };
 
-            let fields = lower_fields(ctx, &variant.fields)?;
+            let fields = lower_fields(loc, &variant.fields)?;
 
             let name = Ident::from(&variant.ident);
             Ok(EnumVariant {
@@ -99,12 +102,15 @@ pub fn lower_enum(ctx: &WalkModuleCtx, enum_: &syn::ItemEnum) -> Result<EnumItem
     })
 }
 
-fn lower_fields(ctx: &WalkModuleCtx, fields: &syn::Fields) -> Result<Vec<StructField>, LowerError> {
+fn lower_fields(
+    loc: &LocationMetadata,
+    fields: &syn::Fields,
+) -> Result<Vec<StructField>, LowerError> {
     fields
         .iter()
         .enumerate()
         .map(|(i, field)| {
-            let metadata = lower_metadata(ctx, &field.vis, &field.attrs, field.span())?;
+            let metadata = lower_metadata(loc, &field.vis, &field.attrs, field.span())?;
             let name = field
                 .ident
                 .as_ref()
@@ -208,11 +214,11 @@ pub fn lower_signature(sig: &syn::Signature) -> Result<Signature, LowerError> {
 }
 
 /// Lower a function item.
-pub fn lower_function_item(
-    ctx: &WalkModuleCtx,
+pub(crate) fn lower_function_item(
+    loc: &LocationMetadata,
     item: &syn::ItemFn,
 ) -> Result<FunctionItem, LowerError> {
-    let mut metadata = lower_metadata(ctx, &item.vis, &item.attrs, item.span())?;
+    let mut metadata = lower_metadata(loc, &item.vis, &item.attrs, item.span())?;
     let symbol_metadata = extract_symbol_metadata(&mut metadata)?;
     let name = Ident::from(&item.sig.ident);
     let signature = lower_signature(&item.sig)?;
@@ -227,11 +233,11 @@ pub fn lower_function_item(
 /*
 /// Lower a method.
 pub fn lower_impl_method(
-    ctx: &WalkModuleCtx,
+    loc: &LocationMetadata,
     item: &syn::ImplItemMethod,
 ) -> Result<Signature, LowerError> {
     Ok(lower_signature(
-        ctx,
+        loc,
         &item.sig.sig,
         &item.attrs,
         &item.vis,
@@ -246,12 +252,12 @@ pub fn lower_impl_method(
 
 /// Lower a method.
 pub fn lower_trait_method(
-    ctx: &WalkModuleCtx,
+    loc: &LocationMetadata,
     item: &syn::TraitItemMethod,
     trait_vis: &syn::Visibility,
 ) -> Result<Signature, LowerError> {
     Ok(lower_signature(
-        ctx,
+        loc,
         &item.sig.sig,
         &item.attrs,
         trait_vis,
@@ -268,6 +274,7 @@ pub fn lower_trait_method(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::walker::TEST_LOCATION_METADATA;
     use tendon_api::attributes::{Repr, Visibility};
     use tendon_api::paths::Path;
     use tendon_api::types::{PathType, Type};
@@ -275,7 +282,6 @@ mod tests {
     #[test]
     fn struct_lowering() {
         spoor::init();
-        test_ctx!(ctx);
         let struct_: syn::ItemStruct = syn::parse_quote! {
             /// This is an example struct.
             #[derive(Clone)]
@@ -288,7 +294,7 @@ mod tests {
                 path: &'a std::path::Path,
             }
         };
-        let struct_ = lower_struct(&ctx, &struct_).unwrap();
+        let struct_ = lower_struct(&TEST_LOCATION_METADATA, &struct_).unwrap();
 
         assert_eq!(struct_.name, Ident::from("Thing"));
 
@@ -320,7 +326,6 @@ mod tests {
     #[test]
     fn enum_lowering() {
         spoor::init();
-        test_ctx!(ctx);
         let enum_: syn::ItemEnum = syn::parse_quote! {
             #[repr(C, i8)]
             pub enum Thing2 {
@@ -331,7 +336,7 @@ mod tests {
                 Variant3 { val: i32 }
             }
         };
-        let enum_ = lower_enum(&ctx, &enum_).unwrap();
+        let enum_ = lower_enum(&TEST_LOCATION_METADATA, &enum_).unwrap();
 
         assert_eq!(enum_.name, Ident::from("Thing2"));
         assert_eq!(
@@ -372,14 +377,13 @@ mod tests {
     #[test]
     fn function_lowering() {
         spoor::init();
-        test_ctx!(ctx);
         let function_ = syn::parse_quote! {
             #[no_mangle]
             #[export_name = "orange"]
             #[link_section = ".banana"]
             pub const async unsafe extern "system" fn f<T: Copy>(t: &T, rest: ...) -> i32 {}
         };
-        let function_ = lower_function_item(&ctx, &function_);
+        let function_ = lower_function_item(&TEST_LOCATION_METADATA, &function_);
         let function_ = function_.unwrap();
         assert!(function_.signature.is_const);
         assert!(function_.signature.is_unsafe);
@@ -402,7 +406,7 @@ mod tests {
         let function_ = syn::parse_quote! {
             fn g() {}
         };
-        let function_ = lower_function_item(&ctx, &function_).unwrap();
+        let function_ = lower_function_item(&TEST_LOCATION_METADATA, &function_).unwrap();
         assert!(!function_.signature.is_const);
         assert!(!function_.signature.is_unsafe);
         assert!(!function_.signature.is_async);

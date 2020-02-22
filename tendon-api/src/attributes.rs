@@ -45,7 +45,7 @@ pub struct Span {
     /// The source file, a path in the local filesystem.
     pub source_file: PathBuf,
     /// If we are expanding from a macro invocation, the invocation.
-    /// These must form a DAG.
+    /// If there are multiple levels, we keep only the top one.
     pub macro_invocation: Option<Arc<Span>>,
     /// The starting line.
     pub start_line: u32,

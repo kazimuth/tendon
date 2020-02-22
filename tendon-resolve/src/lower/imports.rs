@@ -4,6 +4,7 @@ use tendon_api::attributes::Visibility;
 use tendon_api::idents::Ident;
 use tendon_api::paths::UnresolvedPath;
 
+
 /// Lower a use tree into a set of globs and imports.
 pub fn lower_use(ctx: &mut WalkModuleCtx, use_: &syn::ItemUse) {
     // TODO: use this?

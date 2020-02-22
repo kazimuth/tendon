@@ -2,16 +2,10 @@
 //!
 //! This code is serial but multiple crates can be read into the same Db at once.
 //!
-//! How it works:
-//! 1. macros, imports: walk the crate, producing buckets of syn::Items
-//! 2. lowering: after all macros have been applied,
-//!
 //! references:
 //! https://rust-lang.github.io/rustc-guide/macro-expansion.html
 //! https://rust-lang.github.io/rustc-guide/name-resolution.html
 //! https://doc.rust-lang.org/nightly/edition-guide/rust-2018/macros/macro-changes.html
-//!
-//!
 
 use dashmap::DashMap;
 use lazy_static::lazy_static;
@@ -28,15 +22,17 @@ use tendon_api::items::{DeclarativeMacroItem, MacroItem, ModuleItem, SymbolItem,
 use tendon_api::paths::{AbsolutePath, Path, UnresolvedPath};
 use tendon_api::tokens::Tokens;
 
-use crate::expand::{UnexpandedCursor, UnexpandedItem, UnexpandedModule};
 use crate::lower::attributes::lower_metadata;
+use crate::tools::CrateData;
+
+/*
 use crate::lower::items::lower_enum;
 use crate::lower::items::lower_function_item;
 use crate::lower::items::lower_struct;
 use crate::lower::macros::lower_macro_rules;
-use crate::lower::LowerError;
 use crate::lower::{imports::lower_use, modules::lower_module};
-use crate::tools::CrateData;
+*/
+use crate::lower::LowerError;
 use crate::{Db, Map};
 
 lazy_static! {
@@ -45,37 +41,28 @@ lazy_static! {
     static ref MACRO_RULES: Ident = "macro_rules".into();
 }
 
+pub(crate) struct LocationMetadata {
+    pub(crate) source_file: PathBuf,
+    pub(crate) macro_invocation: Option<Arc<Span>>,
+}
 
-/// Context for lowering items in an individual module.
-pub struct WalkModuleCtx<'a> {
-    /// A Db containing resolved definitions for all dependencies.
-    pub db: &'a Db,
+lazy_static! {
+    pub(crate) static ref TEST_LOCATION_METADATA: LocationMetadata = LocationMetadata {
+        source_file: "fake_file.rs".into(),
+        macro_invocation: None
+    };
+}
 
-    /// The location of this module's containing file in the filesystem.
-    pub source_file: PathBuf,
-
-    /// The module path.
-    pub module: AbsolutePath,
-
-    /// The scope for this module.
-    pub scope: &'a mut ModuleScope,
-
-    /// All items in this module that need to be macro-expanded.
-    pub unexpanded: UnexpandedCursor<'a>,
-
-    /// Unexpanded modules in this crate.
-    pub crate_unexpanded_modules: &'a DashMap<AbsolutePath, UnexpandedModule>,
-
-    /// The metadata for the current crate, including imports.
-    pub crate_data: &'a CrateData,
-
-    /// If we are currently expanding a macro, the macro we're expanding from.
-    pub macro_invocation: Option<Arc<Span>>,
+struct ParsedModule {
+    loc: LocationMetadata,
+    items: Vec<syn::Item>,
+    scope: ModuleScope,
 }
 
 // A scope.
 // Each scope currently corresponds to a module; that might change if we end up having to handle
 // impl's in function scopes.
+#[derive(Default)]
 pub struct ModuleScope {
     /// This module's glob imports.
     /// `use x::y::z::*` is stored as `x::y::z` pre-resolution,
@@ -102,6 +89,227 @@ pub struct ModuleScope {
     pub pub_imports: Map<Ident, Path>,
 }
 
+struct ExpandPhase<'a> {
+    crate_data: &'a CrateData,
+    /// A Db containing resolved definitions for all dependencies.
+    /// During this phase, we insert `ModuleItems` and `ModuleScope`s for this crate.
+    db: &'a Db,
+    modules: Map<Path, ParsedModule>,
+}
+
+quick_error! {
+    #[derive(Debug)]
+    pub enum WalkError {
+        Io(err: std::io::Error) {
+            from()
+            cause(err)
+            description(err.description())
+            display("io error during walking: {}", err)
+        }
+        Parse(err: syn::Error) {
+            from()
+            cause(err)
+            description(err.description())
+            display("parse error during walking: {}", err)
+        }
+        Resolve(err: crate::resolver::ResolveError) {
+            from()
+            cause(err)
+            description(err.description())
+            display("name resolution error during walking: {}", err)
+        }
+        AlreadyDefined(namespace: &'static str, path: AbsolutePath) {
+            display("path {:?} already defined in {} namespace", path, namespace)
+        }
+        Lower(err: LowerError) {
+            from()
+            cause(err)
+            description(err.description())
+            display("{}", err)
+        }
+        CachedError(path: AbsolutePath) {
+            display("path {:?} is invalid due to some previous error", path)
+        }
+        MalformedPathAttribute(tokens: String) {
+            display("malformed `#[path]` attribute: {}", tokens)
+        }
+        Root {
+            display("files at fs root??")
+        }
+        ModuleNotFound {
+            display("couldn't find source file")
+        }
+        Other {
+            display("other error")
+        }
+        ExternCrateNotFound(ident: Ident) {
+            display("can't find extern crate: {}", ident)
+        }
+    }
+}
+
+/*
+/// Walk a module.
+fn parse_and_expand_module(
+    phase: &ExpandPhase,
+    path: AbsolutePath,
+    local_sequential_macros: &mut Map<Ident, DeclarativeMacroItem>,
+) -> Result<(), WalkError> {
+    let unexpanded = unexpanded_modules.remove(&path);
+    let mut unexpanded = if let Some((_, unexpanded)) = unexpanded {
+        unexpanded
+    } else {
+        return Ok(());
+    };
+
+    // this won't cause errors because this function is never called more than once for a particular module
+    db.scopes.take_modify(&path, |scope| {
+        let mut ctx = WalkModuleCtx {
+            source_file: unexpanded.source_file.clone(),
+            module: path.clone(),
+            db,
+            scope,
+            unexpanded: UnexpandedCursor::new(&mut unexpanded),
+            // note: this is only used to insert submodules for macro expansion;
+            // the fact that the current module is missing won't be a problem
+            crate_unexpanded_modules: unexpanded_modules,
+            crate_data,
+            macro_invocation: None,
+        };
+        ctx.unexpanded.reset();
+
+        while let Some(item) = ctx.unexpanded.pop() {
+            let span = item.span().clone();
+
+            // suppress errors here, don't return them
+            let result = (|| -> Result<(), WalkError> {
+                match item {
+                    UnexpandedItem::MacroUse(_, crate_) => {
+                        for path in db.macros.iter_crate(&crate_) {
+                            db.macros.inspect(&path, |macro_| {
+                                if let MacroItem::Declarative(macro_) = macro_ {
+                                    local_sequential_macros
+                                        .insert(macro_.name.clone(), macro_.clone());
+                                }
+                                Ok(())
+                            })?;
+                        }
+                    }
+                    UnexpandedItem::UnexpandedModule {
+                        name, macro_use, ..
+                    } => {
+                        if macro_use {
+                            expand_module(
+                                db,
+                                unexpanded_modules,
+                                path.clone().join(name),
+                                crate_data,
+                                local_sequential_macros,
+                            )?;
+                        } else {
+                            // TODO do we need to pass these in at all?
+                            let mut local_sequential_macros = local_sequential_macros.clone();
+
+                            expand_module(
+                                db,
+                                unexpanded_modules,
+                                path.clone().join(name),
+                                crate_data,
+                                &mut local_sequential_macros,
+                            )?;
+                        }
+                    }
+                    UnexpandedItem::MacroInvocation(span, inv) => {
+                        let inv = inv.parse::<syn::ItemMacro>().unwrap();
+
+                        // TODO: attributes?
+
+                        let target = UnresolvedPath::from(&inv.mac.path);
+
+                        if let Some(ident) = target.get_ident() {
+                            if ident == &*MACRO_RULES {
+                                let def = lower_macro_rules(&ctx, &inv)?;
+                                if def.macro_export {
+                                    let path = AbsolutePath::new(
+                                        ctx.crate_data.crate_.clone(),
+                                        &[def.name.clone()],
+                                    );
+                                    ctx.db
+                                        .macros
+                                        .insert(path, MacroItem::Declarative(def.clone()))?;
+                                }
+                                trace!("found macro {}", def.name);
+                                local_sequential_macros.insert(def.name.clone(), def);
+                                return Ok(());
+                            } else if let Some(macro_) = local_sequential_macros.get(ident) {
+                                let result =
+                                    crate::expand::apply_once(macro_, inv.mac.tokens.clone())?;
+                                let parsed: syn::File = syn::parse2(result)?;
+                                trace!("applying macro {}! in {:?}", ident, path);
+
+                                let result = walk_items(&mut ctx, &parsed.items[..]);
+                                // make sure we expand anything we discovered next
+                                ctx.unexpanded.reset();
+
+                                result?;
+
+                                return Ok(());
+                            }
+                        }
+
+                        warn!("[{:?}]: failed to resolve macro: {:?}", span, target);
+
+                        // TODO: path lookups
+                    }
+                    UnexpandedItem::TypeMacro(span, _) => {
+                        trace!("skipping type-position macro at {:?}, unimplemented", span)
+                    }
+                    UnexpandedItem::AttributeMacro(span, _) => {
+                        trace!("skipping attribute macro at {:?}, unimplemented", span)
+                    }
+                    UnexpandedItem::DeriveMacro(span, _) => {
+                        trace!("skipping #[derive] at {:?}, unimplemented", span)
+                    }
+                }
+                Ok(())
+            })();
+
+            if let Err(err) = result {
+                warn(err, &span)
+            }
+        }
+        Ok(())
+    })?;
+
+    Ok(())
+}
+*/
+
+/*
+/// Context for lowering items in an individual module.
+pub struct WalkModuleCtx<'a> {
+    /// A Db containing resolved definitions for all dependencies.
+    pub db: &'a Db,
+
+    /// The location of this module's containing file in the filesystem.
+    pub source_file: PathBuf,
+
+    /// The module path.
+    pub module: AbsolutePath,
+
+    /// The scope for this module.
+    pub scope: &'a mut ModuleScope,
+
+    /// All items in this module that need to be macro-expanded.
+    pub unexpanded: UnexpandedCursor<'a>,
+
+    /// The metadata for the current crate, including imports.
+    pub crate_data: &'a CrateData,
+
+    /// If we are currently expanding a macro, the macro we're expanding from.
+    pub macro_invocation: Option<Arc<Span>>,
+}
+
 impl ModuleScope {
     /// Create a new set of imports
     pub fn new() -> ModuleScope {
@@ -114,113 +322,24 @@ impl ModuleScope {
     }
 }
 
-pub struct ExpandPhase {
-    
-}
 
-/// Walk a whole crate, expanding macros, storing all resulting data in the central db.
-pub fn walk_crate(crate_data: &mut CrateData, db: &Db) -> Result<(), WalkError> {
-    trace!("walking {:?}", crate_data.crate_);
+fn merge_metadata(target: &mut Metadata, from: Metadata) {
+    let Metadata {
+        extra_attributes,
+        deprecated,
+        docs,
+        ..
+    } = from;
 
-    // prep roots
-    let root_path = AbsolutePath::root(crate_data.crate_.clone());
-    let source_root = crate_data.entry.parent().unwrap().to_path_buf();
-
-    // prep modules
-    let mut imports = ModuleScope::new();
-    let crate_unexpanded_modules = DashMap::default();
-    let mut unexpanded = UnexpandedModule::new(source_root.clone());
-
-    // the root context
-    let mut ctx = WalkModuleCtx {
-        source_file: crate_data.entry.clone(),
-        module: root_path.clone(),
-        db,
-        scope: &mut imports,
-        unexpanded: UnexpandedCursor::new(&mut unexpanded),
-        crate_unexpanded_modules: &crate_unexpanded_modules,
-        crate_data: &crate_data.clone(),
-        macro_invocation: None,
-    };
-
-    // the root file
-    let file = parse_file(&crate_data.entry)?;
-
-    // special case: walk the crate root looking for extern crates.
-    // they behave special here for legacy reasons.
-    for item in &file.items {
-        let span = Span::new(
-            ctx.macro_invocation.clone(),
-            ctx.source_file.clone(),
-            item.span(),
-        );
-
-        let result = (|| -> Result<(), WalkError> {
-            if let syn::Item::ExternCrate(extern_crate) = item {
-                let mut metadata = lower_metadata(
-                    &ctx,
-                    &extern_crate.vis,
-                    &extern_crate.attrs,
-                    extern_crate.span(),
-                )?;
-
-                let ident = Ident::from(&extern_crate.ident);
-                let crate_ = ctx
-                    .crate_data
-                    .deps
-                    .get(&ident)
-                    .ok_or_else(|| WalkError::ExternCrateNotFound(ident.clone()))?;
-
-                if metadata.extract_attribute(&*MACRO_USE).is_some() {
-                    // this miiiight have weird ordering consequences... whatever
-                    ctx.unexpanded
-                        .insert(UnexpandedItem::MacroUse(span.clone(), crate_.clone()));
-                }
-
-                if let Some((_, name)) = &extern_crate.rename {
-                    // add rename to crate namespace
-                    // note that this effect *only* occurs at the crate root: otherwise `extern crate`
-                    // just behaves like a `use`.
-                    crate_data.deps.insert(Ident::from(&name), crate_.clone());
-                }
-            }
-            Ok(())
-        })();
-
-        if let Err(err) = result {
-            warn(err, &span);
-        }
+    target.metadata
+        .extra_attributes
+        .extend(extra_attributes.into_iter());
+    if let (None, Some(deprecated)) = (&lowered.metadata.deprecated, deprecated) {
+        target.metadata.deprecated = Some(deprecated);
     }
-
-    // patch in data w/ modified extern crate names
-    ctx.crate_data = crate_data;
-
-    // get metadata for root crate entry
-    let metadata = lower_metadata(&mut ctx, &syn::parse_quote!(pub), &file.attrs, file.span())?;
-    let module = ModuleItem {
-        name: Ident::from(root_path.crate_.name.to_string()),
-        metadata,
-    };
-
-    // store results for root crate entry
-    db.modules.insert(root_path.clone(), module)?;
-    db.scopes.insert(root_path.clone(), imports)?;
-    crate_unexpanded_modules.insert(root_path.clone(), unexpanded);
-
-    //
-    walk_items(&mut ctx, &file.items)?;
-
-    let mut local_sequential_macros = Map::default();
-
-    expand_module(
-        db,
-        &crate_unexpanded_modules,
-        root_path.clone(),
-        crate_data,
-        &mut local_sequential_macros,
-    )?;
-
-    Ok(())
+    if let (None, Some(docs)) = (&lowered.metadata.docs, docs) {
+        target.metadata.docs = Some(docs);
+    }
 }
 
 /// Parse a set of items into a database.
@@ -270,21 +389,8 @@ fn walk_mod(ctx: &mut WalkModuleCtx, mod_: &syn::ItemMod) -> Result<(), WalkErro
         let parsed = parse_file(&source_file)?;
 
         // now that we've loaded the source file, let's attach its metadata to the original declaration.
-        let Metadata {
-            extra_attributes,
-            deprecated,
-            docs,
-            ..
-        } = lower_metadata(&ctx, &syn::parse_quote!(), &parsed.attrs, parsed.span())?;
-        lowered.metadata
-            .extra_attributes
-            .extend(extra_attributes.into_iter());
-        if let (None, Some(deprecated)) = (&lowered.metadata.deprecated, deprecated) {
-            lowered.metadata.deprecated = Some(deprecated);
-        }
-        if let (None, Some(docs)) = (&lowered.metadata.docs, docs) {
-            lowered.metadata.docs = Some(docs);
-        }
+        merge_metadata(&mut lowered.metadata,
+            lower_metadata(&ctx, &syn::parse_quote!(), &parsed.attrs, parsed.span())?);
 
         // prep for recursion.
         let syn::File { items: items_, .. } = parsed;
@@ -481,143 +587,6 @@ fn walk_item(ctx: &mut WalkModuleCtx, item: &syn::Item) -> Result<(), WalkError>
     Ok(())
 }
 
-/// Walk a modules, expanding all encountered macros as we go.
-/// This should be run *after* a full initial parsing run. It will operate serially.
-fn expand_module(
-    db: &Db,
-    unexpanded_modules: &DashMap<AbsolutePath, UnexpandedModule>,
-    path: AbsolutePath,
-    crate_data: &CrateData,
-    local_sequential_macros: &mut Map<Ident, DeclarativeMacroItem>,
-) -> Result<(), WalkError> {
-    let unexpanded = unexpanded_modules.remove(&path);
-    let mut unexpanded = if let Some((_, unexpanded)) = unexpanded {
-        unexpanded
-    } else {
-        return Ok(());
-    };
-
-    // this won't cause errors because this function is never called more than once for a particular module
-    db.scopes.take_modify(&path, |scope| {
-        let mut ctx = WalkModuleCtx {
-            source_file: unexpanded.source_file.clone(),
-            module: path.clone(),
-            db,
-            scope,
-            unexpanded: UnexpandedCursor::new(&mut unexpanded),
-            // note: this is only used to insert submodules for macro expansion;
-            // the fact that the current module is missing won't be a problem
-            crate_unexpanded_modules: unexpanded_modules,
-            crate_data,
-            macro_invocation: None,
-        };
-        ctx.unexpanded.reset();
-
-        while let Some(item) = ctx.unexpanded.pop() {
-            let span = item.span().clone();
-
-            // suppress errors here, don't return them
-            let result = (|| -> Result<(), WalkError> {
-                match item {
-                    UnexpandedItem::MacroUse(_, crate_) => {
-                        for path in db.macros.iter_crate(&crate_) {
-                            db.macros.inspect(&path, |macro_| {
-                                if let MacroItem::Declarative(macro_) = macro_ {
-                                    local_sequential_macros
-                                        .insert(macro_.name.clone(), macro_.clone());
-                                }
-                                Ok(())
-                            })?;
-                        }
-                    }
-                    UnexpandedItem::UnexpandedModule {
-                        name, macro_use, ..
-                    } => {
-                        if macro_use {
-                            expand_module(
-                                db,
-                                unexpanded_modules,
-                                path.clone().join(name),
-                                crate_data,
-                                local_sequential_macros,
-                            )?;
-                        } else {
-                            // TODO do we need to pass these in at all?
-                            let mut local_sequential_macros = local_sequential_macros.clone();
-
-                            expand_module(
-                                db,
-                                unexpanded_modules,
-                                path.clone().join(name),
-                                crate_data,
-                                &mut local_sequential_macros,
-                            )?;
-                        }
-                    }
-                    UnexpandedItem::MacroInvocation(span, inv) => {
-                        let inv = inv.parse::<syn::ItemMacro>().unwrap();
-
-                        // TODO: attributes?
-
-                        let target = UnresolvedPath::from(&inv.mac.path);
-
-                        if let Some(ident) = target.get_ident() {
-                            if ident == &*MACRO_RULES {
-                                let def = lower_macro_rules(&ctx, &inv)?;
-                                if def.macro_export {
-                                    let path = AbsolutePath::new(
-                                        ctx.crate_data.crate_.clone(),
-                                        &[def.name.clone()],
-                                    );
-                                    ctx.db
-                                        .macros
-                                        .insert(path, MacroItem::Declarative(def.clone()))?;
-                                }
-                                trace!("found macro {}", def.name);
-                                local_sequential_macros.insert(def.name.clone(), def);
-                                return Ok(());
-                            } else if let Some(macro_) = local_sequential_macros.get(ident) {
-                                let result =
-                                    crate::expand::apply_once(macro_, inv.mac.tokens.clone())?;
-                                let parsed: syn::File = syn::parse2(result)?;
-                                trace!("applying macro {}! in {:?}", ident, path);
-
-                                let result = walk_items(&mut ctx, &parsed.items[..]);
-                                // make sure we expand anything we discovered next
-                                ctx.unexpanded.reset();
-
-                                result?;
-
-                                return Ok(());
-                            }
-                        }
-
-                        warn!("[{:?}]: failed to resolve macro: {:?}", span, target);
-
-                        // TODO: path lookups
-                    }
-                    UnexpandedItem::TypeMacro(span, _) => {
-                        trace!("skipping type-position macro at {:?}, unimplemented", span)
-                    }
-                    UnexpandedItem::AttributeMacro(span, _) => {
-                        trace!("skipping attribute macro at {:?}, unimplemented", span)
-                    }
-                    UnexpandedItem::DeriveMacro(span, _) => {
-                        trace!("skipping #[derive] at {:?}, unimplemented", span)
-                    }
-                }
-                Ok(())
-            })();
-
-            if let Err(err) = result {
-                warn(err, &span)
-            }
-        }
-        Ok(())
-    })?;
-
-    Ok(())
-}
 
 /// Parse a file into a syn::File.
 pub fn parse_file(file: &FsPath) -> Result<syn::File, WalkError> {
@@ -686,57 +655,73 @@ pub fn warn(cause: impl Into<WalkError>, span: &Span) {
     warn!("[{:?}]: suppressing error: {}", span, cause);
 }
 
-quick_error! {
-    #[derive(Debug)]
-    pub enum WalkError {
-        Io(err: std::io::Error) {
-            from()
-            cause(err)
-            description(err.description())
-            display("io error during walking: {}", err)
-        }
-        Parse(err: syn::Error) {
-            from()
-            cause(err)
-            description(err.description())
-            display("parse error during walking: {}", err)
-        }
-        Resolve(err: crate::resolver::ResolveError) {
-            from()
-            cause(err)
-            description(err.description())
-            display("name resolution error during walking: {}", err)
-        }
-        AlreadyDefined(namespace: &'static str, path: AbsolutePath) {
-            display("path {:?} already defined in {} namespace", path, namespace)
-        }
-        Lower(err: LowerError) {
-            from()
-            cause(err)
-            description(err.description())
-            display("{}", err)
-        }
-        CachedError(path: AbsolutePath) {
-            display("path {:?} is invalid due to some previous error", path)
-        }
-        MalformedPathAttribute(tokens: String) {
-            display("malformed `#[path]` attribute: {}", tokens)
-        }
-        Root {
-            display("files at fs root??")
-        }
-        ModuleNotFound {
-            display("couldn't find source file")
-        }
-        Other {
-            display("other error")
-        }
-        ExternCrateNotFound(ident: Ident) {
-            display("can't find extern crate: {}", ident)
+/*
+#[derive(Debug)]
+/// An item that needs macro expansion.
+pub enum UnexpandedItem {
+    /// A macro invocation in item position. Note: the macro in question could be `macro_rules!`.
+    MacroInvocation(Span, Tokens),
+    /// Some item that contains a macro in type position.
+    TypeMacro(Span, Tokens),
+    /// Something with an attribute macro applied.
+    AttributeMacro(Span, Tokens),
+    /// Something with a derive macro applied.
+    /// Note: the item itself should already be stored in the main `Db`, and doesn't need to be
+    /// re-added.
+    DeriveMacro(Span, Tokens),
+    /// A sub module that has yet to be expanded.
+    UnexpandedModule {
+        span: Span,
+        name: Ident,
+        macro_use: bool,
+    },
+    /// An import with #[macro_use].
+    MacroUse(Span, AbsoluteCrate),
+}
+
+impl UnexpandedItem {
+    pub fn span(&self) -> &Span {
+        match self {
+            UnexpandedItem::MacroInvocation(span, _) => span,
+            UnexpandedItem::TypeMacro(span, _) => span,
+            UnexpandedItem::AttributeMacro(span, _) => span,
+            UnexpandedItem::DeriveMacro(span, _) => span,
+            UnexpandedItem::UnexpandedModule { span, .. } => span,
+            UnexpandedItem::MacroUse(span, _) => span,
         }
     }
 }
 
+/// A cursor examining an unexpanded module.
+pub struct UnexpandedCursor<'a> {
+    pub module: &'a mut UnexpandedModule,
+    idx: usize,
+}
+impl<'a> UnexpandedCursor<'a> {
+    /// Crate a cursor into a module.
+    pub fn new(module: &'a mut UnexpandedModule) -> UnexpandedCursor<'a> {
+        let idx = module.items.len();
+        UnexpandedCursor { module, idx }
+    }
+    /// Insert something into the module.
+    pub fn insert(&mut self, item: UnexpandedItem) {
+        self.module.items.insert(self.idx, item);
+        self.idx += 1;
+    }
+    /// Reset to the front of the target module.
+    pub fn reset(&mut self) {
+        self.idx = 0;
+    }
+    /// Pop the item at the cursor position.
+    pub fn pop(&mut self) -> Option<UnexpandedItem> {
+        if self.module.items.len() <= self.idx {
+            None
+        } else {
+            Some(self.module.items.remove(self.idx))
+        }
+    }
+}
+*/
 
 #[cfg(test)]
 macro_rules! test_ctx {
@@ -822,3 +807,4 @@ mod tests {
             .contains(&AbsolutePath::new(crate_.clone(), &["Y"])));
     }
 }
+*/

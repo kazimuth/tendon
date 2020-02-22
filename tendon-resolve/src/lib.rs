@@ -81,8 +81,6 @@ pub struct Db {
     pub macros: namespace::Namespace<MacroItem>,
     /// `mod` items, mostly just store metadata.
     pub modules: namespace::Namespace<ModuleItem>,
-    /// Scopes; used in name resolution, then discarded.
-    pub scopes: namespace::Namespace<walker::ModuleScope>,
 }
 
 impl Db {
@@ -93,7 +91,6 @@ impl Db {
             symbols: namespace::Namespace::new(),
             macros: namespace::Namespace::new(),
             modules: namespace::Namespace::new(),
-            scopes: namespace::Namespace::new(),
         }
     }
 }

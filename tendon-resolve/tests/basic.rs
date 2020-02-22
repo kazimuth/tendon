@@ -7,6 +7,8 @@ use std::time::Instant;
 use tendon_api::paths::{AbsoluteCrate, AbsolutePath};
 use tendon_resolve as resolve;
 
+/*
+
 #[cfg(debug_assertions)]
 static MODE: &'static str = "debug";
 #[cfg(not(debug_assertions))]
@@ -215,3 +217,4 @@ fn walk_repo_deps() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
+*/

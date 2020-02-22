@@ -1,7 +1,7 @@
 //! Attribute lowering.
 
 use super::LowerError;
-use crate::walker::WalkModuleCtx;
+use crate::walker::LocationMetadata;
 use lazy_static::lazy_static;
 use tendon_api::attributes::Repr;
 use tendon_api::types::Trait;
@@ -16,7 +16,7 @@ use tendon_api::{
 };
 use tracing::{info_span, trace, warn};
 
-mod interp_cfg;
+// mod interp_cfg;
 
 lazy_static! {
     // the string used by `syn` for converting doc comments to attributes
@@ -38,8 +38,8 @@ lazy_static! {
 }
 
 /// Lower a bunch of syn data structures to the generic `ItemMetadata`.
-pub fn lower_metadata(
-    ctx: &WalkModuleCtx,
+pub(crate) fn lower_metadata(
+    loc: &LocationMetadata,
     visibility: &syn::Visibility,
     attributes: &[syn::Attribute],
     span: proc_macro2::Span,
@@ -51,8 +51,8 @@ pub fn lower_metadata(
     let mut extra_attributes = vec![];
 
     let span_ = Span::new(
-        ctx.macro_invocation.clone(),
-        ctx.source_file.to_path_buf(),
+        loc.macro_invocation.clone(),
+        loc.source_file.to_path_buf(),
         span,
     );
 
@@ -70,8 +70,8 @@ pub fn lower_metadata(
                         "unimplemented doc attribute {:?} [{:?}]",
                         attr,
                         Span::new(
-                            ctx.macro_invocation.clone(),
-                            ctx.source_file.clone(),
+                            loc.macro_invocation.clone(),
+                            loc.source_file.clone(),
                             span.clone()
                         )
                     );
@@ -129,7 +129,8 @@ pub fn lower_metadata(
     while let Some(cfg) = result.extract_attribute(&*CFG) {
         match cfg {
             Attribute::Meta(meta) => {
-                interp_cfg::interp_cfg(ctx, &meta)?;
+                //interp_cfg::interp_cfg(ctx, &meta)?;
+                return Err(LowerError::CfgdOut);
             }
             Attribute::Other { input, .. } => {
                 warn!("bad cfg: {:?}", input);
@@ -296,9 +297,13 @@ mod tests {
 
     #[test]
     fn metadata_lowering() {
-        test_ctx!(ctx);
+        let loc = LocationMetadata {
+            source_file: "fake_file.rs".into(),
+            macro_invocation: None,
+        };
+
         let all = lower_metadata(
-            &ctx,
+            &loc,
             &parse_quote!(pub),
             &[
                 parse_quote!(
@@ -350,7 +355,7 @@ mod tests {
 
         // shouldn't panic
         let funky = lower_metadata(
-            &ctx,
+            &loc,
             &parse_quote!(pub(crate)),
             &[
                 parse_quote!(#[docs(bees = "superior")]),
