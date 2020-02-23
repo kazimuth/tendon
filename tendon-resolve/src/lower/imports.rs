@@ -7,8 +7,8 @@ use tendon_api::paths::UnresolvedPath;
 
 /// Lower a use tree into a set of globs and imports.
 pub fn lower_use(ctx: &mut WalkModuleCtx, use_: &syn::ItemUse) {
-    // TODO: use this?
-    // let metadata = lower_metadata(ctx, &use_.vis, &use_.attrs, use_.span());
+    // TODO: do we need to care about metadata here?
+
     let vis = lower_visibility(&use_.vis);
     lower_use_tree(
         ctx,

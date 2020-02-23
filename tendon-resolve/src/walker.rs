@@ -25,47 +25,17 @@ use tendon_api::tokens::Tokens;
 use crate::lower::attributes::lower_metadata;
 use crate::tools::CrateData;
 
-/*
 use crate::lower::items::lower_enum;
 use crate::lower::items::lower_function_item;
 use crate::lower::items::lower_struct;
 use crate::lower::macros::lower_macro_rules;
-use crate::lower::{imports::lower_use, modules::lower_module};
-*/
+//use crate::lower::{imports::lower_use, modules::lower_module};
 use crate::lower::LowerError;
 use crate::{Db, Map};
 
+use textual_scope::TextualScope;
+
 mod textual_scope;
-
-/// The first phase: parse files, find imports, macro_interp macros.
-/// As items cease to have anything to do with macros they are dumped in the Db; after macro
-/// expansion order no longer matters.
-struct WalkExpandPhase<'a> {
-    /// A Db containing resolved definitions for all dependencies.
-    /// During this phase, we insert `ModuleItems` and `MacroItems` into this database.
-    /// The only items that go in here are `#[macro_export]`-marked macros.
-    db: &'a Db,
-
-    /// Declarative macro items inserted into the crate prelude when marked with `#[macro_export]`.
-    /// Also, macros brought in with `#[macro_use] extern crate` are placed here, but NOT in the
-    /// crate root.
-    ///
-    /// This information is discarded after parsing this crate.
-    ///
-    /// TODO: add std / core macros here?
-    /// TODO: figure out what happens when we override those
-    macro_prelude: Map<Ident, DeclarativeMacroItem>,
-
-    /// The contents of modules we've discovered.
-    modules: Map<AbsolutePath, ParsedModule>,
-}
-
-struct ParsedModule {
-    /// Where this module is (in the file system and the crate namespace).
-    loc: LocationMetadata,
-    /// Imports to this module
-    scope: ModuleScope,
-}
 
 pub(crate) struct LocationMetadata {
     pub(crate) source_file: PathBuf,
@@ -74,39 +44,9 @@ pub(crate) struct LocationMetadata {
     pub(crate) module_path: AbsolutePath,
 }
 
-// A scope.
-// Each scope currently corresponds to a module; that might change if we end up having to handle
-// impl's in function scopes.
-#[derive(Default)]
-pub struct ModuleScope {
-    /// This module's glob imports.
-    /// `use x::y::z::*` is stored as `x::y::z` pre-resolution,
-    /// and as an AbsolutePath post-resolution.
-    /// Includes the prelude, if any.
-    pub glob_imports: Vec<Path>,
-
-    /// This module's non-glob imports.
-    /// Maps the imported-as ident to a path,
-    /// i.e. `use x::Y;` is stored as `Y => x::Y`,
-    /// `use x::z as w` is stored as `w => x::z`
-    pub imports: Map<Ident, Path>,
-
-    /// This module's `pub` glob imports.
-    /// `use x::y::z::*` is stored as `x::y::z` pre-resolution,
-    /// and as an AbsolutePath post-resolution.
-    /// Includes the prelude, if any.
-    pub pub_glob_imports: Vec<Path>,
-
-    /// This module's non-glob `pub` imports.
-    /// Maps the imported-as ident to a path,
-    /// i.e. `use x::Y;` is stored as `Y => x::Y`,
-    /// `use x::z as w` is stored as `w => x::z`
-    pub pub_imports: Map<Ident, Path>,
-}
-
 /// Walk a whole crate, expanding macros, storing all resulting data in the central db.
 /// This operates serially but multiple threads can operate on the same db in parallel.
-pub fn walk_crate(crate_data: &mut CrateData, db: &Db) -> Result<(), WalkError> {
+fn walk_crate(crate_data: &mut CrateData, db: &Db) -> Result<(), WalkError> {
     trace!("walking {:?}", crate_data.crate_);
 
     /*
@@ -203,134 +143,114 @@ pub fn walk_crate(crate_data: &mut CrateData, db: &Db) -> Result<(), WalkError> 
     Ok(())
 }
 
-macro_rules! skip_non_pub {
-    ($item:expr) => {
-        match &$item.vis {
-            syn::Visibility::Public(_) => (),
-            _ => return Ok(()),
+/// Walk a list of items. They are stored in the phase data structures, either in `db` or
+/// `unexpanded_modules`.
+///
+/// Note that this function cannot return an error! errors for individual items are currently just traced.
+/// TODO: we should collate them somehow and report failure stats to the user.
+fn walk_items(phase: &mut WalkParseExpandPhase, loc: &LocationMetadata, items: &[syn::Item]) {
+    for item in items {
+        if let Err(e) = insert_into_db(&phase.db, loc, &item) {
+            unimplemented!()
         }
-    };
+    }
 }
-/*
 
-/// Lower an item.
-fn lower_item(loc: &LocationMetadata, item: &syn::Item) -> Result<(), WalkError> {
+/*
+syn::Item::Use(use_) => {
+// note: modifies ctx directly!
+lower_use(ctx, use_);
+}
+syn::Item::Macro(macro_rules_) => {
+ctx.unexpanded.insert(UnexpandedItem::MacroInvocation(
+span,
+Tokens::from(macro_rules_),
+));
+}
+*/
+
+/// Walk an individual item.
+/// If it's successfully shuffled into the db, return `Ok(())`. Otherwise, let
+/// walk_items handle the error.
+fn insert_into_db(db: &Db, loc: &LocationMetadata, item: &syn::Item) -> Result<(), WalkError> {
     let span = Span::new(
         loc.macro_invocation.clone(),
         loc.source_file.clone(),
         item.span(),
     );
+
+    macro_rules! skip_non_pub {
+        ($item:expr) => {
+            match &$item.vis {
+                syn::Visibility::Public(_) => (),
+                _ => return Err(WalkError::NonPub),
+            }
+        };
+    }
+
     match item {
         syn::Item::Static(static_) => {
             skip_non_pub!(static_);
-            skip("static", ctx.module.clone().join(&static_.ident))
+            skip("static", loc.module_path.clone().join(&static_.ident))
             // TODO: add to scope when implemented
         }
         syn::Item::Const(const_) => {
             skip_non_pub!(const_);
-            skip("const", ctx.module.clone().join(&const_.ident))
+            skip("const", loc.module_path.clone().join(&const_.ident))
             // TODO: add to scope when implemented
         }
         syn::Item::Fn(fn_) => {
             skip_non_pub!(fn_);
-            let result = lower_function_item(ctx, fn_);
-            match result {
-                Ok(fn_) => {
-                    add_to_scope!(ctx, fn_);
-                    ctx.db.symbols.insert(
-                        ctx.module.clone().join(&fn_.name),
-                        SymbolItem::Function(fn_),
-                    )?
-                }
-                Err(LowerError::TypePositionMacro) => ctx
-                    .unexpanded
-                    .insert(UnexpandedItem::TypeMacro(span, Tokens::from(fn_))),
-                err => {
-                    err?;
-                }
-            }
+            let fn_ = lower_function_item(loc, fn_)?;
+            db.symbols.insert(
+                loc.module_path.clone().join(&fn_.name),
+                SymbolItem::Function(fn_),
+            )?;
         }
-        // note: we don't skip non-pub items for the rest of this, since we need to know about
-        // all types for send + sync determination
-        syn::Item::Type(type_) => {
-            skip("type", ctx.module.clone().join(&type_.ident))
-            // TODO: add to scope when implemented
-        }
+        // note: we don't skip non-items for the rest of this, since we may need to know about
+        // all types for send + sync determination.
+        // (in theory we might need non-pub info on the above items
+        // for determining send+sync leakage on async closures but lol if i'm ever implementing that.)
+        syn::Item::Type(type_) => skip("type", loc.module_path.clone().join(&type_.ident)),
         syn::Item::Struct(struct_) => {
-            let result = lower_struct(ctx, struct_);
-            match result {
-                Ok(struct_) => {
-                    add_to_scope!(ctx, struct_);
-                    ctx.db.types.insert(
-                        ctx.module.clone().join(&struct_.name),
-                        TypeItem::Struct(struct_),
-                    )?
-                }
-                Err(LowerError::TypePositionMacro) => ctx
-                    .unexpanded
-                    .insert(UnexpandedItem::TypeMacro(span, Tokens::from(struct_))),
-                err => {
-                    err?;
-                }
-            }
+            let struct_ = lower_struct(loc, struct_)?;
+            db.types.insert(
+                loc.module_path.clone().join(&struct_.name),
+                TypeItem::Struct(struct_),
+            )?;
         }
         syn::Item::Enum(enum_) => {
-            let result = lower_enum(ctx, enum_);
-            match result {
-                Ok(enum_) => {
-                    add_to_scope!(ctx, enum_);
-                    ctx.db
-                        .types
-                        .insert(ctx.module.clone().join(&enum_.name), TypeItem::Enum(enum_))?;
-                }
-                Err(LowerError::TypePositionMacro) => ctx
-                    .unexpanded
-                    .insert(UnexpandedItem::TypeMacro(span, Tokens::from(enum_))),
-                err => {
-                    err?;
-                }
-            }
+            let enum_ = lower_enum(loc, enum_)?;
+            db.types.insert(
+                loc.module_path.clone().join(&enum_.name),
+                TypeItem::Enum(enum_),
+            )?;
         }
-        syn::Item::Union(union_) => {
-            skip("union", ctx.module.clone().join(&union_.ident))
-            // TODO: add to scope when implemented
-        }
-        syn::Item::Trait(trait_) => {
-            skip("trait", ctx.module.clone().join(&trait_.ident))
-            // TODO: add to scope when implemented
-        }
+        syn::Item::Union(union_) => skip("union", loc.module_path.clone().join(&union_.ident)),
+        syn::Item::Trait(trait_) => skip("trait", loc.module_path.clone().join(&trait_.ident)),
         syn::Item::TraitAlias(alias_) => {
-            skip("trait alias", ctx.module.clone().join(&alias_.ident))
-            // TODO: add to scope when implemented
+            skip("trait alias", loc.module_path.clone().join(&alias_.ident))
         }
-        syn::Item::Impl(_impl_) => skip("impl", ctx.module.clone()),
-        syn::Item::ForeignMod(_foreign_mod) => skip("foreign_mod", ctx.module.clone()),
-        syn::Item::Verbatim(_verbatim_) => skip("verbatim", ctx.module.clone()),
-        syn::Item::Macro(macro_rules_) => {
-            ctx.unexpanded.insert(UnexpandedItem::MacroInvocation(
-                span,
-                Tokens::from(macro_rules_),
-            ));
-        }
-        syn::Item::Use(use_) => {
-            // note: modifies ctx directly!
-            lower_use(ctx, use_);
-        }
+        syn::Item::Impl(_impl_) => skip("impl", loc.module_path.clone()),
+        syn::Item::ForeignMod(_foreign_mod) => skip("foreign_mod", loc.module_path.clone()),
+        syn::Item::Verbatim(_verbatim_) => skip("verbatim", loc.module_path.clone()),
         syn::Item::ExternCrate(extern_crate) => {
-            if ctx.module.path.is_empty() {
+            skip("extern_crate", loc.module_path.clone());
+            /*
+            if loc.module_path.path.is_empty() {
                 // crate root `extern crate`s have special semantics
                 // and have already been handled in walk_crate
                 return Ok(());
             }
             let metadata = lower_metadata(
-                ctx,
+                loc,
                 &extern_crate.vis,
                 &extern_crate.attrs,
                 extern_crate.span(),
             )?;
 
             let ident = Ident::from(&extern_crate.ident);
-            let crate_ = ctx
+            let crate_ = loc
                 .crate_data
                 .deps
                 .get(&ident)
@@ -341,11 +261,96 @@ fn lower_item(loc: &LocationMetadata, item: &syn::Item) -> Result<(), WalkError>
             };
             let no_path: &[&str] = &[];
             imports.insert(ident, AbsolutePath::new(crate_.clone(), no_path).into());
+            */
         }
-        _ => skip("something else", ctx.module.clone()),
+        _ => (), // do nothing
     }
     Ok(())
 }
+
+/// The first phase: walk files, parse, find imports, expand macros.
+/// As items cease to have anything to do with macros they are dumped in the Db; after macro
+/// expansion order no longer matters.
+struct WalkParseExpandPhase<'a> {
+    /// A Db containing resolved definitions for all dependencies.
+    /// During this phase, we insert `ModuleItems` and `MacroItems` into this database.
+    /// The only items that go in here are `#[macro_export]`-marked macros.
+    db: &'a Db,
+
+    /// Declarative macro items inserted into the crate via `#[macro_use] extern crate`.
+    /// Also has macros from the actual `std` / `core` prelude.
+    ///
+    /// `#[macro_export]` macros are NOT placed here.
+    ///
+    /// This information is discarded after parsing this crate.
+    ///
+    /// TODO: add std / core macros here?
+    /// TODO: figure out what happens when we override those
+    macro_prelude: Map<Ident, DeclarativeMacroItem>,
+
+    /// The contents of modules we haven't finished expanding.
+    unexpanded_modules: Map<AbsolutePath, UnexpandedModule>,
+}
+
+/// A module we haven't yet succeeded in expanding.
+struct UnexpandedModule {
+    /// Where this module is (in the file system and the crate namespace).
+    loc: LocationMetadata,
+
+    /// Imports to this module
+    scope: ModuleScope,
+
+    /// Items that we have not yet succeeded in expanding.
+    unexpanded_items: Vec<(Span, TextualScope, UnexpandedItem)>,
+}
+
+/// An item we have not yet succeeded in expanding.
+#[derive(Debug)]
+enum UnexpandedItem {
+    /// A macro invocation in item position,
+    UnresolvedMacroInvocation(Tokens),
+
+    /// Some item that contains a macro in type position.
+    TypeMacro(Tokens),
+
+    /// Something with an attribute macro applied.
+    AttributeMacro(Tokens),
+
+    /// Something with a derive macro applied.
+    DeriveMacro(Tokens),
+}
+
+// A scope.
+// Each scope currently corresponds to a module; that might change if we end up having to handle
+// impl's in function scopes.
+#[derive(Default)]
+pub(crate) struct ModuleScope {
+    /// This module's glob imports.
+    /// `use x::y::z::*` is stored as `x::y::z` pre-resolution,
+    /// and as an AbsolutePath post-resolution.
+    /// Includes the prelude, if any.
+    glob_imports: Vec<Path>,
+
+    /// This module's non-glob imports.
+    /// Maps the imported-as ident to a path,
+    /// i.e. `use x::Y;` is stored as `Y => x::Y`,
+    /// `use x::z as w` is stored as `w => x::z`
+    imports: Map<Ident, Path>,
+
+    /// This module's `pub` glob imports.
+    /// `use x::y::z::*` is stored as `x::y::z` pre-resolution,
+    /// and as an AbsolutePath post-resolution.
+    /// Includes the prelude, if any.
+    pub_glob_imports: Vec<Path>,
+
+    /// This module's non-glob `pub` imports.
+    /// Maps the imported-as ident to a path,
+    /// i.e. `use x::Y;` is stored as `Y => x::Y`,
+    /// `use x::z as w` is stored as `w => x::z`
+    pub_imports: Map<Ident, Path>,
+}
+
+/*
 
 
 /// A module with macros unexpanded.
@@ -354,13 +359,13 @@ fn lower_item(loc: &LocationMetadata, item: &syn::Item) -> Result<(), WalkError>
 /// can't do name resolution (afaict) until after we've lowered most modules already.
 /// This is ordered because order affects macro name resolution.
 #[derive(Debug)]
-pub struct UnexpandedModule {
+struct UnexpandedModule {
     items: Vec<UnexpandedItem>,
-    pub source_file: PathBuf,
+    source_file: PathBuf,
 }
 impl UnexpandedModule {
     /// Create an empty unexpanded module.
-    pub fn new(source_file: PathBuf) -> Self {
+    fn new(source_file: PathBuf) -> Self {
         UnexpandedModule {
             items: vec![],
             source_file,
@@ -368,34 +373,9 @@ impl UnexpandedModule {
     }
 }
 
-#[derive(Debug)]
-/// An item during the macro_interp
-pub enum UnexpandedItem {
-    /// A macro invocation in item position,
-    UnresolvedMacroInvocation(Span, Tokens),
-
-    /// Some item that contains a macro in type position.
-    TypeMacro(Span, Tokens),
-
-    /// Something with an attribute macro applied.
-    AttributeMacro(Span, Tokens),
-
-    /// Something with a derive macro applied.
-    /// Note: the item itself should already be stored in the main `Db`, and doesn't need to be
-    /// re-added.
-    DeriveMacro(Span, Tokens),
-    /// A sub module that has yet to be expanded.
-    UnexpandedModule {
-        span: Span,
-        name: Ident,
-        macro_use: bool,
-    },
-    /// An import with #[macro_use].
-    MacroUse(Span, AbsoluteCrate),
-}
 
 impl UnexpandedItem {
-    pub fn span(&self) -> &Span {
+    fn span(&self) -> &Span {
         match self {
             UnexpandedItem::MacroInvocation(span, _) => span,
             UnexpandedItem::TypeMacro(span, _) => span,
@@ -408,27 +388,27 @@ impl UnexpandedItem {
 }
 
 /// A cursor examining an unexpanded module.
-pub struct UnexpandedCursor<'a> {
-    pub module: &'a mut UnexpandedModule,
+struct UnexpandedCursor<'a> {
+    module: &'a mut UnexpandedModule,
     idx: usize,
 }
 impl<'a> UnexpandedCursor<'a> {
     /// Crate a cursor into a module.
-    pub fn new(module: &'a mut UnexpandedModule) -> UnexpandedCursor<'a> {
+    fn new(module: &'a mut UnexpandedModule) -> UnexpandedCursor<'a> {
         let idx = module.items.len();
         UnexpandedCursor { module, idx }
     }
     /// Insert something into the module.
-    pub fn insert(&mut self, item: UnexpandedItem) {
+    fn insert(&mut self, item: UnexpandedItem) {
         self.module.items.insert(self.idx, item);
         self.idx += 1;
     }
     /// Reset to the front of the target module.
-    pub fn reset(&mut self) {
+    fn reset(&mut self) {
         self.idx = 0;
     }
     /// Pop the item at the cursor position.
-    pub fn pop(&mut self) -> Option<UnexpandedItem> {
+    fn pop(&mut self) -> Option<UnexpandedItem> {
         if self.module.items.len() <= self.idx {
             None
         } else {
@@ -451,7 +431,7 @@ fn parse_file(file: &FsPath) -> Result<syn::File, WalkError> {
 
 /// Find the path for a module.
 fn find_source_file(
-    expand_phase: &WalkExpandPhase,
+    expand_phase: &WalkParseExpandPhase,
     parent: &LocationMetadata,
     item: &mut ModuleItem,
 ) -> Result<PathBuf, WalkError> {
@@ -524,11 +504,11 @@ fn handle_root_extern_crate(loc: &LocationMetadata, extern_crate: &syn::ItemExte
 }
 */
 
-pub fn skip(kind: &str, path: AbsolutePath) {
+fn skip(kind: &str, path: AbsolutePath) {
     trace!("skipping {} {:?}", kind, &path);
 }
 
-pub fn warn(cause: impl Into<WalkError>, span: &Span) {
+fn warn(cause: impl Into<WalkError>, span: &Span) {
     let cause = cause.into();
     if let WalkError::Lower(LowerError::CfgdOut) = cause {
         // can just suppress this
@@ -577,7 +557,7 @@ quick_error! {
             display("path {:?} already defined in {} namespace", path, namespace)
         }
         NonPub {
-            display("skipping non-pub item (will never be accessible)")
+            display("skipping non-item (will never be accessible)")
         }
         Lower(err: LowerError) {
             from()
@@ -692,7 +672,7 @@ fn parse_and_expand_module(
                                         ctx.crate_data.crate_.clone(),
                                         &[def.name.clone()],
                                     );
-                                    ctx.db
+                                    db
                                         .macros
                                         .insert(path, MacroItem::Declarative(def.clone()))?;
                                 }
@@ -745,32 +725,32 @@ fn parse_and_expand_module(
 
 /*
 /// Context for lowering items in an individual module.
-pub struct WalkModuleCtx<'a> {
+struct WalkModuleCtx<'a> {
     /// A Db containing resolved definitions for all dependencies.
-    pub db: &'a Db,
+    db: &'a Db,
 
     /// The location of this module's containing file in the filesystem.
-    pub source_file: PathBuf,
+    source_file: PathBuf,
 
     /// The module path.
-    pub module: AbsolutePath,
+    module: AbsolutePath,
 
     /// The scope for this module.
-    pub scope: &'a mut ModuleScope,
+    scope: &'a mut ModuleScope,
 
     /// All items in this module that need to be macro-expanded.
-    pub unexpanded: UnexpandedCursor<'a>,
+    unexpanded: UnexpandedCursor<'a>,
 
     /// The metadata for the current crate, including imports.
-    pub crate_data: &'a CrateData,
+    crate_data: &'a CrateData,
 
     /// If we are currently expanding a macro, the macro we're expanding from.
-    pub macro_invocation: Option<Arc<Span>>,
+    macro_invocation: Option<Arc<Span>>,
 }
 
 impl ModuleScope {
     /// Create a new set of imports
-    pub fn new() -> ModuleScope {
+    fn new() -> ModuleScope {
         ModuleScope {
             glob_imports: Vec::new(),
             imports: Map::default(),
@@ -801,10 +781,10 @@ fn merge_metadata(target: &mut Metadata, from: Metadata) {
 }
 
 /// Parse a set of items into a database.
-pub fn walk_items(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Result<(), WalkError> {
-    let _span = trace_span!("walk_items", path = tracing::field::debug(&ctx.module));
+fn walk_items(ctx: &mut WalkModuleCtx, items: &[syn::Item]) -> Result<(), WalkError> {
+    let _span = trace_span!("walk_items", path = tracing::field::debug(&loc.module_path));
 
-    trace!("walking {:?}", ctx.module);
+    trace!("walking {:?}", loc.module_path);
 
     for item in items {
         let result = walk_item(ctx, item);
@@ -829,7 +809,7 @@ fn walk_mod(ctx: &mut WalkModuleCtx, mod_: &syn::ItemMod) -> Result<(), WalkErro
     let mut lowered = lower_module(ctx, mod_)?;
 
     // the path of the submodule
-    let path = ctx.module.clone().join(&lowered.name);
+    let path = loc.module_path.clone().join(&lowered.name);
 
     // borrowck juggling...
     let items: Vec<syn::Item>;
@@ -863,10 +843,10 @@ fn walk_mod(ctx: &mut WalkModuleCtx, mod_: &syn::ItemMod) -> Result<(), WalkErro
         let mut ctx = WalkModuleCtx {
             source_file,
             crate_data: ctx.crate_data,
-            module: ctx.module.clone().join(lowered.name.clone()),
+            module: loc.module_path.clone().join(lowered.name.clone()),
             scope: &mut imports,
             unexpanded: UnexpandedCursor::new(&mut unexpanded),
-            db: &ctx.db,
+            db: &db,
             crate_unexpanded_modules: &ctx.crate_unexpanded_modules,
             macro_invocation: None,
         };
@@ -878,9 +858,9 @@ fn walk_mod(ctx: &mut WalkModuleCtx, mod_: &syn::ItemMod) -> Result<(), WalkErro
     }
 
     trace!("insert modules");
-    ctx.db.modules.insert(path.clone(), lowered)?;
+    db.modules.insert(path.clone(), lowered)?;
     trace!("insert scopes");
-    ctx.db.scopes.insert(path.clone(), imports)?;
+    db.scopes.insert(path.clone(), imports)?;
     trace!("insert unexpanded");
     ctx.crate_unexpanded_modules
         .insert(path.clone(), unexpanded);
@@ -888,24 +868,7 @@ fn walk_mod(ctx: &mut WalkModuleCtx, mod_: &syn::ItemMod) -> Result<(), WalkErro
     Ok(())
 }
 
-macro_rules! add_to_scope {
-    ($ctx:ident, $item:ident) => {
-        match &$item.metadata.visibility {
-            Visibility::Pub => $ctx.scope.pub_imports.insert(
-                $item.name.clone(),
-                $ctx.module.clone().join($item.name.clone()).into(),
-            ),
-            Visibility::NonPub => $ctx.scope.imports.insert(
-                $item.name.clone(),
-                $ctx.module.clone().join($item.name.clone()).into(),
-            ),
-        }
-    };
-}
-
-
 /*
-/
 
 #[cfg(test)]
 macro_rules! test_ctx {
@@ -963,8 +926,8 @@ mod tests {
         let fake: syn::File = syn::parse_quote! {
             extern crate bees as thing;
 
-            // note: non-pub fns will be ignored
-            pub fn f(y: i32) -> i32 {}
+            // note: non-fns will be ignored
+            fn f(y: i32) -> i32 {}
 
             enum X {}
             enum Y {}
