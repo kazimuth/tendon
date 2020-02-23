@@ -17,6 +17,9 @@
 //! - [Name resolution impl](https://github.com/rust-lang/rust/blob/master/src/librustc_resolve/lib.rs)
 //! - [Paths](https://doc.rust-lang.org/stable/reference/paths.html)
 
+#[macro_use]
+extern crate quick_error;
+
 macro_rules! debug {
     ($name:ty, $fmt:literal $(, $arg:ident)*) => (
         impl std::fmt::Debug for $name {
@@ -27,8 +30,15 @@ macro_rules! debug {
     )
 }
 
+/// Fast single-thread-writeable maps.
+pub type Map<K, V> = hashbrown::HashMap<K, V, fxhash::FxBuildHasher>;
+/// Fast single-thread-writeable sets.
+pub type Set<K> = hashbrown::HashSet<K, fxhash::FxBuildHasher>;
+
 #[macro_use]
 pub mod attributes;
+pub mod crates;
+pub mod database;
 pub mod expressions;
 pub mod generics;
 pub mod idents;

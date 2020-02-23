@@ -1,18 +1,8 @@
-use tendon_api::paths::{AbsolutePath, UnresolvedPath};
-
-use crate::namespace::Namespace;
-use crate::tools::CrateData;
-use crate::tools::RustEdition;
-use crate::walker::ModuleScope;
-use lazy_static::lazy_static;
-use tendon_api::idents::Ident;
-use tendon_api::items::ModuleItem;
-use tendon_api::paths::Path;
-
 // https://github.com/rust-lang/rust/tree/master/src/librustc_resolve
 
 pub mod resolvable;
 
+/*
 // macro name resolution is affected by order, right?
 //
 // see: https://danielkeep.github.io/tlborm/book/mbe-min-scoping.html
@@ -259,7 +249,7 @@ pub fn absolutize_imports(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Map;
+    use tendom_api::Map;
     use tendon_api::attributes::{Metadata, Span, Visibility};
     use tendon_api::paths::AbsoluteCrate;
 
@@ -335,4 +325,5 @@ mod tests {
         });
     }
 }
+*/
 */

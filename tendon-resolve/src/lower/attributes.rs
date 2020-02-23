@@ -128,7 +128,7 @@ pub(crate) fn lower_metadata(
 
     while let Some(cfg) = result.extract_attribute(&*CFG) {
         match cfg {
-            Attribute::Meta(meta) => {
+            Attribute::Meta(_meta) => {
                 //interp_cfg::interp_cfg(ctx, &meta)?;
                 return Err(LowerError::CfgdOut);
             }

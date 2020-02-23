@@ -7,10 +7,10 @@ use proc_macro2 as pm2;
 use quote::ToTokens;
 use std::fmt::{Display, Write};
 use syn::{self, ext::IdentExt, parse::ParseStream};
+use tendon_api::Map;
 
 use crate::macro_interp::ast;
 use crate::macro_interp::ast::RepeatKind;
-use crate::Map;
 
 /// A fragment binding.
 ///

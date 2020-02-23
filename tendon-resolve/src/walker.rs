@@ -7,61 +7,181 @@
 //! https://rust-lang.github.io/rustc-guide/name-resolution.html
 //! https://doc.rust-lang.org/nightly/edition-guide/rust-2018/macros/macro-changes.html
 
-use dashmap::DashMap;
 use lazy_static::lazy_static;
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::Read;
 use std::path::{Path as FsPath, PathBuf};
 use std::sync::Arc;
-use syn::spanned::Spanned;
-use tracing::{trace, trace_span, warn};
-
-use tendon_api::attributes::{Metadata, Span, Visibility};
+use tendon_api::attributes::Span;
+use tendon_api::crates::CrateData;
 use tendon_api::idents::Ident;
-use tendon_api::items::{DeclarativeMacroItem, MacroItem, ModuleItem, SymbolItem, TypeItem};
-use tendon_api::paths::{AbsoluteCrate, AbsolutePath, Path, UnresolvedPath};
+use tendon_api::paths::{AbsoluteCrate, AbsolutePath, Path, RelativePath};
 use tendon_api::tokens::Tokens;
+use tendon_api::Map;
+use tracing::{trace, warn};
 
-use crate::lower::attributes::lower_metadata;
-use crate::tools::CrateData;
-
-use crate::lower::items::lower_enum;
-use crate::lower::items::lower_function_item;
-use crate::lower::items::lower_struct;
-use crate::lower::macros::lower_macro_rules;
 use crate::lower::LowerError;
-use crate::lower::{imports::lower_use, modules::lower_module};
-use crate::{Db, Map};
 
 use textual_scope::TextualScope;
-
 mod textual_scope;
 
-pub(crate) struct LocationMetadata {
+pub(crate) struct LocationMetadata<'a> {
     pub(crate) source_file: PathBuf,
     pub(crate) macro_invocation: Option<Arc<Span>>,
-    pub(crate) crate_data: Arc<CrateData>,
+    pub(crate) crate_data: &'a CrateData,
     pub(crate) module_path: AbsolutePath,
 }
 
+lazy_static! {
+    static ref MACRO_USE: Path = Path::fake("macro_use");
+    static ref PATH: Path = Path::fake("path");
+    static ref MACRO_RULES: Ident = "macro_rules".into();
+    pub(crate) static ref TEST_CRATE_DATA: CrateData = CrateData::fake();
+    pub(crate) static ref TEST_LOCATION_METADATA: LocationMetadata<'static> = LocationMetadata {
+        source_file: "fake_file.rs".into(),
+        macro_invocation: None,
+        crate_data: &*TEST_CRATE_DATA,
+        module_path: AbsolutePath {
+            crate_: AbsoluteCrate::new("fake_crate", "0.0.0"),
+            path: RelativePath(vec![])
+        }
+    };
+}
+
+quick_error! {
+    #[derive(Debug)]
+    pub enum WalkError {
+        Io(err: std::io::Error) {
+            from()
+            cause(err)
+            description(err.description())
+            display("io error during walking: {}", err)
+        }
+        Parse(err: syn::Error) {
+            from()
+            cause(err)
+            description(err.description())
+            display("parse error during walking: {}", err)
+        }
+        /*
+        Resolve(err: crate::resolver::ResolveError) {
+            from()
+            cause(err)
+            description(err.description())
+            display("name resolution error during walking: {}", err)
+        }
+        */
+        AlreadyDefined(namespace: &'static str, path: AbsolutePath) {
+            display("path {:?} already defined in {} namespace", path, namespace)
+        }
+        Lower(err: LowerError) {
+            from()
+            cause(err)
+            description(err.description())
+            display("{}", err)
+        }
+        CachedError(path: AbsolutePath) {
+            display("path {:?} is invalid due to some previous error", path)
+        }
+        MalformedPathAttribute(tokens: String) {
+            display("malformed `#[path]` attribute: {}", tokens)
+        }
+        Root {
+            display("files at fs root??")
+        }
+        ModuleNotFound {
+            display("couldn't find source file")
+        }
+        Other {
+            display("other error")
+        }
+        ExternCrateNotFound(ident: Ident) {
+            display("can't find extern crate: {}", ident)
+        }
+        PhaseIrrelevant {
+            display("item not relevant to this phase")
+        }
+        NonPub {
+            display("skipping non-item (will never be accessible)")
+        }
+    }
+}
+
+/*
+
 /// Walk a whole crate, expanding macros, storing all resulting data in the central db.
 /// This operates serially but multiple threads can operate on the same db in parallel.
-fn walk_crate(crate_data: &mut CrateData, db: &Db) -> Result<(), WalkError> {
+fn walk_crate(crate_data: &CrateData, db: &Db) -> Result<(), WalkError> {
     trace!("walking {:?}", crate_data.crate_);
 
-    /*
-    let mut expand_phase = ExpandPhase {
-        db,
-        modules: Default::default(),
-        global_macros_used: vec![]
-    };
+    let mut crate_data = crate_data.clone();
+    let mut macro_prelude: Map<Ident, DeclarativeMacroItem> = Map::default();
 
-    // prep roots
+    // Load the root entry
+    let file = parse_file(&crate_data.entry)?;
+
+    // Special handling: `extern crate`
+    for item in &file.items {
+        if let syn::Item::ExternCrate(extern_crate) = item {
+            let result = (|| -> Result<(), WalkError> {
+                let ident = Ident::from(&extern_crate.ident);
+                let crate_ = ctx
+                    .crate_data
+                    .deps
+                    .get(&ident)
+                    .ok_or_else(|| WalkError::ExternCrateNotFound(ident.clone()))?;
+
+                let macro_use = extern_crate.attrs.iter()
+                    .any(|attr| attr.path.is_ident("macro_use"));
+
+                if macro_use {
+                    for item in db.macros.
+
+                }
+
+                if metadata.extract_attribute(&*MACRO_USE).is_some() {
+                    // this miiiight have weird ordering consequences... whatever
+                    ctx.unexpanded
+                        .insert(UnexpandedItem::MacroUse(span.clone(), crate_.clone()));
+                }
+
+            })();
+
+            /*
+            fn handle_root_extern_crate(loc: &LocationMetadata, extern_crate: &syn::ItemExternCrate) {
+                let mut metadata = lower_metadata(
+                    loc,
+                    &extern_crate.vis,
+                    &extern_crate.attrs,
+                    extern_crate.span(),
+                )?;
+
+
+
+                if let Some((_, name)) = &extern_crate.rename {
+                    // add rename to crate namespace
+                    // note that this effect *only* occurs at the crate root: otherwise `extern crate`
+                    // just behaves like a `use`.
+                    crate_data.deps.insert(Ident::from(&name), crate_.clone());
+                }
+            }
+            */
+
+
+        }
+    }
+
+
+    // special handling at crate root: extern crate
     let root_path = AbsolutePath::root(crate_data.crate_.clone());
     let source_root = crate_data.entry.parent().unwrap().to_path_buf();
 
-    let file = parse_file(&crate_data.entry)?;
-    */
+    let mut phase = WalkParseExpandPhase {
+        db: Db,
+        unexpanded_modules: Map::default(),
+        macro_prelude: Map::default()
+    };
+
 
     // TODO extern crate extra effects at crate root:
     // - global alias
@@ -94,23 +214,6 @@ fn walk_crate(crate_data: &mut CrateData, db: &Db) -> Result<(), WalkError> {
 
     // special case: walk the crate root looking for extern crates.
     // they behave special here for legacy reasons.
-    for item in &file.items {
-        let span = Span::new(
-            ctx.macro_invocation.clone(),
-            ctx.source_file.clone(),
-            item.span(),
-        );
-
-        let result = (|| -> Result<(), WalkError> {
-            if let syn::Item::ExternCrate(extern_crate) = item {
-            }
-            Ok(())
-        })();
-
-        if let Err(err) = result {
-            warn(err, &span);
-        }
-    }
 
     // patch in data w/ modified extern crate names
     ctx.crate_data = crate_data;
@@ -154,6 +257,7 @@ fn walk_items(phase: &mut WalkParseExpandPhase, loc: &LocationMetadata, items: &
         if let Err(WalkError::PhaseIrrelevant) = err {
             let err = insert_into_db(&phase.db, loc, &item);
             if let Err(WalkError::Lower(LowerError::TypePositionMacro)) = err {
+                unimplemented!()
             } else if let Err(WalkError::NonPub) = err {
                 // TODO collate
             } else if let Err(err) = err {
@@ -350,6 +454,9 @@ struct WalkParseExpandPhase<'a> {
     /// The only items that go in here are `#[macro_export]`-marked macros.
     db: &'a Db,
 
+    /// The relevant CrateData.
+    crate_data: &'a CrateData,
+
     /// Declarative macro items inserted into the crate via `#[macro_use] extern crate`.
     /// Also has macros from the actual `std` / `core` prelude.
     ///
@@ -362,13 +469,14 @@ struct WalkParseExpandPhase<'a> {
     macro_prelude: Map<Ident, DeclarativeMacroItem>,
 
     /// The contents of modules we haven't finished expanding.
-    unexpanded_modules: Map<AbsolutePath, UnexpandedModule>,
+    unexpanded_modules: Map<AbsolutePath, UnexpandedModule<'a>>,
 }
+*/
 
 /// A module we haven't yet succeeded in expanding.
-struct UnexpandedModule {
+struct UnexpandedModule<'a> {
     /// Where this module is (in the file system and the crate namespace).
-    loc: LocationMetadata,
+    loc: LocationMetadata<'a>,
 
     /// Imports to this module
     scope: ModuleScope,
@@ -378,6 +486,7 @@ struct UnexpandedModule {
 
     /// Items that we have not yet succeeded in expanding, along with their spans and textual
     /// scopes.
+    /// Ordering doesn't matter here -- it's tracked by the TextualScopes instead.
     unexpanded_items: Vec<(Span, TextualScope, UnexpandedItem)>,
 }
 
@@ -427,72 +536,6 @@ pub(crate) struct ModuleScope {
     pub(crate) pub_imports: Map<Ident, Path>,
 }
 
-/*
-/// A module with macros unexpanded.
-/// We throw all macro-related stuff here when we're walking freshly-parsed modules.
-/// It's not possible to eagerly macro_interp macros because they rely on name resolution to work, and we
-/// can't do name resolution (afaict) until after we've lowered most modules already.
-/// This is ordered because order affects macro name resolution.
-#[derive(Debug)]
-struct UnexpandedModule {
-    items: Vec<UnexpandedItem>,
-    source_file: PathBuf,
-}
-impl UnexpandedModule {
-    /// Create an empty unexpanded module.
-    fn new(source_file: PathBuf) -> Self {
-        UnexpandedModule {
-            items: vec![],
-            source_file,
-        }
-    }
-}
-
-
-impl UnexpandedItem {
-    fn span(&self) -> &Span {
-        match self {
-            UnexpandedItem::MacroInvocation(span, _) => span,
-            UnexpandedItem::TypeMacro(span, _) => span,
-            UnexpandedItem::AttributeMacro(span, _) => span,
-            UnexpandedItem::DeriveMacro(span, _) => span,
-            UnexpandedItem::UnexpandedModule { span, .. } => span,
-            UnexpandedItem::MacroUse(span, _) => span,
-        }
-    }
-}
-
-/// A cursor examining an unexpanded module.
-struct UnexpandedCursor<'a> {
-    module: &'a mut UnexpandedModule,
-    idx: usize,
-}
-impl<'a> UnexpandedCursor<'a> {
-    /// Crate a cursor into a module.
-    fn new(module: &'a mut UnexpandedModule) -> UnexpandedCursor<'a> {
-        let idx = module.items.len();
-        UnexpandedCursor { module, idx }
-    }
-    /// Insert something into the module.
-    fn insert(&mut self, item: UnexpandedItem) {
-        self.module.items.insert(self.idx, item);
-        self.idx += 1;
-    }
-    /// Reset to the front of the target module.
-    fn reset(&mut self) {
-        self.idx = 0;
-    }
-    /// Pop the item at the cursor position.
-    fn pop(&mut self) -> Option<UnexpandedItem> {
-        if self.module.items.len() <= self.idx {
-            None
-        } else {
-            Some(self.module.items.remove(self.idx))
-        }
-    }
-}
-*/
-
 /// Parse a file into a syn::File.
 fn parse_file(file: &FsPath) -> Result<syn::File, WalkError> {
     trace!("parsing `{}`", file.display());
@@ -504,13 +547,14 @@ fn parse_file(file: &FsPath) -> Result<syn::File, WalkError> {
     Ok(syn::parse_file(&source)?)
 }
 
+/*
 /// Find the path for a module.
 fn find_source_file(
     expand_phase: &WalkParseExpandPhase,
     parent: &LocationMetadata,
     item: &mut ModuleItem,
 ) -> Result<PathBuf, WalkError> {
-    let look_at = if let Some(path) = item.metadata.extract_attribute(&PATH) {
+    let look_at = if let Some(path) = item.metadata.extract_attribute(&*PATH) {
         let string = path
             .get_assigned_string()
             .ok_or_else(|| WalkError::MalformedPathAttribute(format!("{:?}", path)))?;
@@ -525,7 +569,7 @@ fn find_source_file(
     };
 
     let mut root_normal = parent.crate_data.entry.parent().unwrap().to_owned();
-    for entry in &parent.module_path.path {
+    for entry in &parent.module_path.path.0 {
         root_normal.push(entry.to_string());
     }
 
@@ -547,36 +591,6 @@ fn find_source_file(
 
     Err(WalkError::ModuleNotFound)
 }
-
-/*
-fn handle_root_extern_crate(loc: &LocationMetadata, extern_crate: &syn::ItemExternCrate) {
-    let mut metadata = lower_metadata(
-        loc,
-        &extern_crate.vis,
-        &extern_crate.attrs,
-        extern_crate.span(),
-    )?;
-
-    let ident = Ident::from(&extern_crate.ident);
-    let crate_ = ctx
-        .crate_data
-        .deps
-        .get(&ident)
-        .ok_or_else(|| WalkError::ExternCrateNotFound(ident.clone()))?;
-
-    if metadata.extract_attribute(&*MACRO_USE).is_some() {
-        // this miiiight have weird ordering consequences... whatever
-        ctx.unexpanded
-            .insert(UnexpandedItem::MacroUse(span.clone(), crate_.clone()));
-    }
-
-    if let Some((_, name)) = &extern_crate.rename {
-        // add rename to crate namespace
-        // note that this effect *only* occurs at the crate root: otherwise `extern crate`
-        // just behaves like a `use`.
-        crate_data.deps.insert(Ident::from(&name), crate_.clone());
-    }
-}
 */
 
 fn skip(kind: &str, path: AbsolutePath) {
@@ -590,78 +604,6 @@ fn warn(cause: impl Into<WalkError>, span: &Span) {
         return;
     }
     warn!("[{:?}]: suppressing error: {}", span, cause);
-}
-
-lazy_static! {
-    static ref MACRO_USE: Path = Path::fake("macro_use");
-    static ref PATH: Path = Path::fake("path");
-    static ref MACRO_RULES: Ident = "macro_rules".into();
-    pub(crate) static ref TEST_LOCATION_METADATA: LocationMetadata = LocationMetadata {
-        source_file: "fake_file.rs".into(),
-        macro_invocation: None,
-        crate_data: Arc::new(CrateData::fake()),
-        module_path: AbsolutePath {
-            crate_: AbsoluteCrate::new("fake_crate", "0.0.0"),
-            path: vec![]
-        }
-    };
-}
-
-quick_error! {
-    #[derive(Debug)]
-    pub enum WalkError {
-        Io(err: std::io::Error) {
-            from()
-            cause(err)
-            description(err.description())
-            display("io error during walking: {}", err)
-        }
-        Parse(err: syn::Error) {
-            from()
-            cause(err)
-            description(err.description())
-            display("parse error during walking: {}", err)
-        }
-        Resolve(err: crate::resolver::ResolveError) {
-            from()
-            cause(err)
-            description(err.description())
-            display("name resolution error during walking: {}", err)
-        }
-        AlreadyDefined(namespace: &'static str, path: AbsolutePath) {
-            display("path {:?} already defined in {} namespace", path, namespace)
-        }
-        Lower(err: LowerError) {
-            from()
-            cause(err)
-            description(err.description())
-            display("{}", err)
-        }
-        CachedError(path: AbsolutePath) {
-            display("path {:?} is invalid due to some previous error", path)
-        }
-        MalformedPathAttribute(tokens: String) {
-            display("malformed `#[path]` attribute: {}", tokens)
-        }
-        Root {
-            display("files at fs root??")
-        }
-        ModuleNotFound {
-            display("couldn't find source file")
-        }
-        Other {
-            display("other error")
-        }
-        ExternCrateNotFound(ident: Ident) {
-            display("can't find extern crate: {}", ident)
-        }
-        PhaseIrrelevant {
-            display("item not relevant to this phase")
-        }
-        NonPub {
-            display("skipping non-item (will never be accessible)")
-        }
-    }
 }
 
 /*
@@ -946,35 +888,6 @@ fn walk_mod(ctx: &mut WalkModuleCtx, mod_: &syn::ItemMod) -> Result<(), WalkErro
     Ok(())
 }
 
-/*
-
-#[cfg(test)]
-macro_rules! test_ctx {
-    ($ctx:pat) => {
-        let source_file = std::path::PathBuf::from("fake_file.rs");
-        let module = tendon_api::paths::AbsolutePath::root(tendon_api::paths::AbsoluteCrate::new(
-            "fake_crate",
-            "0.0.1",
-        ));
-        let db = crate::Db::new();
-        let mut scope = crate::walker::ModuleScope::new();
-        let mut unexpanded = crate::macro_interp::UnexpandedModule::new(source_file.clone());
-        let crate_unexpanded_modules = dashmap::DashMap::default();
-        let crate_data = crate::tools::CrateData::fake();
-
-        let $ctx = crate::walker::WalkModuleCtx {
-            source_file,
-            module,
-            db: &db,
-            scope: &mut scope,
-            unexpanded: crate::macro_interp::UnexpandedCursor::new(&mut unexpanded),
-            crate_unexpanded_modules: &crate_unexpanded_modules,
-            crate_data: &crate_data,
-            macro_invocation: None,
-        };
-    };
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1032,5 +945,4 @@ mod tests {
             .contains(&AbsolutePath::new(crate_.clone(), &["Y"])));
     }
 }
-*/
 */

@@ -21,13 +21,8 @@
 //> All other fragment specifiers have no restrictions.
 
 use proc_macro2 as pm2;
-use std::path::PathBuf;
 use syn::spanned::Spanned;
-use tendon_api::attributes::Span;
-use tendon_api::idents::Ident;
 use tendon_api::items::DeclarativeMacroItem;
-use tendon_api::paths::AbsoluteCrate;
-use tendon_api::tokens::Tokens;
 
 mod ast;
 mod consume;

@@ -207,7 +207,7 @@ impl Resolvable for Receiver {
 mod tests {
     use super::*;
     use crate::lower::items::{lower_enum, lower_function_item, lower_struct};
-    use crate::Set;
+    use tendon_api::Set;
 
     #[test]
     fn resolve_all() {

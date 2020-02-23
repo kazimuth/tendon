@@ -20,6 +20,10 @@
 //! the walking thread queues up a request to parse the file it could be found in. Once all items have been walked,
 //! a thread pool parses all the requested files, adding their contents to the `Db`. Then the
 //! algorithm repeats, until all paths have either been resolved or marked unresolvable.
+
+// TODO remove
+#![allow(dead_code)]
+
 #[macro_use]
 extern crate quick_error;
 
@@ -45,8 +49,6 @@ z!();
 use q::t;
 */
 
-use tendon_api::items::{MacroItem, ModuleItem, SymbolItem, TypeItem};
-
 #[cfg(test)]
 /// Helper macro to make working with match trees easier in tests.
 macro_rules! assert_match {
@@ -68,47 +70,3 @@ pub mod macro_interp;
 pub mod namespace;
 pub mod resolver;
 pub mod tools;
-
-/// Fast single-threaded maps.
-pub type Map<K, V> = hashbrown::HashMap<K, V, fxhash::FxBuildHasher>;
-/// Fast single-threaded sets.
-pub type Set<K> = hashbrown::HashSet<K, fxhash::FxBuildHasher>;
-
-/// A database of all known paths and their contents.
-pub struct Db {
-    pub types: namespace::Namespace<TypeItem>,
-    pub symbols: namespace::Namespace<SymbolItem>,
-    pub macros: namespace::Namespace<MacroItem>,
-    /// `mod` items, mostly just store metadata.
-    pub modules: namespace::Namespace<ModuleItem>,
-}
-
-impl Db {
-    /// Create a new database.
-    pub fn new() -> Db {
-        Db {
-            types: namespace::Namespace::new(),
-            symbols: namespace::Namespace::new(),
-            macros: namespace::Namespace::new(),
-            modules: namespace::Namespace::new(),
-        }
-    }
-}
-
-quick_error! {
-    #[derive(Debug)]
-    pub enum Error {
-        Walk(err: walker::WalkError) {
-            from()
-            cause(err)
-            description("walk error")
-            display("{}", err)
-        }
-        Resolve(err: resolver::ResolveError) {
-            from()
-            cause(err)
-            description("resolve error")
-            display("{}", err)
-        }
-    }
-}

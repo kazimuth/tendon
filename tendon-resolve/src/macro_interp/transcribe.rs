@@ -1,9 +1,9 @@
 use super::{ast, consume::Binding};
-use crate::{Map, Set};
 use proc_macro2 as pm2;
 use quote::{quote, ToTokens};
 use std::mem;
 use syn::spanned::Spanned;
+use tendon_api::{Map, Set};
 use tracing::warn;
 
 pub fn transcribe(
