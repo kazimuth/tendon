@@ -29,8 +29,8 @@ use crate::lower::items::lower_enum;
 use crate::lower::items::lower_function_item;
 use crate::lower::items::lower_struct;
 use crate::lower::macros::lower_macro_rules;
-//use crate::lower::{imports::lower_use, modules::lower_module};
 use crate::lower::LowerError;
+use crate::lower::{imports::lower_use, modules::lower_module};
 use crate::{Db, Map};
 
 use textual_scope::TextualScope;
@@ -150,24 +150,126 @@ fn walk_crate(crate_data: &mut CrateData, db: &Db) -> Result<(), WalkError> {
 /// TODO: we should collate them somehow and report failure stats to the user.
 fn walk_items(phase: &mut WalkParseExpandPhase, loc: &LocationMetadata, items: &[syn::Item]) {
     for item in items {
-        if let Err(e) = insert_into_db(&phase.db, loc, &item) {
-            unimplemented!()
+        let err = handle_relevant_item(phase, loc, item);
+        if let Err(WalkError::PhaseIrrelevant) = err {
+            let err = insert_into_db(&phase.db, loc, &item);
+            if let Err(WalkError::Lower(LowerError::TypePositionMacro)) = err {
+            } else if let Err(WalkError::NonPub) = err {
+                // TODO collate
+            } else if let Err(err) = err {
+                let span = Span::new(
+                    loc.macro_invocation.clone(),
+                    loc.source_file.clone(),
+                    item.span(),
+                );
+                warn(err, &span);
+            }
         }
     }
 }
 
-/*
-syn::Item::Use(use_) => {
-// note: modifies ctx directly!
-lower_use(ctx, use_);
+// handle items relevant to this phase: `use` statements, extern crate statements, and macros.
+fn handle_relevant_item(
+    phase: &mut WalkParseExpandPhase,
+    loc: &LocationMetadata,
+    item: &syn::Item,
+) -> Result<(), WalkError> {
+    let span = Span::new(
+        loc.macro_invocation.clone(),
+        loc.source_file.clone(),
+        item.span(),
+    );
+
+    match item {
+        syn::Item::ExternCrate(extern_crate) => {
+            if loc.module_path.path.is_empty() {
+                // crate root `extern crate`s have special semantics
+                // and have already been handled in walk_crate
+                return Ok(());
+            }
+            let metadata = lower_metadata(
+                loc,
+                &extern_crate.vis,
+                &extern_crate.attrs,
+                extern_crate.span(),
+            )?;
+
+            let ident = Ident::from(&extern_crate.ident);
+            let crate_ = loc
+                .crate_data
+                .deps
+                .get(&ident)
+                .ok_or_else(|| WalkError::ExternCrateNotFound(ident.clone()))?;
+
+            let scope = &mut phase
+                .unexpanded_modules
+                .get_mut(&loc.module_path)
+                .expect("nonexistent module??")
+                .scope;
+
+            let imports = match metadata.visibility {
+                Visibility::Pub => &mut scope.pub_imports,
+                Visibility::NonPub => &mut scope.imports,
+            };
+
+            let no_path: &[&str] = &[];
+            phase
+                .unexpanded_modules
+                .get_mut(&loc.module_path)
+                .expect("nonexistent module??")
+                .scope
+                .imports
+                .insert(ident, AbsolutePath::new(crate_.clone(), no_path).into());
+        }
+        syn::Item::Use(use_) => {
+            let scope = &mut phase
+                .unexpanded_modules
+                .get_mut(&loc.module_path)
+                .expect("nonexistent module??")
+                .scope;
+            lower_use(scope, use_);
+        }
+        syn::Item::Macro(macro_) => {
+            let target = UnresolvedPath::from(&macro_.mac.path);
+            if let Some(ident) = target.get_ident() {
+                if ident == &*MACRO_RULES {
+                    let def = lower_macro_rules(&loc, &macro_)?;
+                    trace!("found macro {}", def.name);
+                    if def.macro_export {
+                        let path =
+                            AbsolutePath::new(loc.crate_data.crate_.clone(), &[def.name.clone()]);
+                        phase
+                            .db
+                            .macros
+                            .insert(path, MacroItem::Declarative(def.clone()))?;
+                    }
+                    // FIXME should this be in `else` or always happen?
+                    let unexpanded_module = phase
+                        .unexpanded_modules
+                        .get_mut(&loc.module_path)
+                        .expect("nonexistent module??");
+                    unexpanded_module.textual_scope =
+                        unexpanded_module.textual_scope.append_scope(Some(def));
+                    return Ok(());
+                }
+            }
+
+            let unexpanded_module = phase
+                .unexpanded_modules
+                .get_mut(&loc.module_path)
+                .expect("nonexistent module??");
+
+            // not a macro_rules: save it for later
+            unexpanded_module.unexpanded_items.push((
+                span,
+                unexpanded_module.textual_scope.append_scope(None),
+                UnexpandedItem::UnresolvedMacroInvocation(Tokens::from(macro_)),
+            ));
+        }
+        _ => return Err(WalkError::PhaseIrrelevant),
+    }
+    Ok(())
 }
-syn::Item::Macro(macro_rules_) => {
-ctx.unexpanded.insert(UnexpandedItem::MacroInvocation(
-span,
-Tokens::from(macro_rules_),
-));
-}
-*/
 
 /// Walk an individual item.
 /// If it's successfully shuffled into the db, return `Ok(())`. Otherwise, let
@@ -234,35 +336,6 @@ fn insert_into_db(db: &Db, loc: &LocationMetadata, item: &syn::Item) -> Result<(
         syn::Item::Impl(_impl_) => skip("impl", loc.module_path.clone()),
         syn::Item::ForeignMod(_foreign_mod) => skip("foreign_mod", loc.module_path.clone()),
         syn::Item::Verbatim(_verbatim_) => skip("verbatim", loc.module_path.clone()),
-        syn::Item::ExternCrate(extern_crate) => {
-            skip("extern_crate", loc.module_path.clone());
-            /*
-            if loc.module_path.path.is_empty() {
-                // crate root `extern crate`s have special semantics
-                // and have already been handled in walk_crate
-                return Ok(());
-            }
-            let metadata = lower_metadata(
-                loc,
-                &extern_crate.vis,
-                &extern_crate.attrs,
-                extern_crate.span(),
-            )?;
-
-            let ident = Ident::from(&extern_crate.ident);
-            let crate_ = loc
-                .crate_data
-                .deps
-                .get(&ident)
-                .ok_or_else(|| WalkError::ExternCrateNotFound(ident.clone()))?;
-            let imports = match metadata.visibility {
-                Visibility::Pub => &mut ctx.scope.pub_imports,
-                Visibility::NonPub => &mut ctx.scope.imports,
-            };
-            let no_path: &[&str] = &[];
-            imports.insert(ident, AbsolutePath::new(crate_.clone(), no_path).into());
-            */
-        }
         _ => (), // do nothing
     }
     Ok(())
@@ -300,7 +373,11 @@ struct UnexpandedModule {
     /// Imports to this module
     scope: ModuleScope,
 
-    /// Items that we have not yet succeeded in expanding.
+    /// Textual scope at the end of the module
+    textual_scope: TextualScope,
+
+    /// Items that we have not yet succeeded in expanding, along with their spans and textual
+    /// scopes.
     unexpanded_items: Vec<(Span, TextualScope, UnexpandedItem)>,
 }
 
@@ -329,30 +406,28 @@ pub(crate) struct ModuleScope {
     /// `use x::y::z::*` is stored as `x::y::z` pre-resolution,
     /// and as an AbsolutePath post-resolution.
     /// Includes the prelude, if any.
-    glob_imports: Vec<Path>,
+    pub(crate) glob_imports: Vec<Path>,
 
     /// This module's non-glob imports.
     /// Maps the imported-as ident to a path,
     /// i.e. `use x::Y;` is stored as `Y => x::Y`,
     /// `use x::z as w` is stored as `w => x::z`
-    imports: Map<Ident, Path>,
+    pub(crate) imports: Map<Ident, Path>,
 
     /// This module's `pub` glob imports.
     /// `use x::y::z::*` is stored as `x::y::z` pre-resolution,
     /// and as an AbsolutePath post-resolution.
     /// Includes the prelude, if any.
-    pub_glob_imports: Vec<Path>,
+    pub(crate) pub_glob_imports: Vec<Path>,
 
     /// This module's non-glob `pub` imports.
     /// Maps the imported-as ident to a path,
     /// i.e. `use x::Y;` is stored as `Y => x::Y`,
     /// `use x::z as w` is stored as `w => x::z`
-    pub_imports: Map<Ident, Path>,
+    pub(crate) pub_imports: Map<Ident, Path>,
 }
 
 /*
-
-
 /// A module with macros unexpanded.
 /// We throw all macro-related stuff here when we're walking freshly-parsed modules.
 /// It's not possible to eagerly macro_interp macros because they rely on name resolution to work, and we
@@ -556,9 +631,6 @@ quick_error! {
         AlreadyDefined(namespace: &'static str, path: AbsolutePath) {
             display("path {:?} already defined in {} namespace", path, namespace)
         }
-        NonPub {
-            display("skipping non-item (will never be accessible)")
-        }
         Lower(err: LowerError) {
             from()
             cause(err)
@@ -582,6 +654,12 @@ quick_error! {
         }
         ExternCrateNotFound(ident: Ident) {
             display("can't find extern crate: {}", ident)
+        }
+        PhaseIrrelevant {
+            display("item not relevant to this phase")
+        }
+        NonPub {
+            display("skipping non-item (will never be accessible)")
         }
     }
 }

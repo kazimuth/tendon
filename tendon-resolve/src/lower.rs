@@ -6,14 +6,13 @@
 use std::fmt;
 use tendon_api::tokens::Tokens;
 
-pub mod attributes;
-pub mod generics;
-pub mod items;
-pub mod macros;
-pub mod modules;
-pub mod types;
-
-//pub mod imports;
+pub(crate) mod attributes;
+pub(crate) mod generics;
+pub(crate) mod imports;
+pub(crate) mod items;
+pub(crate) mod macros;
+pub(crate) mod modules;
+pub(crate) mod types;
 
 quick_error! {
     pub enum LowerError {
