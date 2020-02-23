@@ -8,8 +8,8 @@ use quote::ToTokens;
 use std::fmt::{Display, Write};
 use syn::{self, ext::IdentExt, parse::ParseStream};
 
-use crate::expand::ast;
-use crate::expand::ast::RepeatKind;
+use crate::macro_interp::ast;
+use crate::macro_interp::ast::RepeatKind;
 use crate::Map;
 
 /// A fragment binding.

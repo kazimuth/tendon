@@ -97,8 +97,7 @@ pub struct CrateData {
     pub rust_edition: RustEdition,
 }
 impl CrateData {
-    #[cfg(test)]
-    pub fn fake() -> Self {
+    pub(crate) fn fake() -> Self {
         CrateData {
             crate_: AbsoluteCrate::new("fake_crate", "0.0.0"),
             deps: Default::default(),

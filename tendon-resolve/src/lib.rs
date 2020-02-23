@@ -63,15 +63,15 @@ macro_rules! assert_match {
 
 #[macro_use]
 pub mod walker;
-pub mod expand;
 pub mod lower;
+pub mod macro_interp;
 pub mod namespace;
 pub mod resolver;
 pub mod tools;
 
-/// Fast maps.
+/// Fast single-threaded maps.
 pub type Map<K, V> = hashbrown::HashMap<K, V, fxhash::FxBuildHasher>;
-/// Fast sets.
+/// Fast single-threaded sets.
 pub type Set<K> = hashbrown::HashSet<K, fxhash::FxBuildHasher>;
 
 /// A database of all known paths and their contents.

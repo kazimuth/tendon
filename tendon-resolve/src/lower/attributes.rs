@@ -291,19 +291,15 @@ pub fn extract_symbol_metadata(metadata: &mut Metadata) -> Result<SymbolMetadata
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::walker::TEST_LOCATION_METADATA;
     use quote::quote;
     use syn::{parse_quote, spanned::Spanned};
     use tendon_api::attributes::Deprecation;
 
     #[test]
     fn metadata_lowering() {
-        let loc = LocationMetadata {
-            source_file: "fake_file.rs".into(),
-            macro_invocation: None,
-        };
-
         let all = lower_metadata(
-            &loc,
+            &TEST_LOCATION_METADATA,
             &parse_quote!(pub),
             &[
                 parse_quote!(
@@ -355,7 +351,7 @@ mod tests {
 
         // shouldn't panic
         let funky = lower_metadata(
-            &loc,
+            &TEST_LOCATION_METADATA,
             &parse_quote!(pub(crate)),
             &[
                 parse_quote!(#[docs(bees = "superior")]),

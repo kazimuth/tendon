@@ -37,6 +37,19 @@ impl Metadata {
             .position(|att| att.path() == path);
         index.map(|index| self.extra_attributes.remove(index))
     }
+
+    pub fn fake() -> Metadata {
+        // create a fake metadata. to be used only in testing.
+
+        Metadata {
+            visibility: Visibility::Pub,
+            docs: None,
+            must_use: None,
+            deprecated: None,
+            extra_attributes: vec![],
+            span: Span::fake(),
+        }
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -85,6 +98,17 @@ impl Span {
             start_column: span.start().column as u32,
             end_line: span.end().line as u32,
             end_column: span.end().column as u32,
+        }
+    }
+
+    pub fn fake() -> Span {
+        Span {
+            source_file: "fake_file.rs".into(),
+            macro_invocation: None,
+            start_line: 0,
+            start_column: 0,
+            end_line: 0,
+            end_column: 0,
         }
     }
 }
