@@ -1,4 +1,5 @@
-//! Walk through a module, feeding data to syn and then a `resolver::Db`.
+//! Walk through a module, feeding data to syn and then a `resolver::Db`. This is the core resolution
+//! algorithm.
 //!
 //! This code is serial but multiple crates can be read into the same Db at once.
 //!
@@ -6,6 +7,79 @@
 //! https://rust-lang.github.io/rustc-guide/macro-expansion.html
 //! https://rust-lang.github.io/rustc-guide/name-resolution.html
 //! https://doc.rust-lang.org/nightly/edition-guide/rust-2018/macros/macro-changes.html
+//! https://github.com/rust-lang/rfcs/blob/master/text/0453-macro-reform.md
+//! https://github.com/rust-lang/rfcs/blob/master/text/1560-name-resolution.md
+//! https://github.com/rust-lang/rfcs/blob/master/text/2126-path-clarity.md
+//! https://internals.rust-lang.org/t/relative-paths-and-rust-2018-use-statements/7875
+//! https://internals.rust-lang.org/t/up-to-date-documentation-on-macro-resolution-order/11877/5
+//!
+//! We roughly follow the pseudocode from RFC 1560. There's no guarantee that's actually correct
+//! though.
+//!
+//! ```no_build
+//! // Assumes parsing is already done, but the two things could be done in the same
+//! // pass.
+//! fn parse_expand_and_resolve() {
+//!     loop until fixed point {
+//!         process_names()
+//!             loop until fixed point {
+//!             process_work_list()
+//!         }
+//!         expand_macros()
+//!     }
+//!
+//!     for item in work_list {
+//!         report_error()
+//!     } else {
+//!         success!()
+//!     }
+//! }
+//!
+//! fn process_names() {
+//!     // 'module' includes `mod`s, top level of the crate, function bodies
+//!     for each unseen item in any module {
+//!         if item is a definition {
+//!             // struct, trait, type, local variable def, etc.
+//!             bindings.insert(item.name, module, item)
+//!             populate_back_links(module, item)
+//!         } else {
+//!             try_to_resolve_import(module, item)
+//!         }
+//!         record_macro_uses()
+//!     }
+//! }
+//! fn try_to_resolve_import(module, item) {
+//!     if item is an explicit use {
+//!         // item is use a::b::c as d;
+//!         match try_to_resolve(item) {
+//!             Ok(r) => {
+//!                 add(bindings.insert(d, module, r, Priority::Explicit))
+//!                 populate_back_links(module, item)
+//!             }
+//!             Err() => work_list.push(module, item)
+//!         }
+//!     } else if item is a glob {
+//!         // use a::b::*;
+//!         match try_to_resolve(a::b) {
+//!             Ok(n) => {
+//!                 for binding in n {
+//!                     bindings.insert_if_no_higher_priority_binding(binding.name, module, binding, Priority::Glob)
+//!                     populate_back_links(module, binding)
+//!                 }
+//!                 add_back_link(n to module)
+//!                 work_list.remove()
+//!             }
+//!             Err(_) => work_list.push(module, item)
+//!         }
+//!     }
+//! }
+//! fn process_work_list() {
+//!     for each (module, item) in work_list {
+//!         work_list.remove()
+//!         try_to_resolve_import(module, item)
+//!     }
+//! }
+//! ```
 
 use lazy_static::lazy_static;
 use std::fs::File;
@@ -23,6 +97,7 @@ use tracing::{trace, warn};
 use crate::lower::LowerError;
 
 use textual_scope::TextualScope;
+
 mod textual_scope;
 
 pub(crate) struct LocationMetadata<'a> {

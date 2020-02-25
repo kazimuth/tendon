@@ -3,10 +3,11 @@ use std::path::PathBuf;
 use crate::idents::Ident;
 use crate::paths::AbsoluteCrate;
 use crate::Map;
+use serde::{Deserialize, Serialize};
 
 /// Metadata for a crate instantiation. There's one of these for every separate semver version for
 /// every crate in the dependency tree.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CrateData {
     /// Which crate this is.
     pub crate_: AbsoluteCrate,
@@ -39,7 +40,7 @@ impl CrateData {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum RustEdition {
     Rust2015,
     Rust2018,

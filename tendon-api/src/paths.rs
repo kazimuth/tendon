@@ -145,7 +145,7 @@ where
 
 /// A path resolved within an absolute crate.
 /// TODO: this representation could be optimized.
-#[derive(Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
 pub struct AbsolutePath {
     /// The containing crate.
     pub crate_: AbsoluteCrate,

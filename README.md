@@ -5,5 +5,3 @@ this crate is a work-in-progress and currently only contains README files
 
 instantly generate safe bindings for any rust code, with minimal user intervention required
 
-[random design notes](./DESIGN.md)
-
