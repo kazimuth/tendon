@@ -98,51 +98,6 @@ impl Into<Path> for UnresolvedPath {
     }
 }
 
-/// A path within a crate. Not a member of the `Path` enum.
-/// TODO: this representation could be optimized.
-#[derive(Hash, PartialEq, Eq, Clone, Serialize, Deserialize, PartialOrd, Ord)]
-pub struct RelativePath(pub Vec<Ident>);
-
-impl RelativePath {
-    /// The relative path to the root of a crate
-    pub fn root() -> Self {
-        RelativePath(vec![])
-    }
-
-    /// Add another component to the relative path.
-    pub fn join(mut self, elem: impl Into<Ident>) -> Self {
-        let elem = elem.into();
-        assert!(!elem.contains("::"));
-        self.0.push(elem);
-        self
-    }
-
-    /// Clone a referenced relative path and add a component.
-    pub fn clone_join(&self, elem: impl Into<Ident>) -> Self {
-        self.clone().join(elem)
-    }
-
-    /// Get the parent of a relative path.
-    pub fn parent(&self) -> Option<Self> {
-        let mut result = self.clone();
-        if let Some(_) = result.0.pop() {
-            Some(result)
-        } else {
-            None
-        }
-    }
-}
-
-impl<I, T> From<T> for RelativePath
-where
-    T: IntoIterator<Item = I>,
-    I: Into<Ident>,
-{
-    fn from(t: T) -> Self {
-        RelativePath(t.into_iter().map(Into::into).collect())
-    }
-}
-
 /// A path resolved within an absolute crate.
 /// TODO: this representation could be optimized.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
@@ -151,7 +106,7 @@ pub struct AbsolutePath {
     pub crate_: AbsoluteCrate,
 
     /// The path within the crate.
-    pub path: RelativePath,
+    pub path: Vec<Ident>,
 }
 impl AbsolutePath {
     // Create a new AbsolutePath
@@ -162,7 +117,38 @@ impl AbsolutePath {
     {
         AbsolutePath {
             crate_,
-            path: RelativePath::from(path),
+            path: path.into_iter().map(Into::into).collect()
+        }
+    }
+
+    /// Create a path at the root of a crate
+    pub fn root(crate_: AbsoluteCrate) -> Self {
+        AbsolutePath {
+            crate_,
+            path: vec![]
+        }
+    }
+
+    /// Add another component to the path.
+    pub fn join(mut self, elem: impl Into<Ident>) -> Self {
+        let elem = elem.into();
+        assert!(!elem.contains("::"));
+        self.path.push(elem);
+        self
+    }
+
+    /// Clone a referenced path and add a component.
+    pub fn clone_join(&self, elem: impl Into<Ident>) -> Self {
+        self.clone().join(elem)
+    }
+
+    /// Get the parent of a relative path.
+    pub fn parent(&self) -> Option<Self> {
+        let mut result = self.clone();
+        if let Some(_) = result.path.pop() {
+            Some(result)
+        } else {
+            None
         }
     }
 }
@@ -188,6 +174,7 @@ impl Into<Path> for GenericPath {
 /// Items are identified by their name concatenated to the module they were introduced in.
 /// An item may have many bindings but it will only ever have one `Identity`.
 /// TODO: intern?
+/// TODO: maybe this should distinguish between namespaces...
 #[derive(Hash, PartialEq, Eq, Clone, Serialize, Deserialize, PartialOrd, Ord, Debug)]
 pub struct Identity(pub AbsolutePath);
 
@@ -218,16 +205,6 @@ impl fmt::Debug for AbsoluteCrate {
         f.write_str("[")?;
         f.write_str(&self.version)?;
         f.write_str("]")
-    }
-}
-
-impl fmt::Debug for RelativePath {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for seg in &self.0 {
-            f.write_str("::")?;
-            f.write_str(&seg)?;
-        }
-        Ok(())
     }
 }
 

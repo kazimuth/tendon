@@ -104,9 +104,9 @@ use std::path::{Path as FsPath, PathBuf};
 use std::sync::Arc;
 use tendon_api::attributes::Span;
 use tendon_api::crates::CrateData;
-use tendon_api::database::{Db, NamespaceLookup};
+use tendon_api::database::{Db, NamespaceLookup, CrateDb};
 use tendon_api::idents::Ident;
-use tendon_api::paths::{AbsoluteCrate, AbsolutePath, Path, RelativePath, UnresolvedPath};
+use tendon_api::paths::{AbsoluteCrate, AbsolutePath, Path, UnresolvedPath, Identity};
 use tendon_api::tokens::Tokens;
 use tendon_api::Map;
 use tracing::{trace, warn};
@@ -130,6 +130,8 @@ lazy_static! {
     static ref PATH: Path = Path::fake("path");
     static ref MACRO_RULES: Ident = "macro_rules".into();
     static ref CRATE: Ident = "crate".into();
+    static ref SELF: Ident = "self".into();
+    static ref SUPER: Ident = "super".into();
     pub(crate) static ref TEST_CRATE_DATA: CrateData = CrateData::fake();
     pub(crate) static ref TEST_LOCATION_METADATA: LocationMetadata<'static> = LocationMetadata {
         source_file: "fake_file.rs".into(),
@@ -137,7 +139,7 @@ lazy_static! {
         crate_data: &*TEST_CRATE_DATA,
         module_path: AbsolutePath {
             crate_: AbsoluteCrate::new("fake_crate", "0.0.0"),
-            path: RelativePath(vec![])
+            path: vec![]
         }
     };
 }
@@ -191,13 +193,19 @@ quick_error! {
         Impossible {
             display("some invariant was violated (but we're still going, dammit...)")
         }
+        NotYetResolved {
+            display("not yet resolved")
+        }
     }
 }
 
+// WIP todo
 /*
-// TODO WIP
-fn try_to_resolve<I: NamespaceLookup>(db: &Db, loc: &LocationMetadata, path: &UnresolvedPath)
-    -> Result<AbsolutePath, WalkError> {
+fn try_to_resolve<I: NamespaceLookup>(db: &Db,
+                                      current: &CrateDb,
+                                      loc: &LocationMetadata,
+                                      path: &UnresolvedPath)
+    -> Result<Identity, WalkError> {
     if path.path.len() == 0 {
         return Err(WalkError::Impossible);
     }
@@ -206,14 +214,14 @@ fn try_to_resolve<I: NamespaceLookup>(db: &Db, loc: &LocationMetadata, path: &Un
         let abs =
             loc.crate_data.deps.get(&path.path[0])
             .ok_or(WalkError::Impossible)?;
-
         let path = AbsolutePath::new(abs.clone(), &path.path[1..]);
-
-        if db.inspect_binding::<I>(path, |b| b.is_some()) {
-            return
-        }
+        db.inspect_binding::<I, _, _>(&path, |b| {
+            b.map(|b| b.identity.clone()).ok_or(WalkError::Impossible)
+        })
     } else if path.path[0] == CRATE {
         // crate::
+
+        current.get_item()
 
     } else if path.path[0] == SUPER {
         //
@@ -223,8 +231,6 @@ fn try_to_resolve<I: NamespaceLookup>(db: &Db, loc: &LocationMetadata, path: &Un
         // the hard (and common) case.
 
     }
-
-    unimplemented!()
 }
 */
 

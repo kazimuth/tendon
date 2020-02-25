@@ -10,7 +10,7 @@
 use crate::attributes::{HasMetadata, Visibility};
 use crate::crates::CrateData;
 use crate::items::{MacroItem, ModuleItem, SymbolItem, TypeItem};
-use crate::paths::{AbsoluteCrate, AbsolutePath, RelativePath, Identity};
+use crate::paths::{AbsoluteCrate, AbsolutePath, Identity};
 use crate::Map;
 use dashmap::DashMap;
 use hashbrown::hash_map::Entry;
@@ -49,10 +49,10 @@ impl Db {
     pub fn accessible_items<I: NamespaceLookup>(
         &self,
         crate_: &AbsoluteCrate,
-    ) -> Vec<(RelativePath, Identity)> {
+    ) -> Vec<(AbsolutePath, Identity)> {
         let crate_db = self.crates.get(crate_).expect("no such crate");
         let namespace = I::get_crate_namespace(&crate_db);
-        let mut result: Map<&Identity, &RelativePath> = Map::default();
+        let mut result: Map<&Identity, &AbsolutePath> = Map::default();
 
         for (path, binding) in &namespace.bindings {
             let is_containing_module_public = path
@@ -68,9 +68,9 @@ impl Db {
                         let should_replace = {
                             let cur_access_path = o.get_mut();
 
-                            let new_shorter = path.0.len() < cur_access_path.0.len();
+                            let new_shorter = path.path.len() < cur_access_path.path.len();
                             let new_same_and_lexicographically_earlier =
-                                path.0.len() == cur_access_path.0.len() && path < cur_access_path;
+                                path.path.len() == cur_access_path.path.len() && path < cur_access_path;
 
                             new_shorter || new_same_and_lexicographically_earlier
                         };
@@ -83,7 +83,7 @@ impl Db {
             }
         }
 
-        let mut result: Vec<(RelativePath, Identity)> = result
+        let mut result: Vec<(AbsolutePath, Identity)> = result
             .into_iter()
             .map(|(abs, rel)| (rel.clone(), abs.clone()))
             .collect();
@@ -100,7 +100,7 @@ impl Db {
         let crate_ = self.crates.get(&path.0.crate_);
         let item = crate_
             .as_ref()
-            .and_then(|crate_db| crate_db.get_item(&path.0.path));
+            .and_then(|crate_db| crate_db.get_item(&path));
 
         op(item)
     }
@@ -114,7 +114,7 @@ impl Db {
         let crate_ = self.crates.get(&path.crate_);
         let item = crate_
             .as_ref()
-            .and_then(|crate_db| crate_db.get_binding::<I>(&path.path));
+            .and_then(|crate_db| crate_db.get_binding::<I>(&path));
 
         op(item)
     }
@@ -151,23 +151,31 @@ impl CrateDb {
         }
     }
 
-    pub fn get_item<I: NamespaceLookup>(&self, path_: &RelativePath) -> Option<&I> {
-        I::get_crate_namespace(self).items.get(path_)
+    pub fn get_item<I: NamespaceLookup>(&self, id: &Identity) -> Option<&I> {
+        self.assert_in_crate(&id.0.crate_);
+
+        I::get_crate_namespace(self).items.get(id)
     }
 
-    pub fn get_item_mut<I: NamespaceLookup>(&mut self, path_: &RelativePath) -> Option<&mut I> {
-        I::get_crate_namespace_mut(self).items.get_mut(path_)
+    pub fn get_item_mut<I: NamespaceLookup>(&mut self, id: &Identity) -> Option<&mut I> {
+        self.assert_in_crate(&id.0.crate_);
+
+        I::get_crate_namespace_mut(self).items.get_mut(id)
     }
 
-    pub fn get_binding<I: NamespaceLookup>(&self, path: &RelativePath) -> Option<&Binding> {
+    pub fn get_binding<I: NamespaceLookup>(&self, path: &AbsolutePath) -> Option<&Binding> {
+        self.assert_in_crate(&path.crate_);
+
         I::get_crate_namespace(self).bindings.get(path)
     }
 
     /// Check if a module is externally visible.
-    pub fn is_module_externally_visible(&self, mod_: &RelativePath) -> bool {
-        let mut cur_check = RelativePath::root();
-        for entry in &mod_.0 {
-            cur_check.0.push(entry.clone()); // don't check root
+    pub fn is_module_externally_visible(&self, mod_: &AbsolutePath) -> bool {
+        self.assert_in_crate(&mod_.crate_);
+
+        let mut cur_check = AbsolutePath::root(mod_.crate_.clone());
+        for entry in &mod_.path {
+            cur_check.path.push(entry.clone()); // don't check root
 
             if self
                 .get_binding::<ModuleItem>(&cur_check)
@@ -179,6 +187,10 @@ impl CrateDb {
             }
         }
         true
+    }
+
+    fn assert_in_crate(&self, crate_: &AbsoluteCrate) {
+        debug_assert_eq!(&self.crate_data.crate_, crate_);
     }
 }
 
@@ -192,7 +204,7 @@ pub struct CrateNamespace<I> {
 
     /// True values, stored by the paths where they're defined. Note that this
     /// isn't used for binding lookups, just for storing actual values.
-    items: Map<RelativePath, I>,
+    items: Map<Identity, I>,
 
     /// Bindings.
     ///
@@ -200,7 +212,7 @@ pub struct CrateNamespace<I> {
     ///
     /// Note also that these are collapsed: if you have `a reexports b reexports c`, this should map `a`
     /// to `c`, skipping `b`. This property is easy enough to ensure by construction.
-    bindings: Map<RelativePath, Binding>,
+    bindings: Map<AbsolutePath, Binding>,
 }
 
 impl<I: NamespaceLookup> CrateNamespace<I> {
@@ -214,22 +226,21 @@ impl<I: NamespaceLookup> CrateNamespace<I> {
     }
 
     /// Insert an item, and add a binding for that item in the relevant module.
-    pub fn add_item(&mut self, path: RelativePath, item: I) -> Result<(), DatabaseError> {
+    pub fn add_item(&mut self, id: Identity, item: I) -> Result<(), DatabaseError> {
         let visibility = item.metadata().visibility;
 
-        match self.items.entry(path.clone()) {
+        match self.items.entry(id.clone()) {
             Entry::Occupied(_) => return Err(DatabaseError::ItemAlreadyPresent),
             Entry::Vacant(v) => v.insert(item),
         };
-        let identity = Identity(AbsolutePath::new(self.crate_.clone(), &path.0));
 
-        self.add_binding(path, identity, visibility, Priority::Explicit)
+        self.add_binding(id.0.clone(), id, visibility, Priority::Explicit)
     }
 
     /// Add a binding. Doesn't have to target something in this crate.
     pub fn add_binding(
         &mut self,
-        path: RelativePath,
+        path: AbsolutePath,
         identity: Identity,
         visibility: Visibility,
         priority: Priority,
