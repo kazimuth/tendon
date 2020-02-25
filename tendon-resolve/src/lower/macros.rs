@@ -2,7 +2,7 @@ use super::LowerError;
 use crate::lower::attributes::lower_metadata;
 use crate::walker::LocationMetadata;
 use syn::spanned::Spanned;
-use tendon_api::{idents::Ident, items::DeclarativeMacroItem, paths::Path, tokens::Tokens};
+use tendon_api::{paths::Ident, items::DeclarativeMacroItem, paths::Path, tokens::Tokens};
 
 lazy_static::lazy_static! {
     pub static ref MACRO_RULES: Path = Path::fake("macro_rules");

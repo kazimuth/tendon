@@ -1,7 +1,7 @@
 use super::{Meta, MetaInner};
 use crate::lower::LowerError;
 use crate::walker::WalkModuleCtx;
-use tendon_api::idents::Ident;
+use tendon_api::paths::Ident;
 use tracing::warn;
 
 lazy_static::lazy_static! {

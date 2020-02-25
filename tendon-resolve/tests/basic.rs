@@ -4,7 +4,7 @@ use rayon::prelude::*;
 use std::error::Error;
 use std::path::Path;
 use std::time::Instant;
-use tendon_api::paths::{AbsoluteCrate, AbsolutePath};
+use tendon_api::paths::{CrateId, AbsolutePath};
 use tendon_resolve as resolve;
 
 /*

@@ -1,9 +1,20 @@
 //! Data representing types.
-use crate::generics::TypeBounds;
-use crate::{expressions::ConstExpr, generics::Lifetime, idents::Ident, paths::Path};
-use serde::{Deserialize, Serialize};
-use std::fmt;
+use crate::identities::{CrateId, Identity};
 
+lazy_static! {
+    pub static ref BUILTINS: CrateId = CrateId::new("@builtin", "0.0.0");
+    pub static ref ARRAY: Identity = Identity::new(BUILTINS.clone(), &["ARRAY"]);
+    pub static ref SLICE: Identity = Identity::new(BUILTINS.clone(), &["SLICE"]);
+    pub static ref REFERENCE: Identity = Identity::new(BUILTINS.clone(), &["REFERENCE"]);
+    pub static ref POINTER: Identity = Identity::new(BUILTINS.clone(), &["POINTER"]);
+    pub static ref TUPLE: Identity = Identity::new(BUILTINS.clone(), &["TUPLE"]);
+    pub static ref QSELF: Identity = Identity::new(BUILTINS.clone(), &["QSELF"]);
+    pub static ref BARE_FN: Identity = Identity::new(BUILTINS.clone(), &["BARE_FN"]);
+    pub static ref IMPL_TRAIT: Identity = Identity::new(BUILTINS.clone(), &["IMPL_TRAIT"]);
+    pub static ref DYN_TRAIT: Identity = Identity::new(BUILTINS.clone(), &["DYN_TRAIT"]);
+}
+
+/*
 /// A reference to a type.
 ///
 /// This is distinct from the declaration of the referenced type. For instance, if you had:
@@ -226,16 +237,6 @@ pub struct TraitObjectType {
 }
 debug!(TraitObjectType, "(dyn {:?})", bounds);
 
-/// A reference to a trait (not a declaration).
-#[derive(Clone, Serialize, Deserialize)]
-pub struct Trait {
-    /// The path to the trait.
-    pub path: Path,
-    /// The trait's generic arguments, if present.
-    pub params: GenericParams,
-    /// If the trait is prefixed with `?`
-    pub is_maybe: bool,
-}
 impl fmt::Debug for Trait {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         if self.is_maybe {
@@ -249,27 +250,6 @@ impl fmt::Debug for Trait {
 /// https://doc.rust-lang.org/reference/paths.html#paths-in-expressions
 /// Doesn't include constraints. Those are defined at the declaration site.
 #[derive(Default, Clone, Serialize, Deserialize)]
-pub struct GenericParams {
-    /// Lifetime parameters to a type.
-    pub lifetimes: Vec<Lifetime>,
-    /// Type arguments to a type.
-    pub types: Vec<Type>,
-    /// Type bindings (e.g. `Output=T`)
-    pub type_bindings: Vec<(Ident, Type)>,
-    /// Const generic bindings.
-    /// https://github.com/rust-lang/rfcs/blob/master/text/2000-const-generics.md
-    /// Note: some of these may be parsed as types unfortunately, need to fix that later
-    /// in the pipeline.
-    pub consts: Vec<ConstExpr>,
-}
-impl GenericParams {
-    pub fn is_empty(&self) -> bool {
-        self.lifetimes.is_empty()
-            && self.types.is_empty()
-            && self.type_bindings.is_empty()
-            && self.consts.is_empty()
-    }
-}
 impl fmt::Debug for GenericParams {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         if self.lifetimes.len() == 0
@@ -413,3 +393,4 @@ mod tests {
                    "(test::Type, *mut [!; 5i32], &'a [!], unsafe fn(<! as FakeTrait>::Wow, ...) -> (dyn 'a + 'b + ?FakeTrait), (impl Bees<'a, B=Honey; 27u8>))");
     }
 }
+*/

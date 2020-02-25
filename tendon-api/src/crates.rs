@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use crate::idents::Ident;
-use crate::paths::AbsoluteCrate;
+use crate::identities::CrateId;
+use crate::paths::Ident;
 use crate::Map;
 use serde::{Deserialize, Serialize};
 
@@ -10,10 +10,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CrateData {
     /// Which crate this is.
-    pub crate_: AbsoluteCrate,
+    pub crate_: CrateId,
     /// The dependencies of this crate (note: renamed according to Cargo.toml, but NOT according to
     /// `extern crate ... as ...;` statements
-    pub deps: Map<Ident, AbsoluteCrate>,
+    pub deps: Map<Ident, CrateId>,
     /// The *activated* features of this crate.
     pub features: Vec<String>,
     /// The path to the crate's `Cargo.toml`.
@@ -29,7 +29,7 @@ pub struct CrateData {
 impl CrateData {
     pub fn fake() -> Self {
         CrateData {
-            crate_: AbsoluteCrate::new("fake_crate", "0.0.0"),
+            crate_: CrateId::new("fake_crate", "0.0.0"),
             deps: Default::default(),
             features: Default::default(),
             manifest_path: "fake_crate/Cargo.toml".into(),

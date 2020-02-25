@@ -1,7 +1,7 @@
 use crate::lower::attributes::lower_visibility;
 use crate::walker::ModuleScope;
 use tendon_api::attributes::Visibility;
-use tendon_api::idents::Ident;
+use tendon_api::paths::Ident;
 use tendon_api::paths::UnresolvedPath;
 
 /// Lower a use tree into a set of globs and imports.

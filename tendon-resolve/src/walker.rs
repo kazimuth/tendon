@@ -104,11 +104,11 @@ use std::path::{Path as FsPath, PathBuf};
 use std::sync::Arc;
 use tendon_api::attributes::Span;
 use tendon_api::crates::CrateData;
-use tendon_api::database::{Db, NamespaceLookup, CrateDb};
-use tendon_api::idents::Ident;
-use tendon_api::paths::{AbsoluteCrate, AbsolutePath, Path, UnresolvedPath, Identity};
+use tendon_api::database::{Db, NamespaceLookup, CrateDb, Binding};
+use tendon_api::paths::Ident;
+use tendon_api::paths::{CrateId, AbsolutePath, Path, UnresolvedPath, Identity};
 use tendon_api::tokens::Tokens;
-use tendon_api::Map;
+use tendon_api::{Map, Set};
 use tracing::{trace, warn};
 
 use crate::lower::LowerError;
@@ -131,6 +131,7 @@ lazy_static! {
     static ref MACRO_RULES: Ident = "macro_rules".into();
     static ref CRATE: Ident = "crate".into();
     static ref SELF: Ident = "self".into();
+    static ref SELF_TYPE: Ident = "Self".into();
     static ref SUPER: Ident = "super".into();
     pub(crate) static ref TEST_CRATE_DATA: CrateData = CrateData::fake();
     pub(crate) static ref TEST_LOCATION_METADATA: LocationMetadata<'static> = LocationMetadata {
@@ -196,44 +197,86 @@ quick_error! {
         NotYetResolved {
             display("not yet resolved")
         }
+        CannotResolve {
+            display("path cannot be resolved")
+        }
     }
 }
 
-// WIP todo
 /*
+// TODO refactor output enum
+/// Resolve an item in the current crate or the database of dependencies.
+/// Note that this doesn't cover everything, there's special stuff for macros.
+///
+/// Invariant: every recursive call of this function should reduce the path somehow,
+/// by either stripping off a prefix or a module export.
+///
+/// If this returns `WalkError::NotYetResolved`, that means we haven't found the path yet, and should
+/// keep it on the work list.
+/// If, however, it returns `WalkError::CannotResolve`
+/// that means the path has requested something that doesn't make sense (e.g. a missing item in a
+/// dependent crate), so we'll need to throw its containing item out.
+/// `WalkError::Impossible` is reserved for syntactic violations, maybe emerging after botched
+/// macro transcription.
 fn try_to_resolve<I: NamespaceLookup>(db: &Db,
                                       current: &CrateDb,
-                                      loc: &LocationMetadata,
+                                      in_module: &Identity,
                                       path: &UnresolvedPath)
     -> Result<Identity, WalkError> {
+
+    //fn check_binding(b: Option<&Binding>) -> Result<Identity, WalkError> {
+    //    binding.map(|b| b.identity.clone()).ok_or(WalkError::NotYetResolved)
+    //}
+
     if path.path.len() == 0 {
         return Err(WalkError::Impossible);
     }
     if path.rooted {
         // in rust 2018, :: refers to some other crate
-        let abs =
+        let path = db.inspect_crate(&in_module.0.crate_, |crate_data| crate_data.deps.get(&path.path[1]))
+
+        let dep =
+            db.
             loc.crate_data.deps.get(&path.path[0])
-            .ok_or(WalkError::Impossible)?;
-        let path = AbsolutePath::new(abs.clone(), &path.path[1..]);
-        db.inspect_binding::<I, _, _>(&path, |b| {
-            b.map(|b| b.identity.clone()).ok_or(WalkError::Impossible)
-        })
+            .ok_or(WalkError::CannotResolve)?;
+
+        let dep_root = Identity(crate_.root());
+
+        let path = UnresolvedPath::new(false, &path.path[1..]);
+
+        // REDUCTION: stripping prefix, moving modules
+        try_to_resolve(db, current, &dep_root, &path)
     } else if path.path[0] == CRATE {
+        let dep_crate = if in_module.0.crate_ == current.crate_data.crate_ {
+            current.crate_data.
+            let path = AbsolutePath::new(loc.crate_data.crate_.clone(), &path.path[1..]);
+
+        } else {
+
+        }
+        let path = let path = loc
         // crate::
 
-        current.get_item()
-
+        try_to_resolve(db, current,)
     } else if path.path[0] == SUPER {
-        //
-    } else if path.path[0] == SELF {
+        let mut parent = loc.module_path.path.clone();
+        parent.pop().ok_or(WalkError::Impossible)?;
+        let path = parent.join_seq(&path[1..]);
 
+        check_binding(current.get_binding(&path))
+    } else if path.path[0] == SELF {
+        let mut parent = loc.module_path.path.clone();
+        let path = parent.join_seq(&path[1..]);
+
+        check_binding(current.get_binding(&path))
     } else {
+        let mut
+
         // the hard (and common) case.
 
     }
 }
 */
-
 
 /*
 

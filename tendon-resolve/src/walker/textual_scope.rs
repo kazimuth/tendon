@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
-use tendon_api::idents::Ident;
+use tendon_api::paths::Ident;
 use tendon_api::items::DeclarativeMacroItem;
 
 /// A textual scope -- the old, ordered way macros were resolved.

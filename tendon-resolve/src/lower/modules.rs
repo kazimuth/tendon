@@ -2,7 +2,7 @@ use super::attributes::lower_metadata;
 use super::LowerError;
 use crate::walker::LocationMetadata;
 use syn::spanned::Spanned;
-use tendon_api::idents::Ident;
+use tendon_api::paths::Ident;
 use tendon_api::items::ModuleItem;
 
 /// Lower a module declaration.

@@ -17,9 +17,14 @@
 //! - [Name resolution impl](https://github.com/rust-lang/rust/blob/master/src/librustc_resolve/lib.rs)
 //! - [Paths](https://doc.rust-lang.org/stable/reference/paths.html)
 
+#[allow(unused)]
 #[macro_use]
 extern crate quick_error;
 
+#[macro_use]
+extern crate lazy_static;
+
+#[allow(unused)]
 macro_rules! debug {
     ($name:ty, $fmt:literal $(, $arg:ident)*) => (
         impl std::fmt::Debug for $name {
@@ -41,8 +46,10 @@ pub mod crates;
 pub mod database;
 pub mod expressions;
 pub mod generics;
+pub mod identities;
 pub mod idents;
 pub mod items;
 pub mod paths;
+pub mod scopes;
 pub mod tokens;
 pub mod types;

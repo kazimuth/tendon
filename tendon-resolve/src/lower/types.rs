@@ -3,7 +3,7 @@ use super::{generics::lower_lifetime, LowerError};
 use tendon_api::{
     expressions::ConstExpr,
     generics::TypeBounds,
-    idents::Ident,
+    paths::Ident,
     paths::Path,
     tokens::Tokens,
     types::{

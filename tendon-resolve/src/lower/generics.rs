@@ -5,7 +5,7 @@ use crate::lower::types::lower_type_bounds;
 use tendon_api::{
     expressions::ConstExpr,
     generics::{ConstParameter, Generics, Lifetime, LifetimeBounds, TypeParameter},
-    idents::Ident,
+    paths::Ident,
     paths::Path,
     tokens::Tokens,
     types::Type,

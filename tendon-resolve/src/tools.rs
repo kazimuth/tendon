@@ -6,7 +6,7 @@ use std::io;
 use std::path::{Path as FsPath, PathBuf};
 use std::process::Command;
 use tendon_api::crates::{CrateData, RustEdition};
-use tendon_api::paths::AbsoluteCrate;
+use tendon_api::paths::CrateId;
 use tendon_api::{Map, Set};
 use tracing::{trace, warn};
 
@@ -33,8 +33,8 @@ pub fn check(path: &FsPath) -> io::Result<()> {
 
 /// Get an absolute crate identifier for a particular package.
 /// We strip out all "-"s here.
-pub fn lower_absolute_crate(package: &cargo_metadata::Package) -> AbsoluteCrate {
-    AbsoluteCrate::new(
+pub fn lower_absolute_crate(package: &cargo_metadata::Package) -> CrateId {
+    CrateId::new(
         package.name[..].replace("-", "_"),
         package.version.to_string(),
     )
@@ -78,16 +78,16 @@ pub fn sources_dir(target_dir: &FsPath) -> io::Result<PathBuf> {
 /// Get the sysroot active for some crate.
 /// This is necessary to harvest data from std / core.
 pub fn add_rust_sources(
-    crates: &mut Map<AbsoluteCrate, CrateData>,
+    crates: &mut Map<CrateId, CrateData>,
     target_dir: &FsPath,
 ) -> io::Result<()> {
     trace!("finding libstd + libcore + liballoc");
 
     let sources = sources_dir(target_dir)?;
 
-    let libcore = AbsoluteCrate::new("core", "0.0.0");
-    let liballoc = AbsoluteCrate::new("alloc", "0.0.0");
-    let libstd = AbsoluteCrate::new("std", "0.0.0");
+    let libcore = CrateId::new("core", "0.0.0");
+    let liballoc = CrateId::new("alloc", "0.0.0");
+    let libstd = CrateId::new("std", "0.0.0");
 
     for crate_ in crates.values_mut() {
         crate_.deps.insert("core".into(), libcore.clone());
@@ -145,10 +145,10 @@ pub fn add_rust_sources(
 
 /// Compute the transitive dependencies of the target crate (to avoid extra work in workspaces).
 pub fn transitive_dependencies(
-    target_crate: &AbsoluteCrate,
-    crates: &Map<AbsoluteCrate, CrateData>,
-) -> Set<AbsoluteCrate> {
-    let dependencies: Map<AbsoluteCrate, Set<&AbsoluteCrate>> = crates
+    target_crate: &CrateId,
+    crates: &Map<CrateId, CrateData>,
+) -> Set<CrateId> {
+    let dependencies: Map<CrateId, Set<&CrateId>> = crates
         .keys()
         .map(|crate_| (crate_.clone(), crates[crate_].deps.values().collect()))
         .collect();
@@ -173,7 +173,7 @@ pub fn transitive_dependencies(
 /// A `Package` is all of the metadata for a crate, as pulled from a cargo.toml, including all
 /// possible features and dependencies; a `Node` is a specific instantiation of a package with some
 /// set of features. Every `Package` can only have one corresponding `Node`.
-pub fn lower_crates(metadata: &Metadata) -> Map<AbsoluteCrate, CrateData> {
+pub fn lower_crates(metadata: &Metadata) -> Map<CrateId, CrateData> {
     let mut result = Map::default();
     let packages = metadata
         .packages

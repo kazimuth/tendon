@@ -1,18 +1,20 @@
 //! Extra data held in multiple diffferent items.
 
-use crate::idents::Ident;
 use crate::items::FunctionItem;
-use crate::paths::Path;
+use crate::paths::Ident;
+use crate::paths::UnresolvedPath;
+use crate::scopes::Scope;
 use crate::tokens::Tokens;
-use crate::types::Trait;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Metadata available for all items, struct fields, etc.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Metadata {
+    /// The identifier of this item.
+    pub name: Ident,
     /// The visibility of this item.
     /// We can only bind fully `pub` items so we only track whether that's true.
     pub visibility: Visibility,
@@ -30,7 +32,7 @@ pub struct Metadata {
 }
 impl Metadata {
     /// Remove the first attribute with this path, if any.
-    pub fn extract_attribute(&mut self, path: &Path) -> Option<Attribute> {
+    pub fn extract_attribute(&mut self, path: &UnresolvedPath) -> Option<Attribute> {
         let index = self
             .extra_attributes
             .iter()
@@ -38,10 +40,11 @@ impl Metadata {
         index.map(|index| self.extra_attributes.remove(index))
     }
 
-    pub fn fake() -> Metadata {
+    pub fn fake(name: impl Into<Ident>) -> Metadata {
         // create a fake metadata. to be used only in testing.
 
         Metadata {
+            name: name.into(),
             visibility: Visibility::Pub,
             docs: None,
             must_use: None,
@@ -52,7 +55,7 @@ impl Metadata {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 /// A span in a source file.
 pub struct Span {
     /// The source file, a path in the local filesystem.
@@ -147,17 +150,17 @@ impl fmt::Display for Span {
 ///
 /// Note that most built-in attributes are already handled for you; this is for the ones
 /// tendon doesn't know about.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub enum Attribute {
     /// An attribute in the format of the
     /// [`meta` fragment specifier](https://doc.rust-lang.org/reference/attributes.html#meta-item-attribute-syntax).
     Meta(Meta),
     /// An attribute not in the `meta` format.
-    Other { path: Path, input: Tokens },
+    Other { path: UnresolvedPath, input: Tokens },
 }
 impl Attribute {
     /// Get the root path of this attribute, whatever its form.
-    pub fn path(&self) -> &Path {
+    pub fn path(&self) -> &UnresolvedPath {
         match self {
             Attribute::Meta(Meta::Path(path)) => path,
             Attribute::Meta(Meta::Assign { path, .. }) => path,
@@ -186,15 +189,21 @@ impl fmt::Debug for Attribute {
 
 /// The syntax used by most, but not all, attributes, and the
 /// [`meta` fragment specifier](https://doc.rust-lang.org/reference/attributes.html#meta-item-attribute-syntax).
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub enum Meta {
     /// A path attribute, e.g. #[thing]
-    Path(Path),
+    Path(UnresolvedPath),
     /// An assignment attribute, e.g. #[thing = "bananas"]
     /// Note that the `literal` here can be parsed into a `proc_macro2::Literal`.
-    Assign { path: Path, literal: Tokens },
+    Assign {
+        path: UnresolvedPath,
+        literal: Tokens,
+    },
     /// An call attribute, e.g. #[thing(thinga, "bees", thingb = 3, thing4(2))]
-    Call { path: Path, args: Vec<MetaInner> },
+    Call {
+        path: UnresolvedPath,
+        args: Vec<MetaInner>,
+    },
 }
 impl fmt::Debug for Meta {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
@@ -219,7 +228,7 @@ impl fmt::Debug for Meta {
 }
 
 /// An argument in a meta list.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub enum MetaInner {
     Meta(Meta),
     Literal(Tokens),
@@ -233,7 +242,7 @@ impl fmt::Debug for MetaInner {
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 /// The visibility of an item.
 /// TODO: do we need more rules to handle wacky shadowing situations?
 pub enum Visibility {
@@ -242,7 +251,7 @@ pub enum Visibility {
 }
 
 /// Metadata for exported symbols (functions, statics).
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SymbolMetadata {
     /// If this symbol has the #[no_mangle] attribute
     pub no_mangle: bool,
@@ -253,16 +262,16 @@ pub struct SymbolMetadata {
 }
 
 /// Metadata for exported types (structs, enums, unions, ...)
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TypeMetadata {
     /// All #[derives] present on this type.
-    pub derives: Vec<Trait>,
+    pub derives: Vec<TraitId>,
     /// The #[repr] of this type. `Rust` if no attribute is present.
     pub repr: Repr,
 }
 
 /// Deprecation metadata.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Deprecation {
     /// Version deprecated since, if present.
     /// TODO: format?
@@ -272,7 +281,7 @@ pub struct Deprecation {
 }
 
 /// A struct representation.
-#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Debug, Serialize, Deserialize, Clone)]
 pub enum Repr {
     /// `#[repr(Rust)]`
     Rust,
@@ -322,6 +331,7 @@ macro_rules! impl_has_metadata {
     );
 }
 
+use crate::identities::TraitId;
 use crate::items::*;
 
 impl_has_metadata!(
@@ -337,6 +347,7 @@ impl_has_metadata!(
         Const(_),
         Static(_),
         Function(_),
+        ConstParam(_),
     }
 );
 impl_has_metadata!(
@@ -344,6 +355,8 @@ impl_has_metadata!(
         Struct(_),
         Enum(_),
         Trait(_),
+        TypeParam(_),
+        LifetimeParam(_),
     }
 );
 impl_has_metadata!(struct DeclarativeMacroItem);
@@ -355,8 +368,11 @@ impl_has_metadata!(struct StaticItem);
 impl_has_metadata!(struct StructItem);
 impl_has_metadata!(struct EnumItem);
 impl_has_metadata!(struct TraitItem);
-impl_has_metadata!(struct ModuleItem);
 impl_has_metadata!(struct FunctionItem);
+impl_has_metadata!(struct Scope);
+impl_has_metadata!(struct TypeParamItem);
+impl_has_metadata!(struct LifetimeParamItem);
+impl_has_metadata!(struct ConstParamItem);
 
 #[cfg(test)]
 mod tests {
@@ -379,11 +395,11 @@ mod tests {
     #[test]
     fn debug_attr() {
         let attr = Attribute::Meta(Meta::Call {
-            path: Path::fake("test"),
+            path: UnresolvedPath::fake("test"),
             args: vec![
-                MetaInner::Meta(Meta::Path(Path::fake("arg1"))),
+                MetaInner::Meta(Meta::Path(UnresolvedPath::fake("arg1"))),
                 MetaInner::Meta(Meta::Assign {
-                    path: Path::fake("arg2"),
+                    path: UnresolvedPath::fake("arg2"),
                     literal: Tokens::from("thing"),
                 }),
                 MetaInner::Literal(Tokens::from(3)),
@@ -394,7 +410,7 @@ mod tests {
             "#[test(arg1, arg2 = \"thing\", 3i32)]"
         );
         let attr = Attribute::Other {
-            path: Path::fake("test2"),
+            path: UnresolvedPath::fake("test2"),
             input: Tokens::from(quote!(= i am a test)),
         };
         assert_eq!(&format!("{:?}", attr), "#[test2 = i am a test]");

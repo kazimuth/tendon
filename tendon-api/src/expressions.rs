@@ -6,7 +6,7 @@ use std::fmt;
 
 /// A constant expression.
 /// Represented as uninterpreted tokens.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConstExpr(pub Tokens);
 impl fmt::Debug for ConstExpr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
