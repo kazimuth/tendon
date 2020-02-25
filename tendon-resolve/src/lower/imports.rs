@@ -14,7 +14,7 @@ pub(crate) fn lower_use(scope: &mut ModuleScope, use_: &syn::ItemUse) {
         &use_.tree,
         &vis,
         UnresolvedPath {
-            is_absolute: use_.leading_colon.is_some(),
+            rooted: use_.leading_colon.is_some(),
             path: vec![],
         },
     );

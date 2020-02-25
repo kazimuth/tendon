@@ -10,7 +10,7 @@
 use crate::attributes::{HasMetadata, Visibility};
 use crate::crates::CrateData;
 use crate::items::{MacroItem, ModuleItem, SymbolItem, TypeItem};
-use crate::paths::{AbsoluteCrate, AbsolutePath, RelativePath};
+use crate::paths::{AbsoluteCrate, AbsolutePath, RelativePath, Identity};
 use crate::Map;
 use dashmap::DashMap;
 use hashbrown::hash_map::Entry;
@@ -49,10 +49,10 @@ impl Db {
     pub fn accessible_items<I: NamespaceLookup>(
         &self,
         crate_: &AbsoluteCrate,
-    ) -> Vec<(RelativePath, AbsolutePath)> {
+    ) -> Vec<(RelativePath, Identity)> {
         let crate_db = self.crates.get(crate_).expect("no such crate");
         let namespace = I::get_crate_namespace(&crate_db);
-        let mut result: Map<&AbsolutePath, &RelativePath> = Map::default();
+        let mut result: Map<&Identity, &RelativePath> = Map::default();
 
         for (path, binding) in &namespace.bindings {
             let is_containing_module_public = path
@@ -60,7 +60,7 @@ impl Db {
                 .map(|p| crate_db.is_module_externally_visible(&p))
                 .unwrap_or(true);
             if binding.visibility == Visibility::Pub && is_containing_module_public {
-                match result.entry(&binding.absolute_target) {
+                match result.entry(&binding.identity) {
                     Entry::Vacant(v) => {
                         v.insert(path);
                     }
@@ -83,7 +83,7 @@ impl Db {
             }
         }
 
-        let mut result: Vec<(RelativePath, AbsolutePath)> = result
+        let mut result: Vec<(RelativePath, Identity)> = result
             .into_iter()
             .map(|(abs, rel)| (rel.clone(), abs.clone()))
             .collect();
@@ -93,21 +93,21 @@ impl Db {
 
     /// Inspect an item. Takes a closure because it's easier than returning a Ref.
     /// TODO can this be optimized? 2 hash function lookups...
-    pub fn inspect_item<I: NamespaceLookup, F, R>(&self, path: AbsolutePath, op: F) -> R
+    pub fn inspect_item<I: NamespaceLookup, F, R>(&self, path: &Identity, op: F) -> R
     where
         F: FnOnce(Option<&I>) -> R,
     {
-        let crate_ = self.crates.get(&path.crate_);
+        let crate_ = self.crates.get(&path.0.crate_);
         let item = crate_
             .as_ref()
-            .and_then(|crate_db| crate_db.get_item(&path.path));
+            .and_then(|crate_db| crate_db.get_item(&path.0.path));
 
         op(item)
     }
 
     /// Inspect an item. Takes a closure because it's easier than returning a Ref.
     /// TODO can this be optimized? 2 hash function lookups...
-    pub fn inspect_binding<I: NamespaceLookup, F, R>(&self, path: AbsolutePath, op: F) -> R
+    pub fn inspect_binding<I: NamespaceLookup, F, R>(&self, path: &AbsolutePath, op: F) -> R
     where
         F: FnOnce(Option<&Binding>) -> R,
     {
@@ -221,21 +221,21 @@ impl<I: NamespaceLookup> CrateNamespace<I> {
             Entry::Occupied(_) => return Err(DatabaseError::ItemAlreadyPresent),
             Entry::Vacant(v) => v.insert(item),
         };
-        let target = AbsolutePath::new(self.crate_.clone(), &path.0);
+        let identity = Identity(AbsolutePath::new(self.crate_.clone(), &path.0));
 
-        self.add_binding(path, target, visibility, Priority::Explicit)
+        self.add_binding(path, identity, visibility, Priority::Explicit)
     }
 
     /// Add a binding. Doesn't have to target something in this crate.
     pub fn add_binding(
         &mut self,
         path: RelativePath,
-        target: AbsolutePath,
+        identity: Identity,
         visibility: Visibility,
         priority: Priority,
     ) -> Result<(), DatabaseError> {
         let mut binding = Binding {
-            absolute_target: target,
+            identity,
             visibility,
             priority,
         };
@@ -267,10 +267,11 @@ pub enum Priority {
 }
 
 /// A name binding. (Nothing to do with the idea of "language bindings".)
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Binding {
-    /// The original, true path of the reexported item.
-    pub absolute_target: AbsolutePath,
+    /// The final target this binding points to. If this points to another binding
+    /// (e.g. a reexport), that chain is followed.
+    pub identity: Identity,
 
     /// The visibility of the binding (NOT the item), in the scope of its module.
     pub visibility: Visibility,
@@ -280,7 +281,7 @@ pub struct Binding {
 }
 
 /// A namespace.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Namespace {
     Type,
     Symbol,

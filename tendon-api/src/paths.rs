@@ -22,7 +22,7 @@ impl Path {
     pub fn ident(i: Ident) -> Self {
         Path::Unresolved(UnresolvedPath {
             path: vec![i],
-            is_absolute: false,
+            rooted: false,
         })
     }
     /// Make a path to a generic.
@@ -57,7 +57,7 @@ pub struct UnresolvedPath {
     /// The components of the path.
     pub path: Vec<Ident>,
     /// Whether the path starts with `::`
-    pub is_absolute: bool,
+    pub rooted: bool,
 }
 impl UnresolvedPath {
     /// Make a fake path for testing.
@@ -68,15 +68,15 @@ impl UnresolvedPath {
     pub fn join(self, component: Ident) -> UnresolvedPath {
         let UnresolvedPath {
             mut path,
-            is_absolute,
+            rooted
         } = self;
         path.push(component);
-        UnresolvedPath { path, is_absolute }
+        UnresolvedPath { path, rooted }
     }
 
     /// Get the path, assuming it's a single unresolved, non-absolute Ident.
     pub fn get_ident(&self) -> Option<&Ident> {
-        if self.path.len() == 1 && !self.is_absolute {
+        if self.path.len() == 1 && !self.rooted {
             Some(&self.path[0])
         } else {
             None
@@ -85,11 +85,11 @@ impl UnresolvedPath {
 }
 impl From<&syn::Path> for UnresolvedPath {
     fn from(p: &syn::Path) -> Self {
-        let is_absolute = p.leading_colon.is_some();
+        let rooted = p.leading_colon.is_some();
         // note: we strip path arguments, those need to be handled
         // outside of here
         let path = p.segments.iter().map(|seg| (&seg.ident).into()).collect();
-        UnresolvedPath { is_absolute, path }
+        UnresolvedPath { rooted, path }
     }
 }
 impl Into<Path> for UnresolvedPath {
@@ -184,6 +184,13 @@ impl Into<Path> for GenericPath {
     }
 }
 
+/// An identity of an item.
+/// Items are identified by their name concatenated to the module they were introduced in.
+/// An item may have many bindings but it will only ever have one `Identity`.
+/// TODO: intern?
+#[derive(Hash, PartialEq, Eq, Clone, Serialize, Deserialize, PartialOrd, Ord, Debug)]
+pub struct Identity(pub AbsolutePath);
+
 /// A crate, absolutely resolved within a crate graph.
 /// Each AbsoluteCrate in a crate graph maps to a single crate.
 /// TODO: intern, def worth it for these
@@ -235,7 +242,7 @@ impl fmt::Debug for AbsolutePath {
 impl fmt::Debug for UnresolvedPath {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for (i, seg) in self.path.iter().enumerate() {
-            if i > 0 || self.is_absolute {
+            if i > 0 || self.rooted {
                 f.write_str("::")?;
             }
             f.write_str(&seg)?;
@@ -274,7 +281,7 @@ mod tests {
             Path::from(&syn_path),
             Path::Unresolved(UnresolvedPath {
                 path: vec!["a".into(), "b".into(), "C".into()],
-                is_absolute: false
+                rooted: false
             })
         );
         let syn_path_2: syn::Path = parse_quote!(::a::b::C);
@@ -282,7 +289,15 @@ mod tests {
             Path::from(&syn_path_2),
             Path::Unresolved(UnresolvedPath {
                 path: vec!["a".into(), "b".into(), "C".into()],
-                is_absolute: true
+                rooted: true
+            })
+        );
+        let syn_path_crate: syn::Path = parse_quote!(crate::z);
+        assert_eq!(
+            Path::from(&syn_path_crate),
+            Path::Unresolved(UnresolvedPath {
+                path: vec!["crate".into(), "z".into()],
+                rooted: false
             })
         );
     }
@@ -304,7 +319,7 @@ mod tests {
                 "{:?}",
                 Path::Unresolved(UnresolvedPath {
                     path: vec!["test".into(), "Thing".into()],
-                    is_absolute: true
+                    rooted: true
                 })
             ),
             "::test::Thing"

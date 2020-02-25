@@ -1,4 +1,4 @@
-//! Walk through a crate, parsing with syn and then a `resolver::Db`. This is the core resolution
+//! Walk through a crate, parsing with syn and then a `resolver::Db`. This is the core name resolution
 //! algorithm.
 //!
 //! This code is serial but multiple crates can be read into the same Db at once.
@@ -9,6 +9,10 @@
 //!
 //! We permit resolution to fail, since we maintain the invariant that all code fed to `tendon` has
 //! passed `cargo check`. Therefore, stuff we can't identify, we just ignore.
+//!
+//! We do require, however, that all of a crates dependencies be fully resolved before we attempt
+//! to resolve that crate. Even if the crate could not be read (its path was wrong somehow, it's
+//! Rust 2015 which we don't yet handle)
 //!
 //! TODO: tell the user what was missed, and give them workarounds somehow.
 //!
@@ -100,7 +104,7 @@ use std::path::{Path as FsPath, PathBuf};
 use std::sync::Arc;
 use tendon_api::attributes::Span;
 use tendon_api::crates::CrateData;
-use tendon_api::database::Db;
+use tendon_api::database::{Db, NamespaceLookup};
 use tendon_api::idents::Ident;
 use tendon_api::paths::{AbsoluteCrate, AbsolutePath, Path, RelativePath, UnresolvedPath};
 use tendon_api::tokens::Tokens;
@@ -125,6 +129,7 @@ lazy_static! {
     static ref MACRO_USE: Path = Path::fake("macro_use");
     static ref PATH: Path = Path::fake("path");
     static ref MACRO_RULES: Ident = "macro_rules".into();
+    static ref CRATE: Ident = "crate".into();
     pub(crate) static ref TEST_CRATE_DATA: CrateData = CrateData::fake();
     pub(crate) static ref TEST_LOCATION_METADATA: LocationMetadata<'static> = LocationMetadata {
         source_file: "fake_file.rs".into(),
@@ -138,6 +143,7 @@ lazy_static! {
 }
 
 quick_error! {
+    // could break this out into sub-errors...
     #[derive(Debug)]
     pub enum WalkError {
         Io(err: std::io::Error) {
@@ -179,16 +185,49 @@ quick_error! {
         ExternCrateNotFound(ident: Ident) {
             display("can't find extern crate: {}", ident)
         }
-        PhaseIrrelevant {
-            display("item not relevant to this phase")
-        }
         NonPub {
-            display("skipping non-item (will never be accessible)")
+            display("skipping non-pub item (will never be accessible)")
+        }
+        Impossible {
+            display("some invariant was violated (but we're still going, dammit...)")
         }
     }
 }
 
-fn try_to_resolve(db: &Db, path: &UnresolvedPath) {}
+/*
+// TODO WIP
+fn try_to_resolve<I: NamespaceLookup>(db: &Db, loc: &LocationMetadata, path: &UnresolvedPath)
+    -> Result<AbsolutePath, WalkError> {
+    if path.path.len() == 0 {
+        return Err(WalkError::Impossible);
+    }
+    if path.rooted {
+        // in rust 2018, :: refers to some other crate
+        let abs =
+            loc.crate_data.deps.get(&path.path[0])
+            .ok_or(WalkError::Impossible)?;
+
+        let path = AbsolutePath::new(abs.clone(), &path.path[1..]);
+
+        if db.inspect_binding::<I>(path, |b| b.is_some()) {
+            return
+        }
+    } else if path.path[0] == CRATE {
+        // crate::
+
+    } else if path.path[0] == SUPER {
+        //
+    } else if path.path[0] == SELF {
+
+    } else {
+        // the hard (and common) case.
+
+    }
+
+    unimplemented!()
+}
+*/
+
 
 /*
 
