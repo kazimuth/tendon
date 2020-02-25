@@ -138,8 +138,6 @@ struct TextualScopeInner {
 #[cfg(test)]
 mod tests {
     use super::TextualScope;
-    use rayon::Scope;
-    use std::fmt;
     use tendon_api::attributes::Metadata;
     use tendon_api::items::DeclarativeMacroItem;
     use tendon_api::tokens::Tokens;
@@ -173,6 +171,7 @@ mod tests {
         }
     }
 
+    #[allow(unused)]
     #[test]
     fn hairy() {
         let root = TextualScope::empty();

@@ -90,6 +90,34 @@ impl Db {
         result.sort();
         result
     }
+
+    /// Inspect an item. Takes a closure because it's easier than returning a Ref.
+    /// TODO can this be optimized? 2 hash function lookups...
+    pub fn inspect_item<I: NamespaceLookup, F, R>(&self, path: AbsolutePath, op: F) -> R
+    where
+        F: FnOnce(Option<&I>) -> R,
+    {
+        let crate_ = self.crates.get(&path.crate_);
+        let item = crate_
+            .as_ref()
+            .and_then(|crate_db| crate_db.get_item(&path.path));
+
+        op(item)
+    }
+
+    /// Inspect an item. Takes a closure because it's easier than returning a Ref.
+    /// TODO can this be optimized? 2 hash function lookups...
+    pub fn inspect_binding<I: NamespaceLookup, F, R>(&self, path: AbsolutePath, op: F) -> R
+    where
+        F: FnOnce(Option<&Binding>) -> R,
+    {
+        let crate_ = self.crates.get(&path.crate_);
+        let item = crate_
+            .as_ref()
+            .and_then(|crate_db| crate_db.get_binding::<I>(&path.path));
+
+        op(item)
+    }
 }
 
 /// A database of everything found within a crate.
@@ -312,13 +340,16 @@ impl NamespaceLookup for ModuleItem {
 }
 
 quick_error::quick_error! {
-    #[derive(Debug)]
+    #[derive(Debug, Clone, Copy)]
     pub enum DatabaseError {
         ItemAlreadyPresent {
             display("item has already been added?")
         }
         BindingAlreadyPresent {
             display("item is already reexported?")
+        }
+        ItemNotFound {
+            display("item not found")
         }
     }
 }

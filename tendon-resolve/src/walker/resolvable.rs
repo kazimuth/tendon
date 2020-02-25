@@ -73,7 +73,7 @@ impl<T: Resolvable, V: Resolvable> Resolvable for (T, V) {
 /// (Unless the type is marked `skip`, in which case, you still need to go and update it ;)
 macro_rules! impl_resolvable {
     (struct $type:ident { $($field:ident),* }) => (
-        impl $crate::resolver::resolvable::Resolvable for $type {
+        impl Resolvable for $type {
             fn walk<F: FnMut(&mut Path) -> Result<(), WalkError>>(&mut self, _f: &mut F) -> Result<(), WalkError> {
                 let $type { $($field),* } = self;
                 $(
@@ -85,14 +85,14 @@ macro_rules! impl_resolvable {
     );
 
     (struct $type:ident(_)) => (
-        impl $crate::resolver::resolvable::Resolvable for $type {
+        impl Resolvable for $type {
             fn walk<F: FnMut(&mut Path) -> Result<(), WalkError>>(&mut self, f: &mut F) -> Result<(), WalkError> {
                 self.0.walk(f)
             }
         }
     );
     (enum $type:ident { $($variant:ident (_),)* }) => (
-        impl $crate::resolver::resolvable::Resolvable for $type {
+        impl Resolvable for $type {
             fn walk<F: FnMut(&mut Path) -> Result<(), WalkError>>(&mut self, f: &mut F) -> Result<(), WalkError> {
                 match self {
                     $(
@@ -103,7 +103,7 @@ macro_rules! impl_resolvable {
         }
     );
     (skip $type:ident) => (
-        impl $crate::resolver::resolvable::Resolvable for $type {
+        impl Resolvable for $type {
             fn walk<F: FnMut(&mut Path) -> Result<(), WalkError>>(&mut self, _: &mut F) -> Result<(), WalkError> {
                 Ok(())
             }
@@ -201,8 +201,6 @@ impl Resolvable for Receiver {
     }
 }
 
-/*
-// TODO reinstate
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -213,8 +211,6 @@ mod tests {
     fn resolve_all() {
         spoor::init();
 
-        test_ctx!(ctx);
-
         let struct_ = syn::parse_quote! {
             #[derive(Copy)]
             struct F<T: Trait> {
@@ -223,7 +219,7 @@ mod tests {
                 z: <() as Z>::Q,
             }
         };
-        let mut struct_ = lower_struct(&ctx, &struct_).unwrap();
+        let mut struct_ = lower_struct(&crate::walker::TEST_LOCATION_METADATA, &struct_).unwrap();
         let mut paths = Set::default();
         struct_
             .walk(&mut |p| {
@@ -246,7 +242,7 @@ mod tests {
                 C(Z)
             }
         };
-        let mut enum_ = lower_enum(&ctx, &enum_).unwrap();
+        let mut enum_ = lower_enum(&crate::walker::TEST_LOCATION_METADATA, &enum_).unwrap();
         let mut paths = Set::default();
         enum_
             .walk(&mut |p| {
@@ -264,7 +260,7 @@ mod tests {
         let function_ = syn::parse_quote! {
             fn f<T: Copy, Z: Trait>(self, t: T, v: i32, m: Z) {}
         };
-        let mut function_ = lower_function_item(&ctx, &function_).unwrap();
+        let mut function_ = lower_function_item(&crate::walker::TEST_LOCATION_METADATA, &function_).unwrap();
         let mut paths = Set::default();
         function_
             .walk(&mut |p| {
@@ -280,4 +276,3 @@ mod tests {
         assert!(paths.contains(&Path::fake("Trait")));
     }
 }
-*/

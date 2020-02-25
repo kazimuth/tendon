@@ -1,7 +1,5 @@
 // https://github.com/rust-lang/rust/tree/master/src/librustc_resolve
 
-pub mod resolvable;
-
 /*
 // macro name resolution is affected by order, right?
 //
@@ -157,54 +155,6 @@ pub fn resolve_recursive<I: Namespaced>(
 }
 */
 
-/// Convert a `use`d path to an absolute path, rust 2018 rules.
-/// - if a local module was declared in this scope, it overrides extern crates
-/// - crate-local modules that are children of the root are *not* looked up in a `use` statement
-/// Returns whether the path has been resolved yet (this operation might leave it unchanged, if
-/// e.g. it refers to an unexpanded macro.)
-pub fn absolutize_use_2018(
-    path: &mut Path,
-    module: &AbsolutePath,
-    modules: &Namespace<ModuleItem>,
-    crate_data: &CrateData,
-) -> bool {
-    let mut unresolved = if let Path::Unresolved(unresolved) = path {
-        unresolved.clone()
-    } else {
-        return true;
-    };
-    let mut module = module.clone();
-    let ident = unresolved.path.remove(0);
-
-    if &ident == &*CRATE {
-        module.path.clear();
-        module.path.append(&mut unresolved.path);
-        *path = Path::Absolute(module);
-        return true;
-    } else if &ident == &*SUPER {
-        module.path.pop();
-        module.path.append(&mut unresolved.path);
-        *path = Path::Absolute(module);
-        return true;
-    }
-
-    // is the `use` a submodule?
-    let mut possible = module.clone().join(ident.clone());
-    if !unresolved.is_absolute && modules.contains(&possible) {
-        possible.path.append(&mut unresolved.path);
-        *path = Path::Absolute(possible);
-        return true;
-    }
-
-    if let Some(crate_) = crate_data.deps.get(&ident) {
-        *path = Path::Absolute(AbsolutePath::new(crate_.clone(), unresolved.path));
-        return true;
-    }
-
-    // Path not found.
-    // It may be the result of macro expansion...
-    return false;
-}
 
 /// Attempt to resolve all `use` statements in a module scope.
 /// Uses Rust 2018 rules.

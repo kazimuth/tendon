@@ -1,17 +1,19 @@
-//! Walk through a module, feeding data to syn and then a `resolver::Db`. This is the core resolution
+//! Walk through a crate, parsing with syn and then a `resolver::Db`. This is the core resolution
 //! algorithm.
 //!
 //! This code is serial but multiple crates can be read into the same Db at once.
 //!
-//! references:
-//! https://rust-lang.github.io/rustc-guide/macro-expansion.html
-//! https://rust-lang.github.io/rustc-guide/name-resolution.html
-//! https://doc.rust-lang.org/nightly/edition-guide/rust-2018/macros/macro-changes.html
-//! https://github.com/rust-lang/rfcs/blob/master/text/0453-macro-reform.md
-//! https://github.com/rust-lang/rfcs/blob/master/text/1560-name-resolution.md
-//! https://github.com/rust-lang/rfcs/blob/master/text/2126-path-clarity.md
-//! https://internals.rust-lang.org/t/relative-paths-and-rust-2018-use-statements/7875
-//! https://internals.rust-lang.org/t/up-to-date-documentation-on-macro-resolution-order/11877/5
+//! Currently only Rust 2018 name resolution has been implemented, and even then, it's somewhat
+//! sketchy. Rust's name resolution and macro expansion rules constantly change and aren't fully
+//! documented everywhere.
+//!
+//! We permit resolution to fail, since we maintain the invariant that all code fed to `tendon` has
+//! passed `cargo check`. Therefore, stuff we can't identify, we just ignore.
+//!
+//! TODO: tell the user what was missed, and give them workarounds somehow.
+//!
+//! TODO: we need to generate tests that ensure our bindings actually point to the correct places...
+//! somehow.
 //!
 //! We roughly follow the pseudocode from RFC 1560. There's no guarantee that's actually correct
 //! though.
@@ -22,7 +24,7 @@
 //! fn parse_expand_and_resolve() {
 //!     loop until fixed point {
 //!         process_names()
-//!             loop until fixed point {
+//!         loop until fixed point {
 //!             process_work_list()
 //!         }
 //!         expand_macros()
@@ -80,6 +82,16 @@
 //!     }
 //! }
 //! ```
+//!
+//! references:
+//! https://rust-lang.github.io/rustc-guide/macro-expansion.html
+//! https://rust-lang.github.io/rustc-guide/name-resolution.html
+//! https://doc.rust-lang.org/nightly/edition-guide/rust-2018/macros/macro-changes.html
+//! https://github.com/rust-lang/rfcs/blob/master/text/0453-macro-reform.md
+//! https://github.com/rust-lang/rfcs/blob/master/text/1560-name-resolution.md
+//! https://github.com/rust-lang/rfcs/blob/master/text/2126-path-clarity.md
+//! https://internals.rust-lang.org/t/relative-paths-and-rust-2018-use-statements/7875
+//! https://internals.rust-lang.org/t/up-to-date-documentation-on-macro-resolution-order/11877/5
 
 use lazy_static::lazy_static;
 use std::fs::File;
@@ -88,8 +100,9 @@ use std::path::{Path as FsPath, PathBuf};
 use std::sync::Arc;
 use tendon_api::attributes::Span;
 use tendon_api::crates::CrateData;
+use tendon_api::database::Db;
 use tendon_api::idents::Ident;
-use tendon_api::paths::{AbsoluteCrate, AbsolutePath, Path, RelativePath};
+use tendon_api::paths::{AbsoluteCrate, AbsolutePath, Path, RelativePath, UnresolvedPath};
 use tendon_api::tokens::Tokens;
 use tendon_api::Map;
 use tracing::{trace, warn};
@@ -98,6 +111,7 @@ use crate::lower::LowerError;
 
 use textual_scope::TextualScope;
 
+mod resolvable;
 mod textual_scope;
 
 pub(crate) struct LocationMetadata<'a> {
@@ -138,14 +152,6 @@ quick_error! {
             description(err.description())
             display("parse error during walking: {}", err)
         }
-        /*
-        Resolve(err: crate::resolver::ResolveError) {
-            from()
-            cause(err)
-            description(err.description())
-            display("name resolution error during walking: {}", err)
-        }
-        */
         AlreadyDefined(namespace: &'static str, path: AbsolutePath) {
             display("path {:?} already defined in {} namespace", path, namespace)
         }
@@ -181,6 +187,8 @@ quick_error! {
         }
     }
 }
+
+fn try_to_resolve(db: &Db, path: &UnresolvedPath) {}
 
 /*
 
@@ -962,6 +970,7 @@ fn walk_mod(ctx: &mut WalkModuleCtx, mod_: &syn::ItemMod) -> Result<(), WalkErro
 
     Ok(())
 }
+
 
 #[cfg(test)]
 mod tests {
