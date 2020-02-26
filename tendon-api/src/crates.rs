@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CrateData {
     /// Which crate this is.
-    pub crate_: CrateId,
+    pub id: CrateId,
     /// The dependencies of this crate (note: renamed according to Cargo.toml, but NOT according to
     /// `extern crate ... as ...;` statements
     pub deps: Map<Ident, CrateId>,
@@ -27,13 +27,13 @@ pub struct CrateData {
     pub rust_edition: RustEdition,
 }
 impl CrateData {
-    pub fn fake() -> Self {
+    pub fn fake(id: CrateId) -> Self {
         CrateData {
-            crate_: CrateId::new("fake_crate", "0.0.0"),
+            id,
             deps: Default::default(),
             features: Default::default(),
-            manifest_path: "fake_crate/Cargo.toml".into(),
-            entry: "fake_crate/src/lib.rs".into(),
+            manifest_path: Default::default(),
+            entry: Default::default(),
             is_proc_macro: false,
             rust_edition: RustEdition::Rust2018,
         }

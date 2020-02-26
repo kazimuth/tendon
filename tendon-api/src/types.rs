@@ -3,15 +3,15 @@ use crate::identities::{CrateId, Identity};
 
 lazy_static! {
     pub static ref BUILTINS: CrateId = CrateId::new("@builtin", "0.0.0");
-    pub static ref ARRAY: Identity = Identity::new(BUILTINS.clone(), &["ARRAY"]);
-    pub static ref SLICE: Identity = Identity::new(BUILTINS.clone(), &["SLICE"]);
-    pub static ref REFERENCE: Identity = Identity::new(BUILTINS.clone(), &["REFERENCE"]);
-    pub static ref POINTER: Identity = Identity::new(BUILTINS.clone(), &["POINTER"]);
-    pub static ref TUPLE: Identity = Identity::new(BUILTINS.clone(), &["TUPLE"]);
-    pub static ref QSELF: Identity = Identity::new(BUILTINS.clone(), &["QSELF"]);
-    pub static ref BARE_FN: Identity = Identity::new(BUILTINS.clone(), &["BARE_FN"]);
-    pub static ref IMPL_TRAIT: Identity = Identity::new(BUILTINS.clone(), &["IMPL_TRAIT"]);
-    pub static ref DYN_TRAIT: Identity = Identity::new(BUILTINS.clone(), &["DYN_TRAIT"]);
+    pub static ref ARRAY: Identity = Identity::new(&BUILTINS, &["ARRAY"]);
+    pub static ref SLICE: Identity = Identity::new(&BUILTINS, &["SLICE"]);
+    pub static ref REFERENCE: Identity = Identity::new(&BUILTINS, &["REFERENCE"]);
+    pub static ref POINTER: Identity = Identity::new(&BUILTINS, &["POINTER"]);
+    pub static ref TUPLE: Identity = Identity::new(&BUILTINS, &["TUPLE"]);
+    pub static ref QSELF: Identity = Identity::new(&BUILTINS, &["QSELF"]);
+    pub static ref BARE_FN: Identity = Identity::new(&BUILTINS, &["BARE_FN"]);
+    pub static ref IMPL_TRAIT: Identity = Identity::new(&BUILTINS, &["IMPL_TRAIT"]);
+    pub static ref DYN_TRAIT: Identity = Identity::new(&BUILTINS, &["DYN_TRAIT"]);
 }
 
 /*

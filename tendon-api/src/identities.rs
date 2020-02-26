@@ -24,13 +24,13 @@ pub struct Identity {
 }
 impl Identity {
     // Create a new Identity
-    pub fn new<P, I>(crate_: CrateId, path: P) -> Self
+    pub fn new<P, I>(crate_: &CrateId, path: P) -> Self
     where
         P: IntoIterator<Item = I>,
         I: Into<Ident>,
     {
         Identity {
-            crate_,
+            crate_: crate_.clone(),
             path: path.into_iter().map(Into::into).collect(),
         }
     }
@@ -200,6 +200,12 @@ impl GenericParams {
     }
 }
 
+lazy_static! {
+    pub static ref TEST_CRATE_A: CrateId = CrateId::new("test_crate_a", "0.0.0");
+    pub static ref TEST_CRATE_B: CrateId = CrateId::new("test_crate_b", "0.0.0");
+    pub static ref TEST_CRATE_C: CrateId = CrateId::new("test_crate_c", "0.0.0");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -210,7 +216,7 @@ mod tests {
             format!(
                 "{:?}",
                 Identity::new(
-                    CrateId::new("fake_crate", "0.1.0-alpha1"),
+                    &CrateId::new("fake_crate", "0.1.0-alpha1"),
                     &["test", "Thing"]
                 )
             ),

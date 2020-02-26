@@ -17,7 +17,7 @@
 
 use crate::attributes::{HasMetadata, Visibility};
 use crate::crates::CrateData;
-use crate::identities::{CrateId, Identity};
+use crate::identities::{CrateId, Identity, TEST_CRATE_A, TEST_CRATE_B, TEST_CRATE_C};
 use crate::items::{MacroItem, SymbolItem, TypeItem};
 use crate::paths::Ident;
 use crate::scopes::{Binding, NamespaceId, Priority, Scope};
@@ -28,6 +28,10 @@ use dashmap::mapref::one::RefMut as DRefMut;
 use dashmap::DashMap;
 use hashbrown::hash_map::Entry as HEntry;
 use serde::{Deserialize, Serialize};
+
+lazy_static! {
+    pub static ref ROOT_SCOPE_NAME: Ident = "{root}".into();
+}
 
 /// A database of everything. Crates should form a DAG. Crates cannot be modified once added.
 /// TODO: check for changes against disk?
@@ -60,60 +64,28 @@ impl Db {
             scopes: Namespace::new(),
         }
     }
-}
-/*
-/// All items accessible via some crate. This is used to decide which items to bind.
-/// Returns a sequence of relative paths to bindings in the current crate, and the paths to the
-/// items they point to.
-///
-/// If there are multiple bindings to some target, the shortest / lexicographically first is selected.
-/// Then, the whole list is sorted.
-/// This helps ensures determinism of generated bindings between runs.
-pub fn accessible_items<I: NamespaceLookup>(
-    &self,
-    crate_: &CrateId,
-) -> Vec<(AbsolutePath, Identity)> {
-    let crate_db = self.crates.get(crate_).expect("no such crate");
-    let namespace = I::get_crate_namespace(&crate_db);
-    let mut result: Map<&Identity, &AbsolutePath> = Map::default();
 
-    for (path, binding) in &namespace.bindings {
-        let is_containing_module_public = path
-            .parent()
-            .map(|p| crate_db.is_module_externally_visible(&p))
-            .unwrap_or(true);
-        if binding.visibility == Visibility::Pub && is_containing_module_public {
-            match result.entry(&binding.identity) {
-                Entry::Vacant(v) => {
-                    v.insert(path);
-                }
-                Entry::Occupied(mut o) => {
-                    let should_replace = {
-                        let cur_access_path = o.get_mut();
-
-                        let new_shorter = path.path.len() < cur_access_path.path.len();
-                        let new_same_and_lexicographically_earlier =
-                            path.path.len() == cur_access_path.path.len() && path < cur_access_path;
-
-                        new_shorter || new_same_and_lexicographically_earlier
-                    };
-
-                    if should_replace {
-                        o.insert(path);
-                    }
-                }
-            }
-        }
+    /// Create a DB view. You should only create one view per thread, to prevent deadlocks due to
+    /// DashMap.
+    pub fn view_once_per_thread_i_promise(&self) -> DbView {
+        DbView(self)
     }
 
-    let mut result: Vec<(AbsolutePath, Identity)> = result
-        .into_iter()
-        .map(|(abs, rel)| (rel.clone(), abs.clone()))
-        .collect();
-    result.sort();
-    result
+    #[allow(unused)]
+    /// Creates a `Db` for tests.
+    pub(crate) fn fake_db() -> Db {
+        let crate_a = CrateData::fake(TEST_CRATE_A.clone());
+        let crate_b = CrateData::fake(TEST_CRATE_B.clone());
+        let crate_c = CrateData::fake(TEST_CRATE_C.clone());
+
+        let mut crates = Map::default();
+        crates.insert(TEST_CRATE_A.clone(), crate_a);
+        crates.insert(TEST_CRATE_B.clone(), crate_b);
+        crates.insert(TEST_CRATE_C.clone(), crate_c);
+
+        Db::new(crates)
+    }
 }
-*/
 
 /// A view into the database.
 ///
@@ -140,29 +112,26 @@ impl<'a> DbView<'a> {
 
     /// Add the root scope for a crate.
     pub fn add_root_scope(&mut self, crate_: CrateId, scope: Scope) -> Identity {
+        assert!(&scope.metadata.name == &*ROOT_SCOPE_NAME);
         let root_id = Identity::root(crate_);
         self.0.scopes.0.insert(root_id.clone(), scope);
         root_id
     }
 
     /// Insert an item, and add a binding for that item in the relevant module.
+    /// Returns the identity for the item (
     pub fn add_item<I: NamespaceLookup>(
         &mut self,
         containing_scope: &Identity,
-        id: Identity,
         item: I,
-    ) -> Result<(), DatabaseError> {
+    ) -> Result<Identity, DatabaseError> {
         let visibility = item.metadata().visibility;
-        debug_assert!(
-            &item.metadata().name == &id.path[id.path.len() - 1],
-            "item identity does not match name"
-        );
-
-        let name = id.path[id.path.len() - 1].clone();
+        let name = item.metadata().name.clone();
+        let identity = containing_scope.clone_join(name.clone());
 
         let namespace = I::get_namespace(self.0);
 
-        match namespace.0.entry(id.clone()) {
+        match namespace.0.entry(identity.clone()) {
             DEntry::Occupied(_) => {
                 return Err(DatabaseError::ItemAlreadyPresent);
             }
@@ -171,12 +140,14 @@ impl<'a> DbView<'a> {
             }
         }
 
-        self.add_binding::<I>(&containing_scope, name, id, visibility, Priority::Explicit)
+        self.add_binding::<I>(&containing_scope, name, identity.clone(), visibility, Priority::Explicit)?;
+
+        Ok(identity)
     }
 
     /// Add a binding. Doesn't have to target something in this crate.
     pub fn add_binding<I: NamespaceLookup>(
-        &self,
+        &mut self,
         containing_scope: &Identity,
         name: Ident,
         target: Identity,
@@ -229,6 +200,9 @@ pub type Ref<'a, I> = DRef<'a, Identity, I, ahash::RandomState>;
 pub type RefMut<'a, I> = DRefMut<'a, Identity, I, ahash::RandomState>;
 
 /// A global namespace.
+///
+/// Invariant: if `namespace[I] == item`, `I[-1] == item.metadata().name`, UNLESS
+/// `I == []`, i.e. it is a crate root.
 #[derive(Serialize, Deserialize)]
 pub struct Namespace<I>(DashMap<Identity, I, ahash::RandomState>);
 
@@ -276,6 +250,8 @@ impl NamespaceLookup for Scope {
     }
 }
 
+pub fn resolve(in_scope: &Identity, name: &Identity, )
+
 quick_error::quick_error! {
     #[derive(Debug, Clone, Copy)]
     pub enum DatabaseError {
@@ -291,5 +267,30 @@ quick_error::quick_error! {
         NoSuchScope {
             display("no such scope")
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::attributes::Metadata;
+
+    #[test]
+    fn insert_and_query() {
+        let db = Db::fake_db();
+        let mut view = db.view_once_per_thread_i_promise();
+
+        let root = view.add_root_scope(
+            TEST_CRATE_A.clone(),
+            Scope::new(Metadata::fake(&*ROOT_SCOPE_NAME), true),
+        );
+
+        let some_module = view.add_item(
+            &root,
+            Scope::new(Metadata::fake("some_module"), true),
+        ).unwrap();
+
+        let next_module = view.add_item(&some_module,  Scope::new(Metadata::fake("next_module"), true)).unwrap();
+
     }
 }

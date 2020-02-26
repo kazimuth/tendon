@@ -18,12 +18,14 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Scope {
     pub metadata: Metadata,
+    pub is_module: bool,
     bindings: [Map<Ident, Binding>; 4],
 }
 impl Scope {
-    pub fn new(metadata: Metadata) -> Scope {
+    pub fn new(metadata: Metadata, is_module: bool) -> Scope {
         Scope {
             metadata,
+            is_module,
             bindings: Default::default(),
         }
     }
