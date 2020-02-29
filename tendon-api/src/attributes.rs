@@ -1,5 +1,6 @@
 //! Extra data held in multiple diffferent items.
 
+use crate::identities::Identity;
 use crate::items::FunctionItem;
 use crate::paths::Ident;
 use crate::paths::UnresolvedPath;
@@ -242,12 +243,37 @@ impl fmt::Debug for MetaInner {
     }
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 /// The visibility of an item.
 /// TODO: do we need more rules to handle wacky shadowing situations?
 pub enum Visibility {
+    /// `pub`
     Pub,
-    NonPub,
+    /// `pub(crate)`, `pub(super)`, `pub(self)`, `pub(in ::path)`, no annotation all map to this
+    InScope(Identity),
+}
+impl Visibility {
+    /// Return whether this visibility is visible in the target scope.
+    /// Does *not* check whether a binding actually exists! Only asks, if one did, would it be
+    /// legal?
+    pub fn is_visible_in(&self, in_scope: &Identity) -> bool {
+        let my_scope = match self {
+            Visibility::Pub => return true,
+            Visibility::InScope(my_scope) => my_scope,
+        };
+
+        if my_scope.crate_ != in_scope.crate_ {
+            return false;
+        }
+
+        if my_scope.path.len() > in_scope.path.len() {
+            return false;
+        }
+
+        let l = my_scope.path.len();
+
+        &my_scope.path[0..l] == &in_scope.path[0..l]
+    }
 }
 
 /// Metadata for exported symbols (functions, statics).
@@ -377,6 +403,7 @@ impl_has_metadata!(struct ConstParamItem);
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::identities::{TEST_CRATE_A, TEST_CRATE_B};
     use quote::quote;
 
     #[test]
@@ -414,5 +441,42 @@ mod tests {
             input: Tokens::from(quote!(= i am a test)),
         };
         assert_eq!(&format!("{:?}", attr), "#[test2 = i am a test]");
+    }
+
+    #[test]
+    fn visibility() {
+        assert!(Visibility::Pub.is_visible_in(&Identity::new(&*TEST_CRATE_A, &["some", "path"])));
+
+        assert!(Visibility::InScope(Identity::root(&*TEST_CRATE_A))
+            .is_visible_in(&Identity::root(&*TEST_CRATE_A)));
+
+        assert!(Visibility::InScope(Identity::root(&*TEST_CRATE_A))
+            .is_visible_in(&Identity::new(&*TEST_CRATE_A, &["some", "path"])));
+        assert!(
+            Visibility::InScope(Identity::new(&*TEST_CRATE_A, &["some"]))
+                .is_visible_in(&Identity::new(&*TEST_CRATE_A, &["some", "path"]))
+        );
+        assert!(
+            Visibility::InScope(Identity::new(&*TEST_CRATE_A, &["some", "path"]))
+                .is_visible_in(&Identity::new(&*TEST_CRATE_A, &["some", "path"]))
+        );
+
+        assert!(
+            !Visibility::InScope(Identity::new(&*TEST_CRATE_A, &["some", "path", "x"]))
+                .is_visible_in(&Identity::new(&*TEST_CRATE_A, &["some", "path"]))
+        );
+        assert!(
+            !Visibility::InScope(Identity::new(&*TEST_CRATE_A, &["other"]))
+                .is_visible_in(&Identity::new(&*TEST_CRATE_A, &["some", "path"]))
+        );
+        assert!(
+            !Visibility::InScope(Identity::new(&*TEST_CRATE_A, &["other", "path"]))
+                .is_visible_in(&Identity::new(&*TEST_CRATE_A, &["some", "path"]))
+        );
+
+        assert!(
+            !Visibility::InScope(Identity::new(&*TEST_CRATE_A, &["some", "path"]))
+                .is_visible_in(&Identity::new(&*TEST_CRATE_B, &["some", "path"]))
+        );
     }
 }

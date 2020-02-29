@@ -19,7 +19,7 @@ use crate::attributes::{HasMetadata, Visibility};
 use crate::crates::CrateData;
 use crate::identities::{CrateId, Identity, TEST_CRATE_A, TEST_CRATE_B, TEST_CRATE_C};
 use crate::items::{MacroItem, SymbolItem, TypeItem};
-use crate::paths::Ident;
+use crate::paths::{Ident, UnresolvedPath};
 use crate::scopes::{Binding, NamespaceId, Priority, Scope};
 use crate::Map;
 use dashmap::mapref::entry::Entry as DEntry;
@@ -100,12 +100,12 @@ impl Db {
 pub struct DbView<'a>(&'a Db);
 
 impl<'a> DbView<'a> {
-    /// Inspect an item. Takes a closure because it's easier than returning a Ref.
+    /// Get an item.
     pub fn get_item<I: NamespaceLookup, F, R>(&mut self, id: &Identity) -> Option<Ref<I>> {
         I::get_namespace(self.0).0.get(id)
     }
 
-    /// Inspect an item. Takes a closure because it's easier than returning a Ref.
+    /// Get an item mutably.
     pub fn get_item_mut<I: NamespaceLookup, F, R>(&mut self, id: &Identity) -> Option<RefMut<I>> {
         I::get_namespace(self.0).0.get_mut(id)
     }
@@ -113,7 +113,7 @@ impl<'a> DbView<'a> {
     /// Add the root scope for a crate.
     pub fn add_root_scope(&mut self, crate_: CrateId, scope: Scope) -> Identity {
         assert!(&scope.metadata.name == &*ROOT_SCOPE_NAME);
-        let root_id = Identity::root(crate_);
+        let root_id = Identity::root(&crate_);
         self.0.scopes.0.insert(root_id.clone(), scope);
         root_id
     }
@@ -125,7 +125,7 @@ impl<'a> DbView<'a> {
         containing_scope: &Identity,
         item: I,
     ) -> Result<Identity, DatabaseError> {
-        let visibility = item.metadata().visibility;
+        let visibility = item.metadata().visibility.clone();
         let name = item.metadata().name.clone();
         let identity = containing_scope.clone_join(name.clone());
 
@@ -140,7 +140,13 @@ impl<'a> DbView<'a> {
             }
         }
 
-        self.add_binding::<I>(&containing_scope, name, identity.clone(), visibility, Priority::Explicit)?;
+        self.add_binding::<I>(
+            &containing_scope,
+            name,
+            identity.clone(),
+            visibility,
+            Priority::Explicit,
+        )?;
 
         Ok(identity)
     }
@@ -172,6 +178,7 @@ impl<'a> DbView<'a> {
                 let old = old.get_mut();
 
                 if old.priority == Priority::Glob && binding.priority == Priority::Explicit {
+                    // overrides previous.
                     // TODO: signal that this occurred?
                     std::mem::swap(old, &mut binding);
                     Ok(())
@@ -250,8 +257,6 @@ impl NamespaceLookup for Scope {
     }
 }
 
-pub fn resolve(in_scope: &Identity, name: &Identity, )
-
 quick_error::quick_error! {
     #[derive(Debug, Clone, Copy)]
     pub enum DatabaseError {
@@ -262,6 +267,9 @@ quick_error::quick_error! {
             display("item is already reexported?")
         }
         ItemNotFound {
+            display("item not found")
+        }
+        BindingNotFound {
             display("item not found")
         }
         NoSuchScope {
@@ -285,12 +293,15 @@ mod tests {
             Scope::new(Metadata::fake(&*ROOT_SCOPE_NAME), true),
         );
 
-        let some_module = view.add_item(
-            &root,
-            Scope::new(Metadata::fake("some_module"), true),
-        ).unwrap();
+        let some_module = view
+            .add_item(&root, Scope::new(Metadata::fake("some_module"), true))
+            .unwrap();
 
-        let next_module = view.add_item(&some_module,  Scope::new(Metadata::fake("next_module"), true)).unwrap();
-
+        let next_module = view
+            .add_item(
+                &some_module,
+                Scope::new(Metadata::fake("next_module"), true),
+            )
+            .unwrap();
     }
 }

@@ -36,9 +36,9 @@ impl Identity {
     }
 
     /// Create a path at the root of a crate
-    pub fn root(crate_: CrateId) -> Self {
+    pub fn root(crate_: &CrateId) -> Self {
         Identity {
-            crate_,
+            crate_: crate_.clone(),
             path: vec![],
         }
     }
