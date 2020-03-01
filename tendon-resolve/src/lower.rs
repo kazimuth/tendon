@@ -3,6 +3,7 @@
 //! Note: syn's datastructure's aren't thread-safe, so we can never include them in the output data.
 //! Style note: always prefix syn types with "syn" in this crate.
 
+/*
 use std::fmt;
 use tendon_api::tokens::Tokens;
 
@@ -51,3 +52,4 @@ impl fmt::Debug for LowerError {
         fmt::Display::fmt(self, f)
     }
 }
+*/

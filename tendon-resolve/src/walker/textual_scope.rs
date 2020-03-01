@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
-use tendon_api::paths::Ident;
 use tendon_api::items::DeclarativeMacroItem;
+use tendon_api::paths::Ident;
 
 /// A textual scope -- the old, ordered way macros were resolved.
 ///
@@ -71,7 +71,7 @@ impl TextualScope {
     pub(crate) fn lookup(&self, name: &Ident) -> Option<Rc<DeclarativeMacroItem>> {
         let self_ = self.0.borrow();
         if let Some(definition) = self_.definition.as_ref() {
-            if &definition.name == name {
+            if &definition.metadata.name == name {
                 return Some(definition.clone());
             }
         }
@@ -242,9 +242,8 @@ mod tests {
     fn fake_macro(name: &str) -> DeclarativeMacroItem {
         // for this test, nothing but the name matters.
         DeclarativeMacroItem {
-            metadata: Metadata::fake(),
+            metadata: Metadata::fake(name),
             macro_export: false,
-            name: name.into(),
             tokens: Tokens::from(""),
         }
     }

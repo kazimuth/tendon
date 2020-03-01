@@ -2,8 +2,8 @@ use super::attributes::lower_metadata;
 use super::LowerError;
 use crate::walker::LocationMetadata;
 use syn::spanned::Spanned;
-use tendon_api::paths::Ident;
 use tendon_api::items::ModuleItem;
+use tendon_api::paths::Ident;
 
 /// Lower a module declaration.
 /// Does not handle internal attributes.

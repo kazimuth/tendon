@@ -6,9 +6,9 @@ use std::io;
 use std::path::{Path as FsPath, PathBuf};
 use std::process::Command;
 use tendon_api::crates::{CrateData, RustEdition};
-use tendon_api::paths::CrateId;
 use tendon_api::{Map, Set};
 use tracing::{trace, warn};
+use tendon_api::identities::CrateId;
 
 /// Run `cargo check` on target project to ensure well-formed input + dependencies.
 pub fn check(path: &FsPath) -> io::Result<()> {
@@ -98,7 +98,7 @@ pub fn add_rust_sources(
     crates.insert(
         libcore.clone(),
         CrateData {
-            crate_: libcore.clone(),
+            id: libcore.clone(),
             deps: Map::default(),
             is_proc_macro: false,
             entry: sources.join("libcore").join("lib.rs"),
@@ -114,7 +114,7 @@ pub fn add_rust_sources(
     crates.insert(
         liballoc.clone(),
         CrateData {
-            crate_: liballoc.clone(),
+            id: liballoc.clone(),
             deps: deps.clone(),
             is_proc_macro: false,
             entry: sources.join("liballoc").join("lib.rs"),
@@ -129,7 +129,7 @@ pub fn add_rust_sources(
     crates.insert(
         libstd.clone(),
         CrateData {
-            crate_: libstd.clone(),
+            id: libstd.clone(),
             deps,
             is_proc_macro: false,
             entry: sources.join("libstd").join("lib.rs"),
@@ -240,7 +240,7 @@ pub fn lower_crates(metadata: &Metadata) -> Map<CrateId, CrateData> {
         result.insert(
             abs_crate.clone(),
             CrateData {
-                crate_: abs_crate,
+                id: abs_crate,
                 manifest_path,
                 entry,
                 features,

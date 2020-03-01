@@ -11,8 +11,8 @@ use crate::walker::LocationMetadata;
 use syn::spanned::Spanned;
 use tendon_api::items::{FunctionArg, FunctionItem, Receiver, Signature};
 use tendon_api::{
-    paths::Ident,
     items::{Abi, EnumItem, EnumVariant, InherentImpl, StructField, StructItem, StructKind},
+    paths::Ident,
     tokens::Tokens,
 };
 

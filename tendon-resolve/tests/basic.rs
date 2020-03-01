@@ -1,14 +1,11 @@
 use cargo_metadata::{CargoOpt, MetadataCommand};
 use failure::ResultExt;
-use rayon::prelude::*;
 use std::error::Error;
 use std::path::Path;
-use std::time::Instant;
-use tendon_api::paths::{CrateId, AbsolutePath};
 use tendon_resolve as resolve;
 
-/*
 
+#[allow(unused)]
 #[cfg(debug_assertions)]
 static MODE: &'static str = "debug";
 #[cfg(not(debug_assertions))]
@@ -47,6 +44,9 @@ fn walk_test_crate() -> Result<(), Box<dyn Error>> {
     let mut ordered = transitive_deps.iter().collect::<Vec<_>>();
     ordered.sort();
 
+    Ok(())
+}
+/*
     let mut hit = resolve::Set::default();
 
     let db = resolve::Db::new();
@@ -74,7 +74,7 @@ fn walk_test_crate() -> Result<(), Box<dyn Error>> {
         start.elapsed().as_millis()
     );
 
-    let test_path = |s: &str| AbsolutePath::new(root.clone(), s.split("::"));
+    let test_path = |s: &str| Identity::new(root.clone(), s.split("::"));
 
     assert!(db.modules.contains(&test_path("x")));
     assert!(db.modules.contains(&test_path("z")));
