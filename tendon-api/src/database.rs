@@ -19,7 +19,7 @@ use crate::attributes::{HasMetadata, Visibility};
 use crate::crates::CrateData;
 use crate::identities::{CrateId, Identity, TEST_CRATE_A, TEST_CRATE_B, TEST_CRATE_C};
 use crate::items::{MacroItem, SymbolItem, TypeItem};
-use crate::paths::{Ident, UnresolvedPath};
+use crate::paths::Ident;
 use crate::scopes::{Binding, NamespaceId, Priority, Scope};
 use crate::Map;
 use dashmap::mapref::entry::Entry as DEntry;
@@ -31,9 +31,13 @@ use serde::{Deserialize, Serialize};
 
 lazy_static! {
     pub static ref ROOT_SCOPE_NAME: Ident = "{root}".into();
+
 }
 
 /// A database of everything. Crates should form a DAG. Crates cannot be modified once added.
+///
+/// Note that there are some Identities
+///
 /// TODO: check for changes against disk?
 #[derive(Serialize, Deserialize)]
 pub struct Db {
@@ -51,6 +55,14 @@ pub struct Db {
 
     /// All the scopes available.
     scopes: Namespace<Scope>,
+
+    /// The preludes for each crate.
+    /// There are actually multiple preludes, see:
+    /// - https://doc.rust-lang.org/reference/items/extern-crates.html
+    /// - https://rust-lang.github.io/rustc-guide/macro-expansion.html#discussion-about-hygiene
+    /// Currently we just add items here in the order [language prelude, std/core prelude, extern crates,
+    /// `#[macro_use]` macros] and allow later items to shadow earlier ones.
+    preludes: DashMap<CrateId, Scope>,
 }
 
 impl Db {
@@ -62,6 +74,7 @@ impl Db {
             symbols: Namespace::new(),
             macros: Namespace::new(),
             scopes: Namespace::new(),
+            preludes: DashMap::new(),
         }
     }
 
@@ -110,12 +123,37 @@ impl<'a> DbView<'a> {
         I::get_namespace(self.0).0.get_mut(id)
     }
 
+    /// Get a prelude.
+    pub fn get_prelude(&mut self, crate_: &CrateId) -> Option<Ref<Scope, CrateId>> {
+        self.0.preludes.get(crate_)
+    }
+
+    /// Add a prelude. Cannot be modified once added.
+    pub fn add_prelude(&mut self, crate_: CrateId, prelude: Scope) -> Result<(), DatabaseError> {
+        match self.0.preludes.entry(crate_) {
+            DEntry::Occupied(_) => Err(DatabaseError::PreludeAlreadyPresent),
+            DEntry::Vacant(vac) => {
+                vac.insert(prelude);
+                Ok(())
+            }
+        }
+    }
+
     /// Add the root scope for a crate.
-    pub fn add_root_scope(&mut self, crate_: CrateId, scope: Scope) -> Identity {
+    pub fn add_root_scope(
+        &mut self,
+        crate_: CrateId,
+        scope: Scope,
+    ) -> Result<Identity, DatabaseError> {
         assert!(&scope.metadata.name == &*ROOT_SCOPE_NAME);
         let root_id = Identity::root(&crate_);
-        self.0.scopes.0.insert(root_id.clone(), scope);
-        root_id
+        match self.0.scopes.0.entry(root_id.clone()) {
+            DEntry::Occupied(_) => Err(DatabaseError::ItemAlreadyPresent),
+            DEntry::Vacant(vac) => {
+                vac.insert(scope);
+                Ok(root_id)
+            }
+        }
     }
 
     /// Insert an item, and add a binding for that item in the relevant module.
@@ -203,8 +241,8 @@ impl<'a> DbView<'a> {
     }
 }
 
-pub type Ref<'a, I> = DRef<'a, Identity, I, ahash::RandomState>;
-pub type RefMut<'a, I> = DRefMut<'a, Identity, I, ahash::RandomState>;
+pub type Ref<'a, I, K = Identity> = DRef<'a, K, I, ahash::RandomState>;
+pub type RefMut<'a, I, K = Identity> = DRefMut<'a, K, I, ahash::RandomState>;
 
 /// A global namespace.
 ///
@@ -275,6 +313,9 @@ quick_error::quick_error! {
         NoSuchScope {
             display("no such scope")
         }
+        PreludeAlreadyPresent {
+            display("crate already has a prelude")
+        }
     }
 }
 
@@ -291,7 +332,7 @@ mod tests {
         let root = view.add_root_scope(
             TEST_CRATE_A.clone(),
             Scope::new(Metadata::fake(&*ROOT_SCOPE_NAME), true),
-        );
+        ).unwrap();
 
         let some_module = view
             .add_item(&root, Scope::new(Metadata::fake("some_module"), true))

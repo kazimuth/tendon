@@ -42,14 +42,13 @@ pub type Set<K> = hashbrown::HashSet<K, fxhash::FxBuildHasher>;
 
 #[macro_use]
 pub mod attributes;
+pub mod builtins;
 pub mod crates;
 pub mod database;
 pub mod expressions;
 pub mod generics;
 pub mod identities;
-pub mod idents;
 pub mod items;
 pub mod paths;
 pub mod scopes;
 pub mod tokens;
-pub mod types;

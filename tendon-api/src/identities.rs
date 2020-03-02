@@ -6,6 +6,11 @@ use smol_str::SmolStr;
 use std::fmt;
 use std::hash::Hash;
 
+mod types;
+
+pub use types::*;
+use tracing::Id;
+
 /// Uniquely identifies an item (within a namespace).
 ///
 /// Completely different from an `Ident`[ifier], which is just a textual identifier.
@@ -102,27 +107,35 @@ impl fmt::Debug for Identity {
 }
 
 /// Uniquely identifies a lifetime.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct LifetimeId {
-    pub id: Identity,
+    id: Identity,
 }
+debug!(LifetimeId, "{:?}", id);
+impl LifetimeId {
+    pub fn new(id: Identity) -> LifetimeId {
+        // don't allow construction w/o apostrophe.
+        assert!(&id.path.iter().last().unwrap().is_lifetime());
 
-/// Uniquely identifies a type, with generic arguments.
-#[derive(Serialize, Deserialize, Debug)]
-pub struct TypeId {
-    pub id: Identity,
-    pub params: GenericParams,
+        LifetimeId {
+            id
+        }
+    }
+    pub fn id(&self) -> &Identity {
+        &self.id
+    }
 }
 
 /// Uniquely identifies a symbol, with generic arguments.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SymbolId {
     pub id: Identity,
     pub params: GenericParams,
 }
+debug!(SymbolId, "{:?}{:?}", id, params);
 
 /// Uniquely identifies a trait, with generic arguments.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct TraitId {
     /// The path to the trait.
     pub id: Identity,
@@ -130,6 +143,14 @@ pub struct TraitId {
     pub params: GenericParams,
     /// If the trait is prefixed with `?`
     pub is_maybe: bool,
+}
+impl fmt::Debug for TraitId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        if self.is_maybe {
+            write!(f, "?")?;
+        }
+        write!(f, "{:?}{:?}", self.id, self.params)
+    }
 }
 
 /// A crate, absolutely resolved within a crate graph.
@@ -170,35 +191,6 @@ impl fmt::Debug for CrateId {
     }
 }
 
-/// Generics embedded at a use site.
-/// Note: Default arguments may not be present here.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GenericParams {
-    /// Type bindings (e.g. `Output=T`).
-    /// Maps the declaration parameters to their assignments.
-    pub type_bindings: Map<Ident, TypeId>,
-
-    /// Lifetime parameters to a type.
-    /// Maps the declaration lifetimes to their assignments.
-    pub lifetimes: Map<Ident, LifetimeId>,
-
-    /// Const generic bindings.
-    /// https://github.com/rust-lang/rfcs/blob/master/text/2000-const-generics.md
-    /// Positional arguments are resolved before this structure is created.
-    pub consts: Map<Ident, ConstExpr>,
-}
-impl GenericParams {
-    pub fn empty() -> GenericParams {
-        GenericParams {
-            lifetimes: Default::default(),
-            type_bindings: Default::default(),
-            consts: Default::default(),
-        }
-    }
-    pub fn is_empty(&self) -> bool {
-        self.lifetimes.is_empty() && self.type_bindings.is_empty() && self.consts.is_empty()
-    }
-}
 
 lazy_static! {
     pub static ref TEST_CRATE_A: CrateId = CrateId::new("test_crate_a", "0.0.0");

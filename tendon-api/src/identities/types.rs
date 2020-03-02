@@ -1,20 +1,13 @@
-//! Data representing types.
-use crate::identities::{CrateId, Identity};
+//! Type identities. These are used to refer to types.
 
-lazy_static! {
-    pub static ref BUILTINS: CrateId = CrateId::new("@builtin", "0.0.0");
-    pub static ref ARRAY: Identity = Identity::new(&BUILTINS, &["ARRAY"]);
-    pub static ref SLICE: Identity = Identity::new(&BUILTINS, &["SLICE"]);
-    pub static ref REFERENCE: Identity = Identity::new(&BUILTINS, &["REFERENCE"]);
-    pub static ref POINTER: Identity = Identity::new(&BUILTINS, &["POINTER"]);
-    pub static ref TUPLE: Identity = Identity::new(&BUILTINS, &["TUPLE"]);
-    pub static ref QSELF: Identity = Identity::new(&BUILTINS, &["QSELF"]);
-    pub static ref BARE_FN: Identity = Identity::new(&BUILTINS, &["BARE_FN"]);
-    pub static ref IMPL_TRAIT: Identity = Identity::new(&BUILTINS, &["IMPL_TRAIT"]);
-    pub static ref DYN_TRAIT: Identity = Identity::new(&BUILTINS, &["DYN_TRAIT"]);
-}
+use crate::identities::{CrateId, Identity, LifetimeId, TraitId};
+use crate::paths::Ident;
+use crate::Map;
+use std::fmt;
+use crate::expressions::ConstExpr;
 
-/*
+use serde::{Deserialize, Serialize};
+
 /// A reference to a type.
 ///
 /// This is distinct from the declaration of the referenced type. For instance, if you had:
@@ -32,7 +25,7 @@ lazy_static! {
 /// ```
 ///
 #[derive(Clone, Serialize, Deserialize)]
-pub enum Type {
+pub enum TypeId {
     Path(PathType),
     Array(ArrayType),
     Slice(SliceType),
@@ -45,55 +38,49 @@ pub enum Type {
     ImplTrait(ImplTraitType),
     TraitObject(TraitObjectType),
 }
-impl Type {
+impl TypeId {
     /// If this type is void.
     pub fn is_void(&self) -> bool {
         match self {
-            Type::Tuple(t) => t.is_void(),
+            TypeId::Tuple(t) => t.is_void(),
             _ => false,
         }
     }
 }
-impl fmt::Debug for Type {
+impl fmt::Debug for TypeId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Type::Path(e) => fmt::Debug::fmt(e, f),
-            Type::Array(e) => fmt::Debug::fmt(e, f),
-            Type::Slice(e) => fmt::Debug::fmt(e, f),
-            Type::Reference(e) => fmt::Debug::fmt(e, f),
-            Type::Pointer(e) => fmt::Debug::fmt(e, f),
-            Type::Tuple(e) => fmt::Debug::fmt(e, f),
-            Type::Never(e) => fmt::Debug::fmt(e, f),
-            Type::QSelf(e) => fmt::Debug::fmt(e, f),
-            Type::BareFn(e) => fmt::Debug::fmt(e, f),
-            Type::ImplTrait(e) => fmt::Debug::fmt(e, f),
-            Type::TraitObject(e) => fmt::Debug::fmt(e, f),
+            TypeId::Path(e) => fmt::Debug::fmt(e, f),
+            TypeId::Array(e) => fmt::Debug::fmt(e, f),
+            TypeId::Slice(e) => fmt::Debug::fmt(e, f),
+            TypeId::Reference(e) => fmt::Debug::fmt(e, f),
+            TypeId::Pointer(e) => fmt::Debug::fmt(e, f),
+            TypeId::Tuple(e) => fmt::Debug::fmt(e, f),
+            TypeId::Never(e) => fmt::Debug::fmt(e, f),
+            TypeId::QSelf(e) => fmt::Debug::fmt(e, f),
+            TypeId::BareFn(e) => fmt::Debug::fmt(e, f),
+            TypeId::ImplTrait(e) => fmt::Debug::fmt(e, f),
+            TypeId::TraitObject(e) => fmt::Debug::fmt(e, f),
         }
-    }
-}
-impl From<Path> for Type {
-    fn from(p: Path) -> Type {
-        Type::Path(PathType {
-            params: Default::default(),
-            path: p.into(),
-        })
     }
 }
 
 /// A path, possibly with generic arguments `Type<T1, T2, Assoc=T3>`
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PathType {
-    /// The path to this type.
-    pub path: Path,
+    /// The identity of the path's target.
+    pub path: Identity,
     /// The applied generics.
     pub params: GenericParams,
 }
 debug!(PathType, "{:?}{:?}", path, params);
 
+
+
 /// An array, `[i32; n]`.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ArrayType {
-    pub type_: Box<Type>,
+    pub type_: Box<TypeId>,
     pub len: ConstExpr,
 }
 debug!(ArrayType, "[{:?}; {:?}]", type_, len);
@@ -101,7 +88,7 @@ debug!(ArrayType, "[{:?}; {:?}]", type_, len);
 /// A slice, `[i32]`.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SliceType {
-    pub type_: Box<Type>,
+    pub type_: Box<TypeId>,
 }
 debug!(SliceType, "[{:?}]", type_);
 
@@ -109,11 +96,11 @@ debug!(SliceType, "[{:?}]", type_);
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ReferenceType {
     /// The referenced type.
-    pub type_: Box<Type>,
+    pub type_: Box<TypeId>,
     /// Whether the reference is mutable.
     pub mut_: bool,
     /// The lifetime of this reference, if present.
-    pub lifetime: Option<Lifetime>,
+    pub lifetime: Option<LifetimeId>,
 }
 impl fmt::Debug for ReferenceType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -130,7 +117,7 @@ impl fmt::Debug for ReferenceType {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PointerType {
     /// The pointed-to type.
-    pub type_: Box<Type>,
+    pub type_: Box<TypeId>,
     /// Whether the pointer is mutable or const.
     pub mut_: bool,
 }
@@ -145,7 +132,7 @@ impl fmt::Debug for PointerType {
 /// If there are 0 arguments, this is the void type, `()`.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct TupleType {
-    pub types: Vec<Type>,
+    pub types: Vec<TypeId>,
 }
 impl TupleType {
     /// If this tuple is void.
@@ -178,9 +165,9 @@ debug!(NeverType, "!");
 #[derive(Clone, Serialize, Deserialize)]
 pub struct QSelfType {
     /// `T`
-    pub self_: Box<Type>,
+    pub self_: Box<TypeId>,
     /// `as Trait`
-    pub trait_: Trait,
+    pub trait_: TraitId,
     /// `::Output`
     pub output_: Ident,
 }
@@ -190,9 +177,9 @@ debug!(QSelfType, "<{:?} as {:?}>::{:?}", self_, trait_, output_);
 #[derive(Clone, Serialize, Deserialize)]
 pub struct BareFnType {
     /// The arguments to the function pointer.
-    pub args: Vec<Type>,
+    pub args: Vec<TypeId>,
     /// The return type of the function pointer.
-    pub ret: Box<Type>,
+    pub ret: Box<TypeId>,
     /// If the function pointer takes varargs, `...`.
     /// See https://github.com/rust-lang/rfcs/blob/master/text/2137-variadic.md
     pub varargs: bool,
@@ -224,36 +211,88 @@ impl fmt::Debug for BareFnType {
 /// `impl Trait`
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ImplTraitType {
-    /// Bounds on this type.
-    pub bounds: TypeBounds,
+    /// Lifetime bounds on this type.
+    pub lifetime_bounds: Vec<LifetimeId>,
+
+    /// Trait bounds on this type.
+    pub trait_bounds: Vec<TraitId>,
 }
-debug!(ImplTraitType, "(impl {:?})", bounds);
+impl fmt::Debug for ImplTraitType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "(impl ")?;
+        let mut p = false;
+        for b in &self.trait_bounds {
+            if p {
+                write!(f, " + ")?;
+            } else {
+                p = true;
+            }
+            write!(f, "{:?}", b)?;
+        }
+        for b in &self.lifetime_bounds {
+            write!(f, " + {:?}", b)?;
+        }
+        write!(f, ")")
+    }
+}
 
 /// `dyn Trait`
 #[derive(Clone, Serialize, Deserialize)]
 pub struct TraitObjectType {
     /// Bounds on this type.
-    pub bounds: TypeBounds,
+    pub trait_bounds: Vec<TraitId>,
 }
-debug!(TraitObjectType, "(dyn {:?})", bounds);
-
-impl fmt::Debug for Trait {
+impl fmt::Debug for TraitObjectType {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        if self.is_maybe {
-            write!(f, "?")?;
+        write!(f, "(dyn ")?;
+        let mut p = false;
+        for b in &self.trait_bounds {
+            if p {
+                write!(f, " + ")?;
+            } else {
+                p = true;
+            }
+            write!(f, "{:?}", b)?;
         }
-        write!(f, "{:?}{:?}", self.path, self.params)
+        write!(f, ")")
     }
 }
 
 /// Generic arguments to a type or trait.
 /// https://doc.rust-lang.org/reference/paths.html#paths-in-expressions
 /// Doesn't include constraints. Those are defined at the declaration site.
+/// Note: Default arguments are always present here.
 #[derive(Default, Clone, Serialize, Deserialize)]
+pub struct GenericParams {
+    /// Type bindings (e.g. `Output=T`).
+    /// Maps the declaration parameters to their assignments.
+    pub type_bindings: Map<Ident, TypeId>,
+
+    /// Lifetime parameters to a type.
+    /// Maps the declaration lifetimes to their assignments.
+    pub lifetimes: Map<Ident, LifetimeId>,
+
+    /// Const generic bindings.
+    /// https://github.com/rust-lang/rfcs/blob/master/text/2000-const-generics.md
+    /// Positional arguments are resolved before this structure is created.
+    pub consts: Map<Ident, ConstExpr>,
+}
+impl GenericParams {
+    pub fn empty() -> GenericParams {
+        GenericParams {
+            lifetimes: Default::default(),
+            type_bindings: Default::default(),
+            consts: Default::default(),
+        }
+    }
+    pub fn is_empty(&self) -> bool {
+        self.lifetimes.is_empty() && self.type_bindings.is_empty() && self.consts.is_empty()
+    }
+}
+
 impl fmt::Debug for GenericParams {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         if self.lifetimes.len() == 0
-            && self.types.len() == 0
             && self.type_bindings.len() == 0
             && self.consts.len() == 0
         {
@@ -268,14 +307,6 @@ impl fmt::Debug for GenericParams {
                 write!(f, ", ")?;
             }
             write!(f, "{:?}", lt)?;
-        }
-        for type_ in &self.types {
-            if first {
-                first = false;
-            } else {
-                write!(f, ", ")?;
-            }
-            write!(f, "{:?}", type_)?;
         }
         for (name, type_) in &self.type_bindings {
             if first {
@@ -305,92 +336,76 @@ impl fmt::Debug for GenericParams {
 mod tests {
     use super::*;
     use crate::tokens::Tokens;
+    use crate::identities::TEST_CRATE_A;
 
     #[test]
     fn lifetime_debug() {
-        assert_eq!(&format!("{:?}", Lifetime(Ident::from("test"))), "'test");
+        assert_eq!(&format!("{:?}", LifetimeId::new(Identity::new(&*TEST_CRATE_A, &["Type", "'param"]))), "test_crate_a[0.0.0]::Type::\'param");
     }
 
     #[test]
     fn is_void() {
         assert!(TupleType { types: vec![] }.is_void());
         assert!(!TupleType {
-            types: vec![Type::Never(NeverType)]
+            types: vec![TypeId::Never(NeverType)]
         }
         .is_void());
     }
 
     #[test]
     fn formatting() {
-        let type_ = Type::Tuple(TupleType {
+        let trait_ = TraitId {
+            id: Identity::new(&*TEST_CRATE_A, &["TestTrait"]),
+            params: Default::default(),
+            is_maybe: false,
+        };
+        let mut type_bindings = Map::default();
+        type_bindings.insert(Ident::from("A"), TypeId::Path(PathType { path: Identity::new(&*TEST_CRATE_A, &["other", "KindaType"]), params: Default::default() }));
+
+        let type_ = TypeId::Tuple(TupleType {
             types: vec![
-                Type::Path(PathType {
-                    path: Path::fake("test::Type"),
-                    params: Default::default(),
+                TypeId::Path(PathType {
+                    path: Identity::new(&*TEST_CRATE_A, &["test", "Type"]),
+                    params: GenericParams {  type_bindings, ..Default::default() }
                 }),
-                Type::Pointer(PointerType {
+                TypeId::Pointer(PointerType {
                     mut_: true,
-                    type_: Box::new(Type::Array(ArrayType {
-                        type_: Box::new(Type::Never(NeverType)),
+                    type_: Box::new(TypeId::Array(ArrayType {
+                        type_: Box::new(TypeId::Never(NeverType)),
                         len: ConstExpr(Tokens::from(5)),
                     })),
                 }),
-                Type::Reference(ReferenceType {
-                    lifetime: Some(Lifetime(Ident::from("a"))),
+                TypeId::Reference(ReferenceType {
+                    lifetime: Some(LifetimeId::new(Identity::new(&*TEST_CRATE_A, &["Type", "'param"]))),
                     mut_: false,
-                    type_: Box::new(Type::Slice(SliceType {
-                        type_: Box::new(Type::Never(NeverType)),
+                    type_: Box::new(TypeId::Slice(SliceType {
+                        type_: Box::new(TypeId::Never(NeverType)),
                     })),
                 }),
-                Type::BareFn(BareFnType {
+                TypeId::BareFn(BareFnType {
                     unsafe_: true,
                     varargs: true,
-                    ret: Box::new(Type::TraitObject(TraitObjectType {
-                        bounds: TypeBounds {
-                            lifetimes: vec![Lifetime(Ident::from("a")), Lifetime(Ident::from("b"))],
-                            traits: vec![Trait {
-                                path: Path::fake("FakeTrait"),
-                                params: Default::default(),
-                                is_maybe: true,
-                            }],
-                        },
+                    ret: Box::new(TypeId::TraitObject(TraitObjectType {
+                        trait_bounds: vec![trait_.clone()]
                     })),
-                    args: vec![Type::QSelf(QSelfType {
+                    args: vec![TypeId::QSelf(QSelfType {
                         output_: Ident::from("Wow"),
-                        self_: Box::new(Type::Never(NeverType)),
-                        trait_: Trait {
-                            path: Path::fake("FakeTrait"),
-                            params: Default::default(),
-                            is_maybe: false,
-                        },
+                        self_: Box::new(TypeId::Never(NeverType)),
+                        trait_,
                     })],
                 }),
-                Type::ImplTrait(ImplTraitType {
-                    bounds: TypeBounds {
-                        traits: vec![Trait {
-                            path: Path::fake("Bees"),
-                            is_maybe: false,
-                            params: GenericParams {
-                                lifetimes: vec![Lifetime(Ident::from("a"))],
-                                types: vec![],
-                                type_bindings: vec![(
-                                    Ident::from("B"),
-                                    Type::Path(PathType {
-                                        path: Path::fake("Honey"),
-                                        params: Default::default(),
-                                    }),
-                                )],
-                                consts: vec![ConstExpr(Tokens::from(27u8))],
-                            },
-                        }],
-                        lifetimes: vec![],
-                    },
+                TypeId::ImplTrait(ImplTraitType {
+                    trait_bounds: vec![TraitId {
+                        id: Identity::new(&*TEST_CRATE_A, &["TestTrait"]),
+                        params: Default::default(),
+                        is_maybe: false
+                    }],
+                    lifetime_bounds: vec![]
                 }),
             ],
         });
         println!("{:?}", type_);
         assert_eq!(&format!("{:?}", type_),
-                   "(test::Type, *mut [!; 5i32], &'a [!], unsafe fn(<! as FakeTrait>::Wow, ...) -> (dyn 'a + 'b + ?FakeTrait), (impl Bees<'a, B=Honey; 27u8>))");
+            "(test_crate_a[0.0.0]::test::Type<A=test_crate_a[0.0.0]::other::KindaType>, *mut [!; 5i32], &test_crate_a[0.0.0]::Type::\'param [!], unsafe fn(<! as test_crate_a[0.0.0]::TestTrait>::Wow, ...) -> (dyn test_crate_a[0.0.0]::TestTrait), (impl test_crate_a[0.0.0]::TestTrait))");
     }
 }
-*/
