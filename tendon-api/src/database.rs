@@ -31,7 +31,6 @@ use serde::{Deserialize, Serialize};
 
 lazy_static! {
     pub static ref ROOT_SCOPE_NAME: Ident = "{root}".into();
-
 }
 
 /// A database of everything. Crates should form a DAG. Crates cannot be modified once added.
@@ -325,20 +324,22 @@ mod tests {
     use crate::attributes::Metadata;
 
     #[test]
-    fn insert_and_query() {
+    fn insert() {
         let db = Db::fake_db();
         let mut view = db.view_once_per_thread_i_promise();
 
-        let root = view.add_root_scope(
-            TEST_CRATE_A.clone(),
-            Scope::new(Metadata::fake(&*ROOT_SCOPE_NAME), true),
-        ).unwrap();
+        let root = view
+            .add_root_scope(
+                TEST_CRATE_A.clone(),
+                Scope::new(Metadata::fake(&*ROOT_SCOPE_NAME), true),
+            )
+            .unwrap();
 
         let some_module = view
             .add_item(&root, Scope::new(Metadata::fake("some_module"), true))
             .unwrap();
 
-        let next_module = view
+        let _next_module = view
             .add_item(
                 &some_module,
                 Scope::new(Metadata::fake("next_module"), true),

@@ -1,6 +1,4 @@
-use crate::expressions::ConstExpr;
 use crate::paths::Ident;
-use crate::Map;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 use std::fmt;
@@ -9,7 +7,6 @@ use std::hash::Hash;
 mod types;
 
 pub use types::*;
-use tracing::Id;
 
 /// Uniquely identifies an item (within a namespace).
 ///
@@ -117,9 +114,7 @@ impl LifetimeId {
         // don't allow construction w/o apostrophe.
         assert!(&id.path.iter().last().unwrap().is_lifetime());
 
-        LifetimeId {
-            id
-        }
+        LifetimeId { id }
     }
     pub fn id(&self) -> &Identity {
         &self.id
@@ -190,7 +185,6 @@ impl fmt::Debug for CrateId {
         f.write_str("]")
     }
 }
-
 
 lazy_static! {
     pub static ref TEST_CRATE_A: CrateId = CrateId::new("test_crate_a", "0.0.0");

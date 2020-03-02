@@ -105,15 +105,17 @@ use std::sync::Arc;
 use tendon_api::attributes::Span;
 use tendon_api::crates::CrateData;
 use tendon_api::database::{Db, NamespaceLookup};
-use tendon_api::paths::{Ident, UnresolvedPath};
-use tendon_api::identities::{Identity, CrateId};
+use tendon_api::identities::{CrateId, Identity};
+use tendon_api::items::DeclarativeMacroItem;
+use tendon_api::paths::Ident;
 use tendon_api::tokens::Tokens;
-use tendon_api::{Map, Set};
+use tendon_api::Map;
 use tracing::{trace, warn};
 
-
+use tendon_api::scopes::Scope;
 use textual_scope::TextualScope;
 
+mod helpers;
 mod textual_scope;
 
 pub(crate) struct LocationMetadata<'a> {
@@ -159,12 +161,6 @@ quick_error! {
             description(err.description())
             display("parse error during walking: {}", err)
         }
-        AlreadyDefined(namespace: &'static str, path: Identity) {
-            display("path {:?} already defined in {} namespace", path, namespace)
-        }
-        CachedError(path: Identity) {
-            display("path {:?} is invalid due to some previous error", path)
-        }
         MalformedPathAttribute(tokens: String) {
             display("malformed `#[path]` attribute: {}", tokens)
         }
@@ -174,35 +170,25 @@ quick_error! {
         ModuleNotFound {
             display("couldn't find source file")
         }
-        Other {
-            display("other error")
-        }
-        ExternCrateNotFound(ident: Ident) {
-            display("can't find extern crate: {}", ident)
-        }
         NonPub {
             display("skipping non-pub item (will never be accessible)")
+        }
+        NotYetResolved {
+            display("item is not yet resolved")
+        }
+        CannotResolve {
+            display("item cannot resolve")
         }
         Impossible {
             display("some invariant was violated (but we're still going, dammit...)")
         }
-        NotYetResolved {
-            display("not yet resolved")
-        }
-        CannotResolve {
-            display("path cannot be resolved")
-        }
     }
 }
-
 
 /// A module we haven't yet succeeded in expanding.
 struct UnexpandedModule<'a> {
     /// Where this module is (in the file system and the crate namespace).
     loc: LocationMetadata<'a>,
-
-    /// Textual scope at the end of the module
-    textual_scope: TextualScope,
 
     /// Items that we have not yet succeeded in expanding, along with their spans and textual
     /// scopes.
@@ -226,8 +212,6 @@ enum UnexpandedItem {
     DeriveMacro(Tokens),
 }
 
-
-
 /// Parse a file into a syn::File.
 fn parse_file(file: &FsPath) -> Result<syn::File, WalkError> {
     trace!("parsing `{}`", file.display());
@@ -238,7 +222,6 @@ fn parse_file(file: &FsPath) -> Result<syn::File, WalkError> {
 
     Ok(syn::parse_file(&source)?)
 }
-
 
 fn skip(kind: &str, path: Identity) {
     trace!("skipping {} {:?}", kind, &path);
@@ -253,76 +236,32 @@ fn warn(cause: impl Into<WalkError>, span: &Span) {
     warn!("[{:?}]: suppressing error: {}", span, cause);
 }
 
+/// The first phase: walk files, parse, find imports, expand macros.
+/// As items cease to have anything to do with macros they are dumped in the Db; after macro
+/// expansion order no longer matters.
+struct Walker<'a> {
+    /// A Db containing resolved definitions for all dependencies.
+    /// During this phase, we insert `ModuleItems` and `MacroItems` into this database.
+    /// The only items that go in here are `#[macro_export]`-marked macros.
+    db: &'a Db,
 
-/*
-/// Find the path for a module.
-fn find_source_file(
-    expand_phase: &WalkParseExpandPhase,
-    parent: &LocationMetadata,
-    item: &mut ModuleItem,
-) -> Result<PathBuf, WalkError> {
-    let look_at = if let Some(path) = item.metadata.extract_attribute(&*PATH) {
-        let string = path
-            .get_assigned_string()
-            .ok_or_else(|| WalkError::MalformedPathAttribute(format!("{:?}", path)))?;
-        if string.ends_with(".rs") {
-            // TODO are there more places we should check?
-            let dir = parent.source_file.parent().ok_or(WalkError::Root)?;
-            return Ok(dir.join(string));
-        }
-        string
-    } else {
-        format!("{}", item.name)
-    };
+    /// The relevant CrateData.
+    crate_data: &'a CrateData,
 
-    let mut root_normal = parent.crate_data.entry.parent().unwrap().to_owned();
-    for entry in &parent.module_path.path.0 {
-        root_normal.push(entry.to_string());
-    }
+    /// Declarative macro items inserted into the crate via `#[macro_use] extern crate`.
+    /// Also has macros from the actual `std` / `core` prelude.
+    ///
+    /// `#[macro_export]` macros are NOT placed here.
+    ///
+    /// This information is discarded after parsing this crate.
+    ///
+    /// TODO: add std / core macros here?
+    /// TODO: figure out what happens when we override those
+    macro_prelude: Map<Ident, DeclarativeMacroItem>,
 
-    let root_renamed = parent.source_file.parent().unwrap().to_owned();
-
-    for root in [root_normal, root_renamed].iter() {
-        let to_try = [
-            root.join(format!("{}.rs", look_at)),
-            root.join(look_at.clone()).join("mod.rs"),
-        ];
-        for to_try in to_try.iter() {
-            if let Ok(metadata) = fs::metadata(to_try) {
-                if metadata.is_file() {
-                    return Ok(to_try.clone());
-                }
-            }
-        }
-    }
-
-    Err(WalkError::ModuleNotFound)
+    /// The contents of modules we haven't finished expanding.
+    unexpanded_modules: Map<Identity, UnexpandedModule<'a>>,
 }
-*/
-
-/*
-// TODO refactor output enum
-/// Resolve an item in the current crate or the database of dependencies.
-/// Note that this doesn't cover everything, there's special stuff for macros.
-///
-/// Invariant: every recursive call of this function should reduce the path somehow,
-/// by either stripping off a prefix or a module export.
-///
-/// If this returns `WalkError::NotYetResolved`, that means we haven't found the path yet, and should
-/// keep it on the work list.
-/// If, however, it returns `WalkError::CannotResolve`
-/// that means the path has requested something that doesn't make sense (e.g. a missing item in a
-/// dependent crate), so we'll need to throw its containing item out.
-/// `WalkError::Impossible` is reserved for syntactic violations, maybe emerging after botched
-/// macro transcription.
-fn try_to_resolve<I: NamespaceLookup>(db: &Db,
-                                      current: &CrateDb,
-                                      in_module: &Identity,
-                                      path: &UnresolvedPath)
-    -> Result<Identity, WalkError> {
-
-}
-*/
 
 /*
 
@@ -652,31 +591,6 @@ fn insert_into_db(db: &Db, loc: &LocationMetadata, item: &syn::Item) -> Result<(
         syn::Item::Union(union_) => skip("union", loc.module_path.clone().join(&union_.ident)),
         syn::Item::Trait(trait_) => skip("trait", loc.module_path.clone().join(&trait_.ident)),
         syn::Item::TraitAlias(alias_) => {
-
-/*
-// TODO refactor output enum
-/// Resolve an item in the current crate or the database of dependencies.
-/// Note that this doesn't cover everything, there's special stuff for macros.
-///
-/// Invariant: every recursive call of this function should reduce the path somehow,
-/// by either stripping off a prefix or a module export.
-///
-/// If this returns `WalkError::NotYetResolved`, that means we haven't found the path yet, and should
-/// keep it on the work list.
-/// If, however, it returns `WalkError::CannotResolve`
-/// that means the path has requested something that doesn't make sense (e.g. a missing item in a
-/// dependent crate), so we'll need to throw its containing item out.
-/// `WalkError::Impossible` is reserved for syntactic violations, maybe emerging after botched
-/// macro transcription.
-fn try_to_resolve<I: NamespaceLookup>(db: &Db,
-                                      current: &CrateDb,
-                                      in_module: &Identity,
-                                      path: &UnresolvedPath)
-    -> Result<Identity, WalkError> {
-
-}
-*/
-
 /*
 
 /// Walk a whole crate, expanding macros, storing all resulting data in the central db.
@@ -1015,32 +929,7 @@ fn insert_into_db(db: &Db, loc: &LocationMetadata, item: &syn::Item) -> Result<(
     Ok(())
 }
 
-/// The first phase: walk files, parse, find imports, expand macros.
-/// As items cease to have anything to do with macros they are dumped in the Db; after macro
-/// expansion order no longer matters.
-struct WalkParseExpandPhase<'a> {
-    /// A Db containing resolved definitions for all dependencies.
-    /// During this phase, we insert `ModuleItems` and `MacroItems` into this database.
-    /// The only items that go in here are `#[macro_export]`-marked macros.
-    db: &'a Db,
 
-    /// The relevant CrateData.
-    crate_data: &'a CrateData,
-
-    /// Declarative macro items inserted into the crate via `#[macro_use] extern crate`.
-    /// Also has macros from the actual `std` / `core` prelude.
-    ///
-    /// `#[macro_export]` macros are NOT placed here.
-    ///
-    /// This information is discarded after parsing this crate.
-    ///
-    /// TODO: add std / core macros here?
-    /// TODO: figure out what happens when we override those
-    macro_prelude: Map<Ident, DeclarativeMacroItem>,
-
-    /// The contents of modules we haven't finished expanding.
-    unexpanded_modules: Map<Identity, UnexpandedModule<'a>>,
-}
 */     skip("trait alias", loc.module_path.clone().join(&alias_.ident))
         }
         syn::Item::Impl(_impl_) => skip("impl", loc.module_path.clone()),
@@ -1452,4 +1341,3 @@ mod tests {
     }
 }
 */
-

@@ -6,9 +6,9 @@ use std::io;
 use std::path::{Path as FsPath, PathBuf};
 use std::process::Command;
 use tendon_api::crates::{CrateData, RustEdition};
+use tendon_api::identities::CrateId;
 use tendon_api::{Map, Set};
 use tracing::{trace, warn};
-use tendon_api::identities::CrateId;
 
 /// Run `cargo check` on target project to ensure well-formed input + dependencies.
 pub fn check(path: &FsPath) -> io::Result<()> {

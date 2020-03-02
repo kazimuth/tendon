@@ -1,10 +1,10 @@
 //! Type identities. These are used to refer to types.
 
-use crate::identities::{CrateId, Identity, LifetimeId, TraitId};
+use crate::expressions::ConstExpr;
+use crate::identities::{Identity, LifetimeId, TraitId};
 use crate::paths::Ident;
 use crate::Map;
 use std::fmt;
-use crate::expressions::ConstExpr;
 
 use serde::{Deserialize, Serialize};
 
@@ -74,8 +74,6 @@ pub struct PathType {
     pub params: GenericParams,
 }
 debug!(PathType, "{:?}{:?}", path, params);
-
-
 
 /// An array, `[i32; n]`.
 #[derive(Clone, Serialize, Deserialize)]
@@ -292,10 +290,7 @@ impl GenericParams {
 
 impl fmt::Debug for GenericParams {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        if self.lifetimes.len() == 0
-            && self.type_bindings.len() == 0
-            && self.consts.len() == 0
-        {
+        if self.lifetimes.len() == 0 && self.type_bindings.len() == 0 && self.consts.len() == 0 {
             return Ok(());
         }
         write!(f, "<")?;
@@ -335,12 +330,18 @@ impl fmt::Debug for GenericParams {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tokens::Tokens;
     use crate::identities::TEST_CRATE_A;
+    use crate::tokens::Tokens;
 
     #[test]
     fn lifetime_debug() {
-        assert_eq!(&format!("{:?}", LifetimeId::new(Identity::new(&*TEST_CRATE_A, &["Type", "'param"]))), "test_crate_a[0.0.0]::Type::\'param");
+        assert_eq!(
+            &format!(
+                "{:?}",
+                LifetimeId::new(Identity::new(&*TEST_CRATE_A, &["Type", "'param"]))
+            ),
+            "test_crate_a[0.0.0]::Type::\'param"
+        );
     }
 
     #[test]
@@ -360,13 +361,22 @@ mod tests {
             is_maybe: false,
         };
         let mut type_bindings = Map::default();
-        type_bindings.insert(Ident::from("A"), TypeId::Path(PathType { path: Identity::new(&*TEST_CRATE_A, &["other", "KindaType"]), params: Default::default() }));
+        type_bindings.insert(
+            Ident::from("A"),
+            TypeId::Path(PathType {
+                path: Identity::new(&*TEST_CRATE_A, &["other", "KindaType"]),
+                params: Default::default(),
+            }),
+        );
 
         let type_ = TypeId::Tuple(TupleType {
             types: vec![
                 TypeId::Path(PathType {
                     path: Identity::new(&*TEST_CRATE_A, &["test", "Type"]),
-                    params: GenericParams {  type_bindings, ..Default::default() }
+                    params: GenericParams {
+                        type_bindings,
+                        ..Default::default()
+                    },
                 }),
                 TypeId::Pointer(PointerType {
                     mut_: true,
@@ -376,7 +386,10 @@ mod tests {
                     })),
                 }),
                 TypeId::Reference(ReferenceType {
-                    lifetime: Some(LifetimeId::new(Identity::new(&*TEST_CRATE_A, &["Type", "'param"]))),
+                    lifetime: Some(LifetimeId::new(Identity::new(
+                        &*TEST_CRATE_A,
+                        &["Type", "'param"],
+                    ))),
                     mut_: false,
                     type_: Box::new(TypeId::Slice(SliceType {
                         type_: Box::new(TypeId::Never(NeverType)),
@@ -386,7 +399,7 @@ mod tests {
                     unsafe_: true,
                     varargs: true,
                     ret: Box::new(TypeId::TraitObject(TraitObjectType {
-                        trait_bounds: vec![trait_.clone()]
+                        trait_bounds: vec![trait_.clone()],
                     })),
                     args: vec![TypeId::QSelf(QSelfType {
                         output_: Ident::from("Wow"),
@@ -398,9 +411,9 @@ mod tests {
                     trait_bounds: vec![TraitId {
                         id: Identity::new(&*TEST_CRATE_A, &["TestTrait"]),
                         params: Default::default(),
-                        is_maybe: false
+                        is_maybe: false,
                     }],
-                    lifetime_bounds: vec![]
+                    lifetime_bounds: vec![],
                 }),
             ],
         });

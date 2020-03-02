@@ -1,22 +1,64 @@
 //! Attribute lowering.
 
-use super::LowerError;
-use crate::walker::LocationMetadata;
-use lazy_static::lazy_static;
-use tendon_api::attributes::Repr;
-use tendon_api::types::Trait;
 use tendon_api::{
-    attributes::{
-        Attribute, Deprecation, Meta, MetaInner, Metadata, Span, SymbolMetadata, TypeMetadata,
-        Visibility,
-    },
-    paths::Path,
+    attributes::{Attribute, Meta, MetaInner},
     tokens::Tokens,
-    types::GenericParams,
 };
-use tracing::{info_span, trace, warn};
+use tracing::warn;
 
 // mod interp_cfg;
+
+/// Find an attribute within a list of syn attibutes, and lower it to our format.
+pub fn extract_attribute(attrs: &[syn::Attribute], name: &str) -> Option<Attribute> {
+    let attr = attrs.iter().find(|a| a.path.is_ident(name))?;
+    Some(lower_attribute(attr))
+}
+
+/// Lower a syn attribute.
+pub fn lower_attribute(attribute: &syn::Attribute) -> Attribute {
+    if let Ok(meta) = attribute.parse_meta() {
+        Attribute::Meta(lower_meta(&meta))
+    } else {
+        Attribute::Other {
+            path: (&attribute.path).into(),
+            input: Tokens::from(&attribute.tokens),
+        }
+    }
+}
+
+/// Lower a syn Meta to our Meta.
+fn lower_meta(meta: &syn::Meta) -> Meta {
+    // TODO: update this when syn merges the paths breaking change
+    match meta {
+        syn::Meta::Path(path) => Meta::Path(path.into()),
+        syn::Meta::NameValue(syn::MetaNameValue { path, lit, .. }) => Meta::Assign {
+            path: path.into(),
+            literal: Tokens::from(lit),
+        },
+        syn::Meta::List(syn::MetaList { path, nested, .. }) => Meta::Call {
+            path: path.into(),
+            args: nested
+                .iter()
+                .map(|arg| match arg {
+                    syn::NestedMeta::Meta(meta) => MetaInner::Meta(lower_meta(meta)),
+                    syn::NestedMeta::Lit(lit) => MetaInner::Literal(Tokens::from(lit)),
+                })
+                .collect(),
+        },
+    }
+}
+
+/// TODO replace this w/ proper PM2 shim
+fn extract_string(lit: &Tokens) -> String {
+    if let Ok(lit) = syn::parse2::<syn::LitStr>(lit.get_tokens()) {
+        lit.value()
+    } else {
+        warn!("failed to extract string from {:?}", lit);
+        lit.get_tokens().to_string()
+    }
+}
+
+/*
 
 lazy_static! {
     // the string used by `syn` for converting doc comments to attributes
@@ -151,49 +193,6 @@ pub fn lower_visibility(visibility: &syn::Visibility) -> Visibility {
     }
 }
 
-/// Lower a syn attribute.
-pub fn lower_attribute(attribute: &syn::Attribute) -> Attribute {
-    if let Ok(meta) = attribute.parse_meta() {
-        Attribute::Meta(lower_meta(&meta))
-    } else {
-        Attribute::Other {
-            path: (&attribute.path).into(),
-            input: Tokens::from(&attribute.tokens),
-        }
-    }
-}
-
-/// Lower a syn Meta to our Meta.
-fn lower_meta(meta: &syn::Meta) -> Meta {
-    // TODO: update this when syn merges the paths breaking change
-    match meta {
-        syn::Meta::Path(path) => Meta::Path(path.into()),
-        syn::Meta::NameValue(syn::MetaNameValue { path, lit, .. }) => Meta::Assign {
-            path: path.into(),
-            literal: Tokens::from(lit),
-        },
-        syn::Meta::List(syn::MetaList { path, nested, .. }) => Meta::Call {
-            path: path.into(),
-            args: nested
-                .iter()
-                .map(|arg| match arg {
-                    syn::NestedMeta::Meta(meta) => MetaInner::Meta(lower_meta(meta)),
-                    syn::NestedMeta::Lit(lit) => MetaInner::Literal(Tokens::from(lit)),
-                })
-                .collect(),
-        },
-    }
-}
-
-/// TODO replace this w/ proper PM2 shim
-fn extract_string(lit: &Tokens) -> String {
-    if let Ok(lit) = syn::parse2::<syn::LitStr>(lit.get_tokens()) {
-        lit.value()
-    } else {
-        warn!("failed to extract string from {:?}", lit);
-        lit.get_tokens().to_string()
-    }
-}
 
 /// Given a metadata, strip all the `extra_attributes` that go into a TypeMetadata.
 pub fn extract_type_metadata(metadata: &mut Metadata) -> Result<TypeMetadata, LowerError> {
@@ -366,3 +365,5 @@ mod tests {
         assert_eq!(funky.visibility, Visibility::NonPub);
     }
 }
+
+*/

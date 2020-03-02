@@ -4,7 +4,6 @@ use std::error::Error;
 use std::path::Path;
 use tendon_resolve as resolve;
 
-
 #[allow(unused)]
 #[cfg(debug_assertions)]
 static MODE: &'static str = "debug";

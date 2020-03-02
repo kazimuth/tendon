@@ -29,7 +29,8 @@ pub enum SymbolItem {
 
 /// An item in the type namespace.
 ///
-/// Includes generic parameters, which can be lifetimes.
+/// Includes generic parameters, which can be lifetimes. As a hack, lifetimes are stored in the type
+/// namespace, w/ apostrophes.
 #[derive(Serialize, Deserialize)]
 pub enum TypeItem {
     Struct(StructItem),

@@ -3,11 +3,12 @@
 //! Note: syn's datastructure's aren't thread-safe, so we can never include them in the output data.
 //! Style note: always prefix syn types with "syn" in this crate.
 
+pub(crate) mod attributes;
+
 /*
 use std::fmt;
 use tendon_api::tokens::Tokens;
 
-pub(crate) mod attributes;
 pub(crate) mod generics;
 pub(crate) mod imports;
 pub(crate) mod items;
