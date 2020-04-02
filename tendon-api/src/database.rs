@@ -66,7 +66,8 @@ pub struct Db {
 
 impl Db {
     /// Create an empty database.
-    pub fn new(crates: Map<CrateId, CrateData>) -> Db {
+    pub fn new(mut crates: Map<CrateId, CrateData>) -> Db {
+        // TODO add std + core here?
         Db {
             crates,
             types: Namespace::new(),
@@ -83,9 +84,8 @@ impl Db {
         DbView(self)
     }
 
-    #[allow(unused)]
     /// Creates a `Db` for tests.
-    pub(crate) fn fake_db() -> Db {
+    pub fn fake_db() -> Db {
         let crate_a = CrateData::fake(TEST_CRATE_A.clone());
         let crate_b = CrateData::fake(TEST_CRATE_B.clone());
         let crate_c = CrateData::fake(TEST_CRATE_C.clone());
@@ -113,12 +113,12 @@ pub struct DbView<'a>(&'a Db);
 
 impl<'a> DbView<'a> {
     /// Get an item.
-    pub fn get_item<I: NamespaceLookup, F, R>(&mut self, id: &Identity) -> Option<Ref<I>> {
+    pub fn get_item<I: NamespaceLookup>(&mut self, id: &Identity) -> Option<Ref<I>> {
         I::get_namespace(self.0).0.get(id)
     }
 
     /// Get an item mutably.
-    pub fn get_item_mut<I: NamespaceLookup, F, R>(&mut self, id: &Identity) -> Option<RefMut<I>> {
+    pub fn get_item_mut<I: NamespaceLookup>(&mut self, id: &Identity) -> Option<RefMut<I>> {
         I::get_namespace(self.0).0.get_mut(id)
     }
 
@@ -144,7 +144,7 @@ impl<'a> DbView<'a> {
         crate_: CrateId,
         scope: Scope,
     ) -> Result<Identity, DatabaseError> {
-        assert!(&scope.metadata.name == &*ROOT_SCOPE_NAME);
+        assert!(&scope.metadata.name == &*ROOT_SCOPE_NAME, "root scope must be named `{root}`");
         let root_id = Identity::root(&crate_);
         match self.0.scopes.0.entry(root_id.clone()) {
             DEntry::Occupied(_) => Err(DatabaseError::ItemAlreadyPresent),

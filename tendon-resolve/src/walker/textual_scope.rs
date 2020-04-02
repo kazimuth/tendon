@@ -53,7 +53,7 @@ use tendon_api::paths::Ident;
 /// Expanding an item should not modify that item's scope, but it should modify all the scopes that
 /// come after it.
 ///
-/// Alright, let's bite the bullet and doubly-linked-list it.
+/// Implemented with a doubly-linked list (using `Rc` and `Weak`).
 #[derive(Clone)]
 pub(crate) struct TextualScope(Rc<RefCell<TextualScopeInner>>);
 

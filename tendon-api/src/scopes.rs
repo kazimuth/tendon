@@ -48,7 +48,7 @@ pub struct Binding {
     /// (e.g. a reexport), that chain is followed.
     pub identity: Identity,
 
-    /// The visibility of the binding (NOT the item), in the scope of its module.
+    /// The visibility of the binding (NOT the item).
     pub visibility: Visibility,
 
     /// If the binding is through a glob or explicit.
@@ -65,8 +65,21 @@ pub enum NamespaceId {
     Scope = 3,
 }
 
+/// A binding priority. Bindings created through globs (`use thing::*`) have lower
+/// priority than explicit imports / declarations.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Priority {
     Glob,
     Explicit,
 }
+
+/// A prelude. There's one of these per-crate. Each is constructed before crate name resolution
+/// begins. They mostly act like a normal scope, but they apply to a whole crate.
+///
+/// Not to be confused with the "language prelude", i.e. std::prelude::v1 -- that is a set of names
+/// that's *added* to each crate's prelude. However, a crate prelude can include other items as well;
+/// notably, extern crates, and macros imported with macro_use!.
+///
+/// The `#[no_implicit_prelude]` disables the entire crate prelude for some module, including extern crates!
+/// External crates must be accessed like `::krate` to work in a no_implicit_prelude module.
+pub struct Prelude(pub Scope);

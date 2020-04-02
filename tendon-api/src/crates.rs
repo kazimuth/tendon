@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 
 /// Metadata for a crate instantiation. There's one of these for every separate semver version for
 /// every crate in the dependency tree.
+///
+/// Conceptually, this holds data derived from cargo metadata. Data that requires looking at the source
+/// code (e.g. if a crate is no_std) is computed later.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CrateData {
     /// Which crate this is.
