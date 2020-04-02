@@ -271,7 +271,7 @@ pub fn build_prelude(
                 priority: Priority::Glob,
             };
             if let Some(previous) = bindings.insert(name.clone(), binding) {
-                panic!("multiply-defined macro `{}` in prelude: original {:?}, new {:?}", name, previous.identity, dep_binding.identity);
+                panic!("multiply-defined macro `{}` in prelude of crate `{:?}`: original {:?}, new {:?}", name, crate_data.id, previous.identity, dep_binding.identity);
             }
         }
     }
@@ -293,15 +293,17 @@ mod tests {
         let mut db = Db::fake_db();
         let mut view = db.view_once_per_thread_i_promise();
 
-
         let a_root = view.add_root_scope(crate_a.clone(), Scope::new(Metadata::fake((&*ROOT_SCOPE_NAME).clone()), true)).unwrap();
         view.add_binding::<MacroItem>(&a_root,
                          "a_exported_macro".into(), Identity::new(crate_a, &["a_exported_macro"]), Visibility::Pub,
         Priority::Glob).unwrap();
 
+        let b_root = view.add_root_scope(crate_b.clone(), Scope::new(Metadata::fake((&*ROOT_SCOPE_NAME).clone()), true)).unwrap();
 
         let mut crate_bindings = Map::default();
         crate_bindings.insert("test_crate_a".into(), (&*TEST_CRATE_A).clone());
+        crate_bindings.insert("test_crate_b".into(), (&*TEST_CRATE_B).clone());
+
         let mut macro_use_crates = Vec::new();
         macro_use_crates.push((&*TEST_CRATE_A).clone());
 
@@ -314,6 +316,7 @@ mod tests {
 
         let prelude_scopes = b_prelude.0.get_bindings::<Scope>();
         assert!(prelude_scopes.contains_key(&Ident::from("test_crate_a")));
+        assert!(prelude_scopes.contains_key(&Ident::from("test_crate_b")));
 
         let prelude_macros = b_prelude.0.get_bindings::<MacroItem>();
         assert!(prelude_macros.contains_key(&Ident::from("a_exported_macro")));
