@@ -25,8 +25,3 @@ rayon = "1"
 toml = "0.5"
 failure = "0.1.5"
 spoor = { path = "../spoor" }
-criterion = "0.3.0"
-
-[[bench]]
-name = "components"
-harness = false

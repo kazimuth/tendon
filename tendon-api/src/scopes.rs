@@ -2,7 +2,7 @@
 
 use crate::attributes::{Metadata, Visibility};
 use crate::database::NamespaceLookup;
-use crate::identities::Identity;
+use crate::identities::{Identity, CrateId};
 use crate::paths::Ident;
 use crate::Map;
 use serde::{Deserialize, Serialize};
@@ -82,4 +82,17 @@ pub enum Priority {
 ///
 /// The `#[no_implicit_prelude]` disables the entire crate prelude for some module, including extern crates!
 /// External crates must be accessed like `::krate` to work in a no_implicit_prelude module.
-pub struct Prelude(pub Scope);
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Prelude {
+    /// This scope serves as a fallback for all name lookups within a crate.
+    ///
+    /// (`Priority` and `Visibility` don't matter in this data structure,
+    /// we just reuse Scope for convenience.)
+    pub scope: Scope,
+
+    /// External crates are added by their name in `Cargo.toml`. using `extern crate a as b` adds
+    /// *both* `a` and `b` to this map.
+    ///
+    /// This is used to look up paths prefixed with `::`.
+    pub extern_crates: Map<Ident, CrateId>
+}

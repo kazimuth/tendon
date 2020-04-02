@@ -20,7 +20,7 @@ use crate::crates::CrateData;
 use crate::identities::{CrateId, Identity, TEST_CRATE_A, TEST_CRATE_B, TEST_CRATE_C};
 use crate::items::{MacroItem, SymbolItem, TypeItem};
 use crate::paths::Ident;
-use crate::scopes::{Binding, NamespaceId, Priority, Scope};
+use crate::scopes::{Binding, NamespaceId, Prelude, Priority, Scope};
 use crate::Map;
 use dashmap::mapref::entry::Entry as DEntry;
 use dashmap::mapref::one::Ref as DRef;
@@ -61,12 +61,12 @@ pub struct Db {
     /// - https://rust-lang.github.io/rustc-guide/macro-expansion.html#discussion-about-hygiene
     /// Currently we just add items here in the order [language prelude, std/core prelude, extern crates,
     /// `#[macro_use]` macros] and allow later items to shadow earlier ones.
-    preludes: DashMap<CrateId, Scope>,
+    preludes: DashMap<CrateId, Prelude>,
 }
 
 impl Db {
     /// Create an empty database.
-    pub fn new(mut crates: Map<CrateId, CrateData>) -> Db {
+    pub fn new(crates: Map<CrateId, CrateData>) -> Db {
         // TODO add std + core here?
         Db {
             crates,
@@ -123,12 +123,12 @@ impl<'a> DbView<'a> {
     }
 
     /// Get a prelude.
-    pub fn get_prelude(&mut self, crate_: &CrateId) -> Option<Ref<Scope, CrateId>> {
+    pub fn get_prelude(&mut self, crate_: &CrateId) -> Option<Ref<Prelude, CrateId>> {
         self.0.preludes.get(crate_)
     }
 
     /// Add a prelude. Cannot be modified once added.
-    pub fn add_prelude(&mut self, crate_: CrateId, prelude: Scope) -> Result<(), DatabaseError> {
+    pub fn add_prelude(&mut self, crate_: CrateId, prelude: Prelude) -> Result<(), DatabaseError> {
         match self.0.preludes.entry(crate_) {
             DEntry::Occupied(_) => Err(DatabaseError::PreludeAlreadyPresent),
             DEntry::Vacant(vac) => {
@@ -144,7 +144,10 @@ impl<'a> DbView<'a> {
         crate_: CrateId,
         scope: Scope,
     ) -> Result<Identity, DatabaseError> {
-        assert!(&scope.metadata.name == &*ROOT_SCOPE_NAME, "root scope must be named `{root}`");
+        assert!(
+            &scope.metadata.name == &*ROOT_SCOPE_NAME,
+            "root scope must be named `{root}`"
+        );
         let root_id = Identity::root(&crate_);
         match self.0.scopes.0.entry(root_id.clone()) {
             DEntry::Occupied(_) => Err(DatabaseError::ItemAlreadyPresent),
@@ -345,5 +348,20 @@ mod tests {
                 Scope::new(Metadata::fake("next_module"), true),
             )
             .unwrap();
+    }
+
+    #[test]
+    fn dashmap_read_no_deadlock() {
+        let map = DashMap::<i32, i32>::new();
+
+        for i in 0..100 {
+            map.insert(i, 0);
+        }
+
+        let mut refs = vec![];
+        for i in 0..100 {
+            // note: this fails if get_mut is used!
+            refs.push(map.get(&i))
+        }
     }
 }
