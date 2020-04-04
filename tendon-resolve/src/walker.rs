@@ -104,12 +104,12 @@ use std::path::{Path as FsPath, PathBuf};
 use std::sync::Arc;
 use tendon_api::attributes::Span;
 use tendon_api::crates::CrateData;
-use tendon_api::database::{Db, NamespaceLookup};
+use tendon_api::database::{Crate, Db, NamespaceLookup};
 use tendon_api::identities::{CrateId, Identity};
 use tendon_api::items::DeclarativeMacroItem;
 use tendon_api::paths::Ident;
 use tendon_api::tokens::Tokens;
-use tendon_api::Map;
+use tendon_api::{Map, Set};
 use tracing::{trace, warn};
 
 use tendon_api::scopes::Scope;
@@ -239,7 +239,7 @@ fn warn(cause: impl Into<WalkError>, span: &Span) {
 /// The first phase: walk files, parse, find imports, expand macros.
 /// As items cease to have anything to do with macros they are dumped in the Db; after macro
 /// expansion order no longer matters.
-struct Walker<'a> {
+pub(crate) struct Walker<'a> {
     /// A Db containing resolved definitions for all dependencies.
     /// During this phase, we insert `ModuleItems` and `MacroItems` into this database.
     /// The only items that go in here are `#[macro_export]`-marked macros.
@@ -248,23 +248,27 @@ struct Walker<'a> {
     /// The relevant CrateData.
     crate_data: &'a CrateData,
 
-    /// Declarative macro items inserted into the crate via `#[macro_use] extern crate`.
-    /// Also has macros from the actual `std` / `core` prelude.
-    ///
-    /// `#[macro_export]` macros are NOT placed here.
-    ///
-    /// This information is discarded after parsing this crate.
-    ///
-    /// TODO: add std / core macros here?
-    /// TODO: figure out what happens when we override those
-    macro_prelude: Map<Ident, DeclarativeMacroItem>,
+    /// The crate that's being built.
+    crate_: Crate,
 
-    /// The contents of modules we haven't finished expanding.
-    unexpanded_modules: Map<Identity, UnexpandedModule<'a>>,
+    /// Live metadata, will be discarded once we're finished with this crate.
+    scopes_in_progress: Map<Identity, ScopeInProgress>,
+}
+
+/// Metadata for scopes in the crate that have not completed resolution.
+/// Discarded once we've finished parsing the current crate.
+struct ScopeInProgress {
+    /// Back links: a map from scopes to glob imports.
+    /// If `crate::a` has `use crate::b::*`, then `crate::a` imports everything from `crate::b`,
+    /// but also gets a back link. as more items are resolved in B, they get added to A.
+    back_links: Set<Identity>,
+
+    /// Imports that are explicit but may not be resolved yet.
+    /// If an explicit import exists, we never add any glob names that match it.
+    reserved_explicit_imports: Set<Ident>,
 }
 
 /*
-
 /// Walk a whole crate, expanding macros, storing all resulting data in the central db.
 /// This operates serially but multiple threads can operate on the same db in parallel.
 fn walk_crate(crate_data: &CrateData, db: &Db) -> Result<(), WalkError> {

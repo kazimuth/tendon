@@ -1,8 +1,8 @@
 use criterion::*;
 use dashmap::DashMap;
 use once_cell::sync::OnceCell;
-use tendon_api::Map;
 use std::sync::Arc;
+use tendon_api::Map;
 
 fn compare_hash_maps(c: &mut Criterion) {
     let mut group = c.benchmark_group("compare hash maps");
@@ -29,7 +29,7 @@ fn compare_hash_maps(c: &mut Criterion) {
                     black_box(map.get(black_box(&k)));
                 }
             },
-            BatchSize::LargeInput
+            BatchSize::LargeInput,
         )
     });
 
@@ -52,14 +52,20 @@ fn compare_hash_maps(c: &mut Criterion) {
             |map| {
                 let k = vec![0, 0];
                 for _ in 0..N {
-                    black_box(map.get(black_box(&k[0])).unwrap().get().unwrap().get(black_box(&k[1..])));
+                    black_box(
+                        map.get(black_box(&k[0]))
+                            .unwrap()
+                            .get()
+                            .unwrap()
+                            .get(black_box(&k[1..])),
+                    );
                 }
             },
-            BatchSize::LargeInput
+            BatchSize::LargeInput,
         )
     });
 
-    // Database representation: pre-built Map with Arcs (from OnceCells)
+    // database representation: pre-built Map with Arcs (collect from OnceCells for each crate)
     group.bench_function("vec nested arc lookup", |b| {
         b.iter_batched_ref(
             || {
@@ -79,7 +85,7 @@ fn compare_hash_maps(c: &mut Criterion) {
                     black_box(map.get(black_box(&k[0])).unwrap().get(black_box(&k[1..])));
                 }
             },
-            BatchSize::LargeInput
+            BatchSize::LargeInput,
         )
     });
 }

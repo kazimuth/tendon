@@ -22,66 +22,47 @@ use crate::items::{MacroItem, SymbolItem, TypeItem};
 use crate::paths::Ident;
 use crate::scopes::{Binding, NamespaceId, Prelude, Priority, Scope};
 use crate::Map;
-use dashmap::mapref::entry::Entry as DEntry;
-use dashmap::mapref::one::Ref as DRef;
-use dashmap::mapref::one::RefMut as DRefMut;
-use dashmap::DashMap;
 use hashbrown::hash_map::Entry as HEntry;
+use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 
 lazy_static! {
     pub static ref ROOT_SCOPE_NAME: Ident = "{root}".into();
 }
 
-/// A database of everything. Crates should form a DAG. Crates cannot be modified once added.
+mod serializers;
+
+/// A database of everything -- all declarations tendon cares about in a crate + its dependencies.
 ///
-/// Note that there are some Identities
+/// We operate on this in parallel, but we only need lightweight synchronization because of
+/// the structure of the problem. We build up crates in parallel, and add them here once we've
+/// completely finished parsing and lowering their contents.
 ///
-/// TODO: check for changes against disk?
+/// Crates form a DAG that we know ahead of time, so we can just add OnceCells to store them
+/// at initialization. There's never a need to take a lock on a whole map since it's entirely pre-
+/// allocated.
+///
+/// The whole database is `serde::Serialize` as well, to save it you can just write it to a file. No need
+/// for complex serialization infrastructure.
 #[derive(Serialize, Deserialize)]
 pub struct Db {
-    /// Crates must be frozen at the start of the process
-    crates: Map<CrateId, CrateData>,
+    /// Crate metadata must be frozen at the start of the process.
+    crate_data: Map<CrateId, CrateData>,
 
-    /// Types in the crate.
-    types: Namespace<TypeItem>,
-
-    /// Symbols in the crate (functions, statics, constants)
-    symbols: Namespace<SymbolItem>,
-
-    /// Macros in the crate.
-    macros: Namespace<MacroItem>,
-
-    /// All the scopes available.
-    scopes: Namespace<Scope>,
-
-    /// The preludes for each crate.
-    /// There are actually multiple preludes, see:
-    /// - https://doc.rust-lang.org/reference/items/extern-crates.html
-    /// - https://rust-lang.github.io/rustc-guide/macro-expansion.html#discussion-about-hygiene
-    /// Currently we just add items here in the order [language prelude, std/core prelude, extern crates,
-    /// `#[macro_use]` macros] and allow later items to shadow earlier ones.
-    preludes: DashMap<CrateId, Prelude>,
+    /// Lowered crate data.
+    #[serde(serialize_with = "serializers::serialize_map_once_cell")]
+    #[serde(deserialize_with = "serializers::deserialize_map_once_cell")]
+    crates: Map<CrateId, OnceCell<Crate>>,
 }
 
 impl Db {
     /// Create an empty database.
-    pub fn new(crates: Map<CrateId, CrateData>) -> Db {
-        // TODO add std + core here?
-        Db {
-            crates,
-            types: Namespace::new(),
-            symbols: Namespace::new(),
-            macros: Namespace::new(),
-            scopes: Namespace::new(),
-            preludes: DashMap::new(),
-        }
-    }
-
-    /// Create a DB view. You should only create one view per thread, to prevent deadlocks due to
-    /// DashMap.
-    pub fn view_once_per_thread_i_promise(&self) -> DbView {
-        DbView(self)
+    pub fn new(crate_data: Map<CrateId, CrateData>) -> Db {
+        let crates = crate_data
+            .keys()
+            .map(|k| (k.clone(), OnceCell::new()))
+            .collect();
+        Db { crates, crate_data }
     }
 
     /// Creates a `Db` for tests.
@@ -97,21 +78,42 @@ impl Db {
 
         Db::new(crates)
     }
-}
 
-/// A view into the database.
-///
-/// Taking multiple simultaneous refs into the `Db` can deadlock because of how `DashMap` works,
-/// so we make it so that you need a `DbView` for all operations.
-///
-/// At the start of some set of operations (e.g. walking a crate) you should take out a `DbView`
-/// and use *only that view* to modify the underlying database.
-///
-/// If you don't use any other DbViews while calling DbView methods, you can't deadlock;
-/// the methods take `&mut`, so only one can be called at a time.
-pub struct DbView<'a>(&'a Db);
+    /// Look up a crate data.
+    /// Panics if crate data is not present.
+    pub fn crate_data(&self, id: &CrateId) -> &CrateData {
+        // note: takes &self, doesn't need to lock a DashMap
+        self.crate_data
+            .get(id)
+            .expect("invariant violated: no such crate")
+    }
 
-impl<'a> DbView<'a> {
+    /// Look up a parsed crate.
+    /// Panics if parsed crate is not present. (Don't get ahead on the DAG!)
+    pub fn get_crate(&self, id: &CrateId) -> &Crate {
+        self.crates
+            .get(id)
+            .expect("invariant violated: no such crate")
+            .get()
+            .expect("invariant violated: crate has not been lowered")
+    }
+
+    /// Insert a parsed crate.
+    /// Panics if the crate has already been added.
+    ///
+    pub fn insert_crate(&self, crate_: Crate) {
+        let id = crate_.id.clone();
+        let result = self
+            .crates
+            .get(&id)
+            .expect("invariant violated: no such crate")
+            .set(crate_);
+        if let Err(crate_) = result {
+            panic!("crate already set: {:?}", crate_.id);
+        }
+    }
+
+    /*
     /// Get an item.
     pub fn get_item<I: NamespaceLookup>(&mut self, id: &Identity) -> Option<Ref<I>> {
         I::get_namespace(self.0).0.get(id)
@@ -232,68 +234,107 @@ impl<'a> DbView<'a> {
             }
         }
     }
+    */
+}
 
-    pub fn crate_data(&self, crate_: &CrateId) -> &CrateData {
-        // note: takes &self, doesn't need to lock a DashMap
-        &self
-            .0
-            .crates
-            .get(crate_)
-            .expect("invariant violated: no such crate")
+/// A parsed and resolved crate.
+#[derive(Serialize, Deserialize)]
+pub struct Crate {
+    /// Redundancy.
+    pub id: CrateId,
+
+    /// The crate prelude.
+    pub prelude: Prelude,
+
+    /// Types in the crate.
+    pub types: Namespace<TypeItem>,
+
+    /// Symbols in the crate (functions, statics, constants)
+    pub symbols: Namespace<SymbolItem>,
+
+    /// Macros in the crate.
+    pub macros: Namespace<MacroItem>,
+
+    /// All the scopes available.
+    pub scopes: Namespace<Scope>,
+}
+
+impl Crate {
+    pub fn get<I: NamespaceLookup>(&self, identity: &Identity) -> Option<&I> {
+        assert_eq!(self.id, identity.crate_, "cannot get outside crate!");
+
+        I::get_namespace(self).0.get(&identity.path[..])
+    }
+
+    pub fn get_mut<I: NamespaceLookup>(&mut self, identity: &Identity) -> Option<&I> {
+        assert_eq!(self.id, identity.crate_, "cannot get outside crate!");
+
+        I::get_namespace(self).0.get(&identity.path[..])
     }
 }
 
-pub type Ref<'a, I, K = Identity> = DRef<'a, K, I, ahash::RandomState>;
-pub type RefMut<'a, I, K = Identity> = DRefMut<'a, K, I, ahash::RandomState>;
-
-/// A global namespace.
+/// A namespace within a crate.
 ///
 /// Invariant: if `namespace[I] == item`, `I[-1] == item.metadata().name`, UNLESS
 /// `I == []`, i.e. it is a crate root.
 #[derive(Serialize, Deserialize)]
-pub struct Namespace<I>(DashMap<Identity, I, ahash::RandomState>);
+pub struct Namespace<I>(pub Map<Vec<Ident>, I>);
 
 impl<I: NamespaceLookup> Namespace<I> {
     fn new() -> Self {
-        Namespace(DashMap::default())
+        Namespace(Map::default())
     }
 }
 
 /// Generic helper.
 pub trait NamespaceLookup: HasMetadata + Sized + 'static {
     fn namespace_id() -> NamespaceId;
-    fn get_namespace(db: &Db) -> &Namespace<Self>;
+    fn get_namespace(crate_: &Crate) -> &Namespace<Self>;
+    fn get_namespace_mut(crate_: &mut Crate) -> &mut Namespace<Self>;
 }
 impl NamespaceLookup for TypeItem {
     fn namespace_id() -> NamespaceId {
         NamespaceId::Type
     }
-    fn get_namespace(db: &Db) -> &Namespace<Self> {
-        &db.types
+    fn get_namespace(crate_: &Crate) -> &Namespace<Self> {
+        &crate_.types
+    }
+
+    fn get_namespace_mut(crate_: &mut Crate) -> &mut Namespace<Self> {
+        &mut crate_.types
     }
 }
 impl NamespaceLookup for SymbolItem {
     fn namespace_id() -> NamespaceId {
         NamespaceId::Symbol
     }
-    fn get_namespace(db: &Db) -> &Namespace<Self> {
-        &db.symbols
+    fn get_namespace(crate_: &Crate) -> &Namespace<Self> {
+        &crate_.symbols
+    }
+    fn get_namespace_mut(crate_: &mut Crate) -> &mut Namespace<Self> {
+        &mut crate_.symbols
     }
 }
 impl NamespaceLookup for MacroItem {
     fn namespace_id() -> NamespaceId {
         NamespaceId::Type
     }
-    fn get_namespace(db: &Db) -> &Namespace<Self> {
-        &db.macros
+    fn get_namespace(crate_: &Crate) -> &Namespace<Self> {
+        &crate_.macros
+    }
+    fn get_namespace_mut(crate_: &mut Crate) -> &mut Namespace<Self> {
+        &mut crate_.macros
     }
 }
 impl NamespaceLookup for Scope {
     fn namespace_id() -> NamespaceId {
         NamespaceId::Scope
     }
-    fn get_namespace(db: &Db) -> &Namespace<Self> {
-        &db.scopes
+    fn get_namespace(crate_: &Crate) -> &Namespace<Self> {
+        &crate_.scopes
+    }
+    fn get_namespace_mut(crate_: &mut Crate) -> &mut Namespace<Self> {
+        &mut crate_.scopes
     }
 }
 
@@ -322,46 +363,4 @@ quick_error::quick_error! {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::attributes::Metadata;
-
-    #[test]
-    fn insert() {
-        let db = Db::fake_db();
-        let mut view = db.view_once_per_thread_i_promise();
-
-        let root = view
-            .add_root_scope(
-                TEST_CRATE_A.clone(),
-                Scope::new(Metadata::fake(&*ROOT_SCOPE_NAME), true),
-            )
-            .unwrap();
-
-        let some_module = view
-            .add_item(&root, Scope::new(Metadata::fake("some_module"), true))
-            .unwrap();
-
-        let _next_module = view
-            .add_item(
-                &some_module,
-                Scope::new(Metadata::fake("next_module"), true),
-            )
-            .unwrap();
-    }
-
-    #[test]
-    fn dashmap_read_no_deadlock() {
-        let map = DashMap::<i32, i32>::new();
-
-        for i in 0..100 {
-            map.insert(i, 0);
-        }
-
-        let mut refs = vec![];
-        for i in 0..100 {
-            // note: this fails if get_mut is used!
-            refs.push(map.get(&i))
-        }
-    }
-}
+mod tests {}

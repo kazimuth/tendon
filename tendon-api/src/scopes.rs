@@ -2,7 +2,7 @@
 
 use crate::attributes::{Metadata, Visibility};
 use crate::database::NamespaceLookup;
-use crate::identities::{Identity, CrateId};
+use crate::identities::{CrateId, Identity};
 use crate::paths::Ident;
 use crate::Map;
 use serde::{Deserialize, Serialize};
@@ -13,19 +13,26 @@ use serde::{Deserialize, Serialize};
 /// For non-module scopes, most metadata is only stored on the item, although the span and name is stored
 /// here too.
 ///
-/// Also, we're cheeky and put lifetiems in the type namespace, but their names have ticks so
+/// Also, we're cheeky and put lifetimes in the type namespace, but their names have ticks so
 /// its basically distinct.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Scope {
+    /// Metadata on a scope (e.g. module doc commments)
     pub metadata: Metadata,
+    /// If this is a module or something else.
     pub is_module: bool,
+    /// If this scope inherits from another scope. For instance, an `impl` block with type parameters
+    /// creates a new scope that inherits everything from its containing module.
+    pub inherits_from: Option<Identity>,
+    /// Bindings
     bindings: [Map<Ident, Binding>; 4],
 }
 impl Scope {
-    pub fn new(metadata: Metadata, is_module: bool) -> Scope {
+    pub fn new(metadata: Metadata, is_module: bool, inherits_from: Option<Identity>) -> Scope {
         Scope {
             metadata,
             is_module,
+            inherits_from,
             bindings: Default::default(),
         }
     }
@@ -38,6 +45,16 @@ impl Scope {
     /// Get the bindings for a namespace.
     pub fn get_bindings<I: NamespaceLookup>(&self) -> &Map<Ident, Binding> {
         &self.bindings[I::namespace_id() as usize]
+    }
+
+    /// Get the bindings for a namespace by id.
+    pub fn get_bindings_by(&self, id: NamespaceId) -> &Map<Ident, Binding> {
+        &self.bindings[id as usize]
+    }
+
+    /// Get the bindings for a namespace by id.
+    pub fn get_bindings_by_mut(&mut self, id: NamespaceId) -> &mut Map<Ident, Binding> {
+        &mut self.bindings[id as usize]
     }
 }
 
@@ -94,5 +111,5 @@ pub struct Prelude {
     /// *both* `a` and `b` to this map.
     ///
     /// This is used to look up paths prefixed with `::`.
-    pub extern_crates: Map<Ident, CrateId>
+    pub extern_crates: Map<Ident, CrateId>,
 }
