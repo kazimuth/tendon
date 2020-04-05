@@ -1,12 +1,12 @@
 //! Scopes and bindings.
 
 use crate::attributes::{Metadata, Visibility};
-use crate::database::{NamespaceLookup};
-use crate::identities::{Identity};
+use crate::database::NamespaceLookup;
+use crate::identities::Identity;
 use crate::paths::Ident;
 use crate::Map;
-use serde::{Deserialize, Serialize};
 use hashbrown::hash_map::Entry;
+use serde::{Deserialize, Serialize};
 
 /// A scope, containing bindings for all 4 namespaces.
 ///
@@ -44,20 +44,30 @@ impl Scope {
     }
 
     /// Insert a binding by namespace id. Returns Err if already present.
-    pub fn insert_by(&mut self, namespace_id: NamespaceId, ident: Ident, target: Identity, visibility: Visibility, priority: Priority) -> Result<(), ()> {
+    pub fn insert_by(
+        &mut self,
+        namespace_id: NamespaceId,
+        ident: Ident,
+        target: Identity,
+        visibility: Visibility,
+        priority: Priority,
+    ) -> Result<(), ()> {
         match self.bindings[namespace_id as usize].entry(ident) {
-            Entry::Occupied(_) => {
-                Err(())
-            }
+            Entry::Occupied(_) => Err(()),
             Entry::Vacant(vac) => {
                 vac.insert(Binding {
                     identity: target,
                     visibility,
-                    priority
+                    priority,
                 });
                 Ok(())
             }
         }
+    }
+
+    /// Iterate bindings by namespace id.
+    pub fn iter_by(&self, namespace_id: NamespaceId) -> impl Iterator<Item = (&Ident, &Binding)> {
+        self.bindings[namespace_id as usize].iter()
     }
 
     /// Get a binding in a namespace. Does NOT check inherited scopes or prelude.
@@ -66,10 +76,20 @@ impl Scope {
     }
 
     /// Insert a binding in a namespace. Returns Err if already present.
-    pub fn insert<I: NamespaceLookup>(&mut self, ident: Ident, target: Identity, visibility: Visibility, priority: Priority) -> Result<(), ()> {
+    pub fn insert<I: NamespaceLookup>(
+        &mut self,
+        ident: Ident,
+        target: Identity,
+        visibility: Visibility,
+        priority: Priority,
+    ) -> Result<(), ()> {
         self.insert_by(I::namespace_id(), ident, target, visibility, priority)
     }
 
+    /// Iterate bindings in a namespace.
+    pub fn iter<I: NamespaceLookup>(&self) -> impl Iterator<Item = (&Ident, &Binding)> {
+        self.iter_by(I::namespace_id())
+    }
 }
 
 /// A name binding. (Nothing to do with the idea of "language bindings".)
@@ -103,4 +123,3 @@ pub enum Priority {
     Glob,
     Explicit,
 }
-

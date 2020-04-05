@@ -152,13 +152,11 @@ quick_error! {
         Io(err: std::io::Error) {
             from()
             cause(err)
-            description(err.description())
             display("io error during walking: {}", err)
         }
         Parse(err: syn::Error) {
             from()
             cause(err)
-            description(err.description())
             display("parse error during walking: {}", err)
         }
         MalformedPathAttribute(tokens: String) {
@@ -181,6 +179,11 @@ quick_error! {
         }
         Impossible {
             display("some invariant was violated (but we're still going, dammit...)")
+        }
+        Database(err: tendon_api::database::DatabaseError) {
+            from()
+            cause(err)
+            display("database error during walking: {}", err)
         }
     }
 }

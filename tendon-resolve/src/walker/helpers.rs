@@ -13,7 +13,7 @@ use tendon_api::database::{Crate, Db, NamespaceLookup};
 use tendon_api::identities::{CrateId, Identity};
 use tendon_api::items::{MacroItem, SymbolItem, TypeItem};
 use tendon_api::paths::{Ident, UnresolvedPath};
-use tendon_api::scopes::{Binding, NamespaceId, Prelude, Priority, Scope};
+use tendon_api::scopes::{Binding, NamespaceId, Priority, Scope};
 use tendon_api::Map;
 use tracing::{error, info};
 
@@ -37,7 +37,8 @@ use tracing::{error, info};
 /// `WalkError::Impossible` is reserved for syntactic violations, maybe emerging after botched
 /// macro transcription.
 pub(crate) fn try_to_resolve(
-    walker: &Walker,
+    db: &Db,
+    crate_in_progress: &Crate,
     in_module: &Identity,
     namespace: NamespaceId,
     path: &UnresolvedPath,
@@ -48,11 +49,12 @@ pub(crate) fn try_to_resolve(
         rooted: path.rooted,
     };
 
-    try_to_resolve_rec(walker, in_module, in_module, namespace, path)
+    try_to_resolve_rec(db, crate_in_progress, in_module, in_module, namespace, path)
 }
 
 fn try_to_resolve_rec(
-    walker: &Walker,
+    db: &Db,
+    crate_in_progress: &Crate,
     orig_module: &Identity,
     in_module: &Identity,
     namespace_id: NamespaceId,
@@ -64,10 +66,10 @@ fn try_to_resolve_rec(
     }
 
     let get_crate = |id: &CrateId| -> &Crate {
-        if id == &walker.crate_.id {
-            &walker.crate_
+        if id == &crate_in_progress.id {
+            &crate_in_progress
         } else {
-            walker.db.get_crate(id)
+            db.get_crate(id)
         }
     };
 
@@ -77,8 +79,7 @@ fn try_to_resolve_rec(
         // `::something`
         // look for other crates in crate root
         let target_crate = in_crate
-            .prelude
-            .extern_crates
+            .extern_crate_bindings
             .get(&path.path[0])
             .ok_or_else(|| {
                 error!(
@@ -95,7 +96,8 @@ fn try_to_resolve_rec(
             rooted: false,
         };
         return try_to_resolve_rec(
-            walker,
+            db,
+            crate_in_progress,
             orig_module,
             &target_module,
             namespace_id,
@@ -103,53 +105,23 @@ fn try_to_resolve_rec(
         );
     }
 
-    // repeated logic: find a chunk in this scope
+    let get_binding_by = |namespace_id, ident| -> Result<Identity, ResolveError> {
+        let binding = in_crate
+            .get_binding_by(in_module, namespace_id, ident)
+            .ok_or(ResolveError::Pending)?;
 
-    let lookup_in_scope =
-        |ident: &Ident, namespace_id: NamespaceId| -> Result<Identity, ResolveError> {
-            let scope = in_crate.get::<Scope>(in_module).ok_or_else(|| {
-                error!("missing scope `{:?}`?", in_module);
-                ResolveError::Impossible
-            })?;
-            if let Some(binding) =  scope.get_bindings_by(namespace_id).get(ident) {
-                // check the current scope.
-                // we found it!
-                if binding.visibility.is_visible_in(orig_module) {
-                    return Ok(binding.identity.clone());
-                }
-            }
-            if let Some(inherited) = &scope.inherits_from {
-                // walk up the inherited scopes.
-                if let Ok(id) = try_to_resolve_rec(
-                    walker,
-                    orig_module,
-                    inherited,
-                    namespace_id,
-                    path.clone(),
-                ) {
-                    return Ok(id);
-                }
-            }
-            // TODO: this does redundant work in inherited scopes sometimes?
-            if let Some(binding) = in_crate.prelude.scope.get_bindings_by(namespace_id).get(ident) {
-                return Ok(binding.identity.clone());
-            }
-            // no binding found :/
-            if in_module.crate_ == walker.crate_.id {
-                // this crate is currently being built, so the path might not be resolved yet
-                Err(ResolveError::Pending)
-            } else {
-                // this is in a dependent crate, it won't ever resolve
-                error!("no binding {:?} in {:?} (frozen)", ident, in_module);
-                Err(ResolveError::Impossible)
-            }
-        };
+        if binding.visibility.is_visible_in(orig_module) {
+            Ok(binding.identity.clone())
+        } else {
+            Err(ResolveError::Pending)
+        }
+    };
 
     if path.path.len() == 1 {
         // 1 segment left!
         let ident = &path.path[0];
 
-        lookup_in_scope(ident, namespace_id)
+        get_binding_by(namespace_id, ident)
     } else {
         // path longer than 1
         let target_module = match &*path.path[0] {
@@ -161,7 +133,7 @@ fn try_to_resolve_rec(
             })?,
             _ => {
                 let seg = &path.path[0];
-                lookup_in_scope(seg, NamespaceId::Scope)?
+                get_binding_by(NamespaceId::Scope, seg)?
             }
         };
 
@@ -171,7 +143,8 @@ fn try_to_resolve_rec(
         };
 
         try_to_resolve_rec(
-            walker,
+            db,
+            crate_in_progress,
             orig_module,
             &target_module,
             namespace_id,
@@ -199,7 +172,7 @@ impl<'a> fmt::Debug for ResolvingPath<'a> {
 
 quick_error! {
 /// Possible outcomes of resolving a path.
-    #[derive(Debug, Copy, Clone)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq)]
     pub enum ResolveError {
         /// A name that will never be resolved due to issues in `tendon`;
         /// it and anything that depends on it should be abandoned.
@@ -213,7 +186,80 @@ quick_error! {
     }
 }
 
-/// Build up a prelude.
+/// Add a crate dep, not necessarily with an import statement.
+/// Adds only to prelude/extern_crate_bindings, doesn't add to root scope.
+pub fn add_crate_dep(crate_: &mut Crate, name: Ident, extern_crate_id: &CrateId) {
+    if let Some(_) = crate_
+        .extern_crate_bindings
+        .insert(name.clone(), extern_crate_id.clone())
+    {
+        panic!("can't add crate dep twice!");
+    }
+    crate_.add_prelude_binding_by(NamespaceId::Scope, name, Identity::root(extern_crate_id));
+}
+
+/// Add an `extern crate` statement. Crate should have already been added
+/// and root scope should exist. Handles importing `#[macro_use]` macros, which are added to the *prelude* (not the textual scopes!).
+/// See also `add_crate_dep`.
+///
+/// Subtle effects:
+/// ```no_build
+/// pub extern crate core as core_;
+//
+//  pub use crate::core as corea; // fails: undefined in root
+//  pub use crate::core_ as coreb; // works
+//  pub use core as corec; // works (crate dep)
+//  pub use ::core as cored; // works (crate dep)
+//  pub use ::core_ as coref; // works
+// ```
+pub fn add_root_extern_crate(
+    db: &Db,
+    crate_: &mut Crate,
+    extern_crate_id: &CrateId,
+    rename: Option<&Ident>,
+    visibility: Visibility,
+    macro_use: bool,
+) -> Result<(), WalkError> {
+    let extern_crate_root_id = Identity::root(extern_crate_id);
+
+    // find the name to add to the root scope
+    let name = if let Some(rename) = rename {
+        // add rename to scopes too
+        add_crate_dep(crate_, rename.clone(), extern_crate_id);
+        rename.clone()
+    } else {
+        let name = Ident::from(&extern_crate_id.name[..]);
+        name
+    };
+    // add dep as `crate::dep`
+    crate_.add_binding::<Scope>(
+        &Identity::root(&crate_.id),
+        name,
+        extern_crate_root_id.clone(),
+        visibility,
+        Priority::Explicit,
+    )?;
+
+    let extern_crate = db.get_crate(extern_crate_id);
+    let crate_root = extern_crate
+        .get::<Scope>(&extern_crate_root_id)
+        .ok_or(WalkError::ModuleNotFound)?;
+
+    if macro_use {
+        // add all macros to prelude!
+        for (name, dep_binding) in crate_root.iter::<MacroItem>() {
+            crate_.add_prelude_binding_by(
+                NamespaceId::Macro,
+                name.clone(),
+                dep_binding.identity.clone(),
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Add standard entries to a crate prelude.
 ///
 /// Note that the extra information on Bindings is ignored within the prelude, we just reuse Scope
 /// for convenience.
@@ -222,66 +268,24 @@ quick_error! {
 /// prelude to the correct paths.
 ///
 /// TODO: do these all live in the right place? how do we make sure the identities are correct?
-pub fn build_prelude(
-    db: &Db,
-    crate_data: &CrateData,
-    no_std: bool,
-    crate_bindings: &Map<Ident, CrateId>,
-    macro_use_crates: &Vec<CrateId>,
-) -> Result<Prelude, WalkError> {
-    let mut scope = Scope::new(Metadata::fake("{prelude}"), false, None);
-    let mut extern_crates = crate_bindings.clone();
-
-    // https://doc.rust-lang.org/1.29.0/book/first-edition/primitive-types.html
-    {
-        let types = scope.get_bindings_mut::<TypeItem>();
-        for (name, builtin) in &*BUILTIN_TYPES {
-            types.insert(
-                name.clone(),
-                Binding {
-                    visibility: Visibility::Pub,
-                    identity: builtin.clone(),
-                    priority: Priority::Glob,
-                },
-            );
-        }
+pub fn add_std_prelude(crate_: &mut Crate, no_std: bool) -> Result<(), WalkError> {
+    for (name, builtin) in &*BUILTIN_TYPES {
+        crate_.add_prelude_binding_by(NamespaceId::Type, name.clone(), builtin.clone())?;
     }
 
     #[inline(never)]
-    fn add_to_prelude<I: NamespaceLookup>(scope: &mut Scope, crate_: &CrateId, path: &str) {
+    fn add_to_prelude<I: NamespaceLookup>(
+        crate_: &mut Crate,
+        crate_id: &CrateId,
+        path: &str,
+    ) -> Result<(), WalkError> {
         let path_ = path.split("::").collect::<Vec<_>>();
-        let id = Identity::new(crate_, &path_);
-        let binding = Binding {
-            // doesn't matter for prelude
-            visibility: Visibility::Pub,
-            identity: id,
-            priority: Priority::Glob,
-        };
-        scope
-            .get_bindings_mut::<I>()
-            .insert(path_.iter().last().unwrap().into(), binding);
+        let last: Ident = path_.iter().last().unwrap().into();
+        let identity = Identity::new(crate_id, &path_);
 
-        if I::namespace_id() == NamespaceId::Type {
-            add_to_prelude::<Scope>(scope, crate_, path);
-        }
-    }
-    #[inline(never)]
-    fn add_crate(
-        scope: &mut Scope,
-        extern_crates: &mut Map<Ident, CrateId>,
-        crate_: &CrateId,
-        name: Ident,
-    ) {
-        let binding = Binding {
-            visibility: Visibility::Pub,
-            identity: Identity::root(crate_),
-            priority: Priority::Glob,
-        };
-        scope
-            .get_bindings_mut::<Scope>()
-            .insert(name.clone(), binding);
+        crate_.add_prelude_binding_by(I::namespace_id(), last, identity)?;
 
-        extern_crates.insert(name, crate_.clone());
+        Ok(())
     }
 
     let core_ = &*CORE_CRATE;
@@ -289,118 +293,79 @@ pub fn build_prelude(
     let std_ = &*STD_CRATE;
 
     // add traits
-    add_to_prelude::<TypeItem>(&mut scope, core_, "marker::Copy");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "marker::Send");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "marker::Sized");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "marker::Sync");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "marker::Unpin");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "ops::Drop");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "ops::Fn");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "ops::FnMut");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "ops::FnOnce");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "clone::Clone");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "cmp::Eq");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "cmp::Ord");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "cmp::PartialEq");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "cmp::PartialOrd");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "convert::AsMut");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "convert::AsRef");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "convert::From");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "convert::Into");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "default::Default");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "iter::DoubleEndedIterator");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "iter::ExactSizeIterator");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "iter::Extend");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "iter::IntoIterator");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "iter::Iterator");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "option::Option");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "result::Result");
-    add_to_prelude::<TypeItem>(&mut scope, core_, "hash::macros::Hash;");
+    add_to_prelude::<TypeItem>(crate_, core_, "marker::Copy")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "marker::Send")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "marker::Sized")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "marker::Sync")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "marker::Unpin")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "ops::Drop")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "ops::Fn")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "ops::FnMut")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "ops::FnOnce")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "clone::Clone")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "cmp::Eq")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "cmp::Ord")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "cmp::PartialEq")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "cmp::PartialOrd")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "convert::AsMut")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "convert::AsRef")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "convert::From")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "convert::Into")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "default::Default")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "iter::DoubleEndedIterator")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "iter::ExactSizeIterator")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "iter::Extend")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "iter::IntoIterator")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "iter::Iterator")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "option::Option")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "result::Result")?;
+    add_to_prelude::<TypeItem>(crate_, core_, "hash::macros::Hash;")?;
 
     // add symbols, of which there aren't many.
-    add_to_prelude::<SymbolItem>(&mut scope, core_, "mem::drop");
-    add_to_prelude::<SymbolItem>(&mut scope, core_, "option::Option::None");
-    add_to_prelude::<SymbolItem>(&mut scope, core_, "option::Option::Some");
-    add_to_prelude::<SymbolItem>(&mut scope, core_, "result::Result::Err");
-    add_to_prelude::<SymbolItem>(&mut scope, core_, "result::Result::Ok");
+    add_to_prelude::<SymbolItem>(crate_, core_, "mem::drop")?;
+    add_to_prelude::<SymbolItem>(crate_, core_, "option::Option::None")?;
+    add_to_prelude::<SymbolItem>(crate_, core_, "option::Option::Some")?;
+    add_to_prelude::<SymbolItem>(crate_, core_, "result::Result::Err")?;
+    add_to_prelude::<SymbolItem>(crate_, core_, "result::Result::Ok")?;
 
     // add macros.
-    add_to_prelude::<MacroItem>(&mut scope, core_, "asm");
-    add_to_prelude::<MacroItem>(&mut scope, core_, "assert");
-    add_to_prelude::<MacroItem>(&mut scope, core_, "cfg");
-    add_to_prelude::<MacroItem>(&mut scope, core_, "column");
-    add_to_prelude::<MacroItem>(&mut scope, core_, "compile_error");
-    add_to_prelude::<MacroItem>(&mut scope, core_, "concat");
-    add_to_prelude::<MacroItem>(&mut scope, core_, "concat_idents");
-    add_to_prelude::<MacroItem>(&mut scope, core_, "env");
-    add_to_prelude::<MacroItem>(&mut scope, core_, "file");
-    add_to_prelude::<MacroItem>(&mut scope, core_, "format_args");
-    add_to_prelude::<MacroItem>(&mut scope, core_, "format_args_nl");
-    add_to_prelude::<MacroItem>(&mut scope, core_, "global_asm");
-    add_to_prelude::<MacroItem>(&mut scope, core_, "include");
-    add_to_prelude::<MacroItem>(&mut scope, core_, "include_bytes");
-    add_to_prelude::<MacroItem>(&mut scope, core_, "include_str");
-    add_to_prelude::<MacroItem>(&mut scope, core_, "line");
-    add_to_prelude::<MacroItem>(&mut scope, core_, "log_syntax");
-    add_to_prelude::<MacroItem>(&mut scope, core_, "module_path");
-    add_to_prelude::<MacroItem>(&mut scope, core_, "option_env");
-    add_to_prelude::<MacroItem>(&mut scope, core_, "stringify");
-    add_to_prelude::<MacroItem>(&mut scope, core_, "trace_macros");
-    add_to_prelude::<MacroItem>(&mut scope, core_, "macros::builtin::bench");
-    add_to_prelude::<MacroItem>(&mut scope, core_, "macros::builtin::global_allocator");
-    add_to_prelude::<MacroItem>(&mut scope, core_, "macros::builtin::test");
-    add_to_prelude::<MacroItem>(&mut scope, core_, "macros::builtin::test_case");
+    add_to_prelude::<MacroItem>(crate_, core_, "asm")?;
+    add_to_prelude::<MacroItem>(crate_, core_, "assert")?;
+    add_to_prelude::<MacroItem>(crate_, core_, "cfg")?;
+    add_to_prelude::<MacroItem>(crate_, core_, "column")?;
+    add_to_prelude::<MacroItem>(crate_, core_, "compile_error")?;
+    add_to_prelude::<MacroItem>(crate_, core_, "concat")?;
+    add_to_prelude::<MacroItem>(crate_, core_, "concat_idents")?;
+    add_to_prelude::<MacroItem>(crate_, core_, "env")?;
+    add_to_prelude::<MacroItem>(crate_, core_, "file")?;
+    add_to_prelude::<MacroItem>(crate_, core_, "format_args")?;
+    add_to_prelude::<MacroItem>(crate_, core_, "format_args_nl")?;
+    add_to_prelude::<MacroItem>(crate_, core_, "global_asm")?;
+    add_to_prelude::<MacroItem>(crate_, core_, "include")?;
+    add_to_prelude::<MacroItem>(crate_, core_, "include_bytes")?;
+    add_to_prelude::<MacroItem>(crate_, core_, "include_str")?;
+    add_to_prelude::<MacroItem>(crate_, core_, "line")?;
+    add_to_prelude::<MacroItem>(crate_, core_, "log_syntax")?;
+    add_to_prelude::<MacroItem>(crate_, core_, "module_path")?;
+    add_to_prelude::<MacroItem>(crate_, core_, "option_env")?;
+    add_to_prelude::<MacroItem>(crate_, core_, "stringify")?;
+    add_to_prelude::<MacroItem>(crate_, core_, "trace_macros")?;
+    add_to_prelude::<MacroItem>(crate_, core_, "macros::builtin::bench")?;
+    add_to_prelude::<MacroItem>(crate_, core_, "macros::builtin::global_allocator")?;
+    add_to_prelude::<MacroItem>(crate_, core_, "macros::builtin::test")?;
+    add_to_prelude::<MacroItem>(crate_, core_, "macros::builtin::test_case")?;
 
     // extra stuff from the std prelude. not present if we're currently in core.
     // we resolve these to alloc cause... that's the truth? idk
-    if !no_std && &crate_data.id != &*CORE_CRATE {
-        add_to_prelude::<TypeItem>(&mut scope, alloc_, "borrow::ToOwned");
-        add_to_prelude::<TypeItem>(&mut scope, alloc_, "boxed::Box");
-        add_to_prelude::<TypeItem>(&mut scope, alloc_, "string::String");
-        add_to_prelude::<TypeItem>(&mut scope, alloc_, "string::ToString");
-        add_to_prelude::<TypeItem>(&mut scope, alloc_, "vec::Vec");
+    if !no_std && &crate_.id != &*CORE_CRATE {
+        add_to_prelude::<TypeItem>(crate_, alloc_, "borrow::ToOwned")?;
+        add_to_prelude::<TypeItem>(crate_, alloc_, "boxed::Box")?;
+        add_to_prelude::<TypeItem>(crate_, alloc_, "string::String")?;
+        add_to_prelude::<TypeItem>(crate_, alloc_, "string::ToString")?;
+        add_to_prelude::<TypeItem>(crate_, alloc_, "vec::Vec")?;
     }
 
-    if no_std {
-        // TODO what about renames?
-        add_crate(&mut scope, &mut extern_crates, core_, "core".into());
-    } else {
-        add_crate(&mut scope, &mut extern_crates, std_, "std".into());
-    }
-
-    // the extern crate prelude
-    for (name, crate_) in crate_bindings {
-        add_crate(&mut scope, &mut extern_crates, crate_, name.clone());
-    }
-
-    // the #[macro_use] prelude
-    for crate_ in macro_use_crates {
-        let bindings = scope.get_bindings_mut::<MacroItem>();
-
-        let crate_root = db
-            .get_crate(crate_)
-            .get::<Scope>(&Identity::root(crate_))
-            .expect("all dependent crates must be resolved");
-
-        // macros are only added to the crate root if they are #[macro_export]
-        let exported_macros = crate_root.get_bindings::<MacroItem>();
-
-        for (name, dep_binding) in exported_macros {
-            let binding = Binding {
-                identity: dep_binding.identity.clone(),
-                visibility: Visibility::Pub,
-                priority: Priority::Glob,
-            };
-            if let Some(previous) = bindings.insert(name.clone(), binding) {
-                panic!("multiply-defined macro `{}` in prelude of crate `{:?}`: original {:?}, new {:?}", name, crate_data.id, previous.identity, dep_binding.identity);
-            }
-        }
-    }
-
-    Ok(Prelude {
-        scope,
-        extern_crates,
-    })
+    Ok(())
 }
 
 /// Find the path for a module.
@@ -446,62 +411,91 @@ fn find_source_file(parent: &LocationMetadata, item: &syn::ItemMod) -> Result<Pa
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tendon_api::database::{Db, ROOT_SCOPE_NAME};
+    use crate::walker::UnexpandedItem::UnresolvedMacroInvocation;
+    use tendon_api::attributes::TypeMetadata;
+    use tendon_api::database::Db;
     use tendon_api::identities::{TEST_CRATE_A, TEST_CRATE_B};
+    use tendon_api::items::{EnumItem, GenericParams};
 
-    /*
     #[test]
-    fn prelude() {
-        let crate_a = &*TEST_CRATE_A;
-        let crate_b = &*TEST_CRATE_B;
-
+    fn resolve_current() {
         let db = Db::fake_db();
-        let mut view = db.view_once_per_thread_i_promise();
 
-        let a_root = view
-            .add_root_scope(
-                crate_a.clone(),
-                Scope::new(Metadata::fake((&*ROOT_SCOPE_NAME).clone()), true, None),
+        let test_crate_a = (*TEST_CRATE_A).clone();
+
+        let mut crate_ = Crate::new(test_crate_a.clone());
+        let root = crate_.add_root_scope(Metadata::fake("{root}")).unwrap();
+        let mod_a = crate_
+            .add(&root, Scope::new(Metadata::fake("a"), true, None))
+            .unwrap();
+        let mod_a_b = crate_
+            .add(&mod_a, Scope::new(Metadata::fake("b"), true, None))
+            .unwrap();
+        let type_a_b_c = crate_
+            .add(
+                &mod_a_b,
+                TypeItem::Enum(EnumItem {
+                    metadata: Metadata::fake("C"),
+                    type_metadata: TypeMetadata::default(),
+                    generic_params: GenericParams::default(),
+                    variants: vec![],
+                }),
             )
             .unwrap();
-        view.add_binding::<MacroItem>(
-            &a_root,
-            "a_exported_macro".into(),
-            Identity::new(crate_a, &["a_exported_macro"]),
-            Visibility::Pub,
-            Priority::Glob,
-        )
-        .unwrap();
 
-        let _b_root = view
-            .add_root_scope(
-                crate_b.clone(),
-                Scope::new(Metadata::fake((&*ROOT_SCOPE_NAME).clone()), true, None),
+        crate_
+            .add_binding::<TypeItem>(
+                &root,
+                "CRenamed".into(),
+                type_a_b_c.clone(),
+                Visibility::InScope(root.clone()),
+                Priority::Explicit,
+            )
+            .unwrap();
+        crate_
+            .add_binding::<TypeItem>(
+                &mod_a,
+                "CLimited".into(),
+                type_a_b_c.clone(),
+                Visibility::InScope(mod_a.clone()),
+                Priority::Explicit,
             )
             .unwrap();
 
-        let mut crate_bindings = Map::default();
-        crate_bindings.insert("test_crate_a".into(), (&*TEST_CRATE_A).clone());
-        crate_bindings.insert("test_crate_b".into(), (&*TEST_CRATE_B).clone());
+        let in_root = crate_
+            .get_binding::<TypeItem>(&root, &"CRenamed".into())
+            .unwrap();
+        let in_a_b = crate_
+            .get_binding::<TypeItem>(&mod_a_b, &"C".into())
+            .unwrap();
 
-        let mut macro_use_crates = Vec::new();
-        macro_use_crates.push((&*TEST_CRATE_A).clone());
-
-        let b_prelude = build_prelude(
-            &mut view,
-            &CrateData::fake((&*TEST_CRATE_B).clone()),
-            false,
-            &crate_bindings,
-            &macro_use_crates,
+        let root_abc = try_to_resolve(
+            &db,
+            &crate_,
+            &root,
+            NamespaceId::Type,
+            &UnresolvedPath::fake("a::b::C"),
         )
         .unwrap();
+        assert_eq!(root_abc, type_a_b_c);
 
-        let prelude_scopes = b_prelude.scope.get_bindings::<Scope>();
-        assert!(prelude_scopes.contains_key(&Ident::from("test_crate_a")));
-        assert!(prelude_scopes.contains_key(&Ident::from("test_crate_b")));
+        let ab_sscr = try_to_resolve(
+            &db,
+            &crate_,
+            &mod_a_b,
+            NamespaceId::Type,
+            &UnresolvedPath::fake("super::super::CRenamed"),
+        )
+        .unwrap();
+        assert_eq!(ab_sscr, type_a_b_c);
 
-        let prelude_macros = b_prelude.scope.get_bindings::<MacroItem>();
-        assert!(prelude_macros.contains_key(&Ident::from("a_exported_macro")));
+        let invisible = try_to_resolve(
+            &db,
+            &crate_,
+            &root,
+            NamespaceId::Type,
+            &UnresolvedPath::fake("a::CLimited"),
+        );
+        assert_eq!(invisible, Err::<Identity, _>(ResolveError::Pending));
     }
-    */
 }
