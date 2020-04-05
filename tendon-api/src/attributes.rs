@@ -277,7 +277,7 @@ impl Visibility {
 }
 
 /// Metadata for exported symbols (functions, statics).
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct SymbolMetadata {
     /// If this symbol has the #[no_mangle] attribute
     pub no_mangle: bool,
@@ -288,7 +288,7 @@ pub struct SymbolMetadata {
 }
 
 /// Metadata for exported types (structs, enums, unions, ...)
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct TypeMetadata {
     /// All #[derives] present on this type.
     pub derives: Vec<TraitId>,
@@ -297,7 +297,7 @@ pub struct TypeMetadata {
 }
 
 /// Deprecation metadata.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Deprecation {
     /// Version deprecated since, if present.
     /// TODO: format?

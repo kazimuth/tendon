@@ -15,16 +15,17 @@
 //! Invariant: If you look up a root scope,
 //! you must have inserted and completed operating on that scope.
 
-use crate::attributes::{HasMetadata, Visibility};
+use crate::attributes::{HasMetadata, Visibility, Metadata};
 use crate::crates::CrateData;
 use crate::identities::{CrateId, Identity, TEST_CRATE_A, TEST_CRATE_B, TEST_CRATE_C};
 use crate::items::{MacroItem, SymbolItem, TypeItem};
 use crate::paths::Ident;
-use crate::scopes::{Binding, NamespaceId, Prelude, Priority, Scope};
+use crate::scopes::{Binding, NamespaceId, Priority, Scope};
 use crate::Map;
 use hashbrown::hash_map::Entry as HEntry;
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
+use tracing::{error};
 
 lazy_static! {
     pub static ref ROOT_SCOPE_NAME: Ident = "{root}".into();
@@ -112,129 +113,6 @@ impl Db {
             panic!("crate already set: {:?}", crate_.id);
         }
     }
-
-    /*
-    /// Get an item.
-    pub fn get_item<I: NamespaceLookup>(&mut self, id: &Identity) -> Option<Ref<I>> {
-        I::get_namespace(self.0).0.get(id)
-    }
-
-    /// Get an item mutably.
-    pub fn get_item_mut<I: NamespaceLookup>(&mut self, id: &Identity) -> Option<RefMut<I>> {
-        I::get_namespace(self.0).0.get_mut(id)
-    }
-
-    /// Get a prelude.
-    pub fn get_prelude(&mut self, crate_: &CrateId) -> Option<Ref<Prelude, CrateId>> {
-        self.0.preludes.get(crate_)
-    }
-
-    /// Add a prelude. Cannot be modified once added.
-    pub fn add_prelude(&mut self, crate_: CrateId, prelude: Prelude) -> Result<(), DatabaseError> {
-        match self.0.preludes.entry(crate_) {
-            DEntry::Occupied(_) => Err(DatabaseError::PreludeAlreadyPresent),
-            DEntry::Vacant(vac) => {
-                vac.insert(prelude);
-                Ok(())
-            }
-        }
-    }
-
-    /// Add the root scope for a crate.
-    pub fn add_root_scope(
-        &mut self,
-        crate_: CrateId,
-        scope: Scope,
-    ) -> Result<Identity, DatabaseError> {
-        assert!(
-            &scope.metadata.name == &*ROOT_SCOPE_NAME,
-            "root scope must be named `{root}`"
-        );
-        let root_id = Identity::root(&crate_);
-        match self.0.scopes.0.entry(root_id.clone()) {
-            DEntry::Occupied(_) => Err(DatabaseError::ItemAlreadyPresent),
-            DEntry::Vacant(vac) => {
-                vac.insert(scope);
-                Ok(root_id)
-            }
-        }
-    }
-
-    /// Insert an item, and add a binding for that item in the relevant module.
-    /// Returns the identity for the item (
-    pub fn add_item<I: NamespaceLookup>(
-        &mut self,
-        containing_scope: &Identity,
-        item: I,
-    ) -> Result<Identity, DatabaseError> {
-        let visibility = item.metadata().visibility.clone();
-        let name = item.metadata().name.clone();
-        let identity = containing_scope.clone_join(name.clone());
-
-        let namespace = I::get_namespace(self.0);
-
-        match namespace.0.entry(identity.clone()) {
-            DEntry::Occupied(_) => {
-                return Err(DatabaseError::ItemAlreadyPresent);
-            }
-            DEntry::Vacant(v) => {
-                v.insert(item);
-            }
-        }
-
-        self.add_binding::<I>(
-            &containing_scope,
-            name,
-            identity.clone(),
-            visibility,
-            Priority::Explicit,
-        )?;
-
-        Ok(identity)
-    }
-
-    /// Add a binding. Doesn't have to target something in this crate.
-    pub fn add_binding<I: NamespaceLookup>(
-        &mut self,
-        containing_scope: &Identity,
-        name: Ident,
-        target: Identity,
-        visibility: Visibility,
-        priority: Priority,
-    ) -> Result<(), DatabaseError> {
-        let mut binding = Binding {
-            identity: target,
-            visibility,
-            priority,
-        };
-
-        let mut scope = self
-            .0
-            .scopes
-            .0
-            .get_mut(&containing_scope)
-            .ok_or(DatabaseError::NoSuchScope)?;
-        let bindings = scope.get_bindings_mut::<I>();
-        match bindings.entry(name) {
-            HEntry::Occupied(mut old) => {
-                let old = old.get_mut();
-
-                if old.priority == Priority::Glob && binding.priority == Priority::Explicit {
-                    // overrides previous.
-                    // TODO: signal that this occurred?
-                    std::mem::swap(old, &mut binding);
-                    Ok(())
-                } else {
-                    Err(DatabaseError::BindingAlreadyPresent)
-                }
-            }
-            HEntry::Vacant(v) => {
-                v.insert(binding);
-                Ok(())
-            }
-        }
-    }
-    */
 }
 
 /// A parsed and resolved crate.
@@ -243,8 +121,22 @@ pub struct Crate {
     /// Redundancy.
     pub id: CrateId,
 
-    /// The crate prelude.
-    pub prelude: Prelude,
+    /// A prelude. They mostly act like a normal scope, but they apply to a whole crate. Names
+    /// are not exported.
+    ///
+    /// Not to be confused with the "language prelude", i.e. std::prelude::v1 -- that is a set of names
+    /// that's *added* to each crate's prelude. However, a crate prelude can include other items as well;
+    /// notably, extern crates, and macros imported with macro_use!.
+    ///
+    /// The `#[no_implicit_prelude]` disables the entire crate prelude for some module, including extern crates!
+    /// External crates must be accessed like `::krate` to work in a no_implicit_prelude module.
+    ///
+    /// By default, crates have an empty prelude. See `tendon_resolve::walker::helpers::build_prelude`
+    /// for code that adds all the relevant names.
+    ///
+    /// Paths like `::crate_z::thing` are looked up by checking the prelude and making sure that the
+    /// target of the `prelude["crate_z"]` binding is the root of a crate.
+    pub prelude: Scope,
 
     /// Types in the crate.
     pub types: Namespace<TypeItem>,
@@ -260,17 +152,153 @@ pub struct Crate {
 }
 
 impl Crate {
+    /// Create an empty crate.
+    pub fn new(id: CrateId) -> Crate {
+        Crate {
+            id,
+            prelude:  Scope::new(Metadata::fake("{prelude}"), false, None),
+            types: Namespace::new(),
+            symbols: Namespace::new(),
+            macros: Namespace::new(),
+            scopes: Namespace::new(),
+        }
+    }
+
+    /// Look up an Identity in a namespace (NOT a binding.)
+    /// The Identity must be in this crate.
     pub fn get<I: NamespaceLookup>(&self, identity: &Identity) -> Option<&I> {
         assert_eq!(self.id, identity.crate_, "cannot get outside crate!");
 
         I::get_namespace(self).0.get(&identity.path[..])
     }
 
-    pub fn get_mut<I: NamespaceLookup>(&mut self, identity: &Identity) -> Option<&I> {
+    /// Look up an Identity in a namespace (NOT a binding.)
+    /// The Identity must be in this crate.
+    pub fn get_mut<I: NamespaceLookup>(&mut self, identity: &Identity) -> Option<&mut I> {
         assert_eq!(self.id, identity.crate_, "cannot get outside crate!");
 
-        I::get_namespace(self).0.get(&identity.path[..])
+        I::get_namespace_mut(self).0.get_mut(&identity.path[..])
     }
+
+    /// Look up a binding in a scope. Checks prelude and inherited scopes as well. Does not check visibilities.
+    pub fn get_binding<I: NamespaceLookup>(&self, containing_scope: &Identity, name: &Ident) -> Option<&Binding> {
+        self.get_binding_by(containing_scope, I::namespace_id(), name)
+    }
+
+    /// Look up a binding in a scope. Checks prelude and inherited scopes as well. Does not check visibilities.
+    #[inline(never)]
+    pub fn get_binding_by(&self, containing_scope: &Identity, namespace_id: NamespaceId, name: &Ident) -> Option<&Binding> {
+        let scope = if let Some(scope) = self.get::<Scope>(containing_scope) {
+            scope
+        } else {
+            error!("no such scope: {:?}", containing_scope);
+            return None;
+        };
+        if let Some(name) = scope.get_by(namespace_id, name) {
+            return Some(name);
+        }
+        if let Some(inherits_from) = &scope.inherits_from {
+            if let Some(inherited) = self.get_binding_by(inherits_from, namespace_id, name) {
+                return Some(inherited);
+            }
+        }
+        // this does redundant work in the inherited case... whatever.
+        if let Some(prelude) = self.prelude.get_by(namespace_id, name) {
+            return Some(prelude);
+        }
+        None
+    }
+
+    /// Add an item to a crate. The item is added at `{containing_scope}::{item.metadata().name}`.
+    /// The containing_scope must be in this crate.
+    /// Also adds a Binding to the containing scope.
+    pub fn add<I: NamespaceLookup>(&mut self, containing_scope: &Identity, item: I) -> Result<Identity, DatabaseError> {
+        assert_eq!(containing_scope.crate_, self.id, "can't add item to a different crate!!");
+
+        let name = item.metadata().name.clone();
+        let visibility = item.metadata().visibility.clone();
+
+        let identity = containing_scope.clone_join(name.clone());
+        let Identity { path, crate_ } = identity.clone();
+
+        match I::get_namespace_mut(self).0.entry(path) {
+            HEntry::Vacant(vacant) => {
+                vacant.insert(item);
+            }
+            HEntry::Occupied(occupied) => {
+                error!("{:?} ({:?}) already defined!", Identity::new(&crate_, occupied.key()), I::namespace_id());
+                return Err(DatabaseError::ItemAlreadyPresent);
+            }
+        }
+
+        self.add_binding::<I>(
+            &containing_scope,
+            name,
+            identity.clone(),
+            visibility,
+            Priority::Explicit,
+        )?;
+
+        Ok(identity)
+    }
+
+    /// Add the root scope.
+    pub fn add_root_scope(&mut self, metadata: Metadata) -> Result<Identity, DatabaseError> {
+        assert!(&metadata.name[..] == "{root}");
+        let item = Scope::new(metadata, true, None);
+
+        match self.scopes.0.entry(vec![]) {
+            HEntry::Vacant(vacant) => {
+                vacant.insert(item);
+                Ok(Identity::root(&self.id))
+            }
+            HEntry::Occupied(_) => {
+                error!("{:?} root already defined!", &self.id);
+                Err(DatabaseError::ItemAlreadyPresent)
+            }
+        }
+    }
+
+    /// Add a binding to a scope. Doesn't have to target something in this crate.
+    pub fn add_binding<I: NamespaceLookup>(
+        &mut self,
+        containing_scope: &Identity,
+        name: Ident,
+        target: Identity,
+        visibility: Visibility,
+        priority: Priority,
+    ) -> Result<(), DatabaseError> {
+        self.add_binding_by(containing_scope, I::namespace_id(), name, target, visibility, priority)
+    }
+
+    #[inline(never)]
+    pub fn add_binding_by(
+        &mut self,
+        containing_scope: &Identity,
+        namespace_id: NamespaceId,
+        name: Ident,
+        target: Identity,
+        visibility: Visibility,
+        priority: Priority,
+    ) -> Result<(), DatabaseError> {
+        assert!(&containing_scope.crate_ == &self.id, "can't add a binding to another crate!");
+
+        let scope = self.get_mut::<Scope>(containing_scope).ok_or(DatabaseError::NoSuchScope)?;
+
+        // TODO allow replacing bindings somehow?
+        scope.insert_by(namespace_id, name, target, visibility, priority).map_err(|_| DatabaseError::BindingAlreadyPresent)
+    }
+
+    pub fn add_prelude_binding_by(&mut self,
+        namespace_id: NamespaceId,
+        name: Ident,
+        target: Identity,
+    ) -> Result<(), DatabaseError> {
+        let visibility = Visibility::InScope(Identity::root(&self.id));
+        self.prelude.insert_by(namespace_id, name, target, visibility, Priority::Explicit)
+            .map_err(|_| DatabaseError::BindingAlreadyPresent)
+    }
+
 }
 
 /// A namespace within a crate.
@@ -342,25 +370,53 @@ quick_error::quick_error! {
     #[derive(Debug, Clone, Copy)]
     pub enum DatabaseError {
         ItemAlreadyPresent {
-            display("item has already been added?")
+            display("item is already present")
         }
         BindingAlreadyPresent {
-            display("item is already reexported?")
-        }
-        ItemNotFound {
-            display("item not found")
-        }
-        BindingNotFound {
-            display("item not found")
+            display("binding is already present")
         }
         NoSuchScope {
             display("no such scope")
-        }
-        PreludeAlreadyPresent {
-            display("crate already has a prelude")
         }
     }
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::*;
+    use crate::items::{EnumItem, GenericParams};
+    use crate::attributes::{TypeMetadata};
+
+    #[test]
+    fn crate_building() {
+        let test_crate_a = (*TEST_CRATE_A).clone();
+
+        let mut crate_ = Crate::new(test_crate_a.clone());
+        let root = crate_.add_root_scope(Metadata::fake("{root}")).unwrap();
+
+        assert!(crate_.get::<Scope>(&root).is_some());
+
+        let mod_a = crate_.add(&root, Scope::new(Metadata::fake("a"), true, None)).unwrap();
+
+        assert!(crate_.get::<Scope>(&mod_a).is_some());
+        assert!(&crate_.get_binding::<Scope>(&root, &"a".into()).unwrap().identity == &mod_a);
+
+        let mod_a_b = crate_.add(&mod_a, Scope::new(Metadata::fake("a"), true, None)).unwrap();
+
+        let type_a_b_c = crate_.add(&mod_a_b, TypeItem::Enum(EnumItem {
+            metadata: Metadata::fake("C"),
+            type_metadata: TypeMetadata::default(),
+            generic_params: GenericParams::default(),
+            variants: vec![]
+        })).unwrap();
+
+        crate_.add_binding::<TypeItem>(&root, "CRenamed".into(), type_a_b_c.clone(), Visibility::InScope(root.clone()), Priority::Explicit).unwrap();
+
+        let in_root = crate_.get_binding::<TypeItem>(&root, &"CRenamed".into()).unwrap();
+        let in_a_b = crate_.get_binding::<TypeItem>(&mod_a_b, &"C".into()).unwrap();
+
+        assert_eq!(in_root.identity, in_a_b.identity);
+        assert_eq!(in_root.visibility, Visibility::InScope(root.clone()));
+        assert_eq!(in_a_b.visibility, Visibility::Pub);
+    }
+}

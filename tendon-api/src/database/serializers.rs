@@ -29,7 +29,7 @@ pub fn deserialize_map_once_cell<
     for (k, v) in mapped {
         let cell = OnceCell::new();
         if let Some(v) = v {
-            cell.set(v);
+            let _ = cell.set(v); // cannot fail
         }
         result.insert(k, cell);
     }

@@ -1,11 +1,12 @@
 //! Scopes and bindings.
 
 use crate::attributes::{Metadata, Visibility};
-use crate::database::NamespaceLookup;
-use crate::identities::{CrateId, Identity};
+use crate::database::{NamespaceLookup};
+use crate::identities::{Identity};
 use crate::paths::Ident;
 use crate::Map;
 use serde::{Deserialize, Serialize};
+use hashbrown::hash_map::Entry;
 
 /// A scope, containing bindings for all 4 namespaces.
 ///
@@ -37,25 +38,38 @@ impl Scope {
         }
     }
 
-    /// Get the bindings for a namespace.
-    pub fn get_bindings_mut<I: NamespaceLookup>(&mut self) -> &mut Map<Ident, Binding> {
-        &mut self.bindings[I::namespace_id() as usize]
+    /// Get a binding by namespace id. Does NOT check inherited scopes or prelude.
+    pub fn get_by(&self, namespace_id: NamespaceId, ident: &Ident) -> Option<&Binding> {
+        self.bindings[namespace_id as usize].get(ident)
     }
 
-    /// Get the bindings for a namespace.
-    pub fn get_bindings<I: NamespaceLookup>(&self) -> &Map<Ident, Binding> {
-        &self.bindings[I::namespace_id() as usize]
+    /// Insert a binding by namespace id. Returns Err if already present.
+    pub fn insert_by(&mut self, namespace_id: NamespaceId, ident: Ident, target: Identity, visibility: Visibility, priority: Priority) -> Result<(), ()> {
+        match self.bindings[namespace_id as usize].entry(ident) {
+            Entry::Occupied(_) => {
+                Err(())
+            }
+            Entry::Vacant(vac) => {
+                vac.insert(Binding {
+                    identity: target,
+                    visibility,
+                    priority
+                });
+                Ok(())
+            }
+        }
     }
 
-    /// Get the bindings for a namespace by id.
-    pub fn get_bindings_by(&self, id: NamespaceId) -> &Map<Ident, Binding> {
-        &self.bindings[id as usize]
+    /// Get a binding in a namespace. Does NOT check inherited scopes or prelude.
+    pub fn get<I: NamespaceLookup>(&self, ident: &Ident) -> Option<&Binding> {
+        self.get_by(I::namespace_id(), ident)
     }
 
-    /// Get the bindings for a namespace by id.
-    pub fn get_bindings_by_mut(&mut self, id: NamespaceId) -> &mut Map<Ident, Binding> {
-        &mut self.bindings[id as usize]
+    /// Insert a binding in a namespace. Returns Err if already present.
+    pub fn insert<I: NamespaceLookup>(&mut self, ident: Ident, target: Identity, visibility: Visibility, priority: Priority) -> Result<(), ()> {
+        self.insert_by(I::namespace_id(), ident, target, visibility, priority)
     }
+
 }
 
 /// A name binding. (Nothing to do with the idea of "language bindings".)
@@ -90,26 +104,3 @@ pub enum Priority {
     Explicit,
 }
 
-/// A prelude. There's one of these per-crate. Each is constructed before crate name resolution
-/// begins. They mostly act like a normal scope, but they apply to a whole crate.
-///
-/// Not to be confused with the "language prelude", i.e. std::prelude::v1 -- that is a set of names
-/// that's *added* to each crate's prelude. However, a crate prelude can include other items as well;
-/// notably, extern crates, and macros imported with macro_use!.
-///
-/// The `#[no_implicit_prelude]` disables the entire crate prelude for some module, including extern crates!
-/// External crates must be accessed like `::krate` to work in a no_implicit_prelude module.
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Prelude {
-    /// This scope serves as a fallback for all name lookups within a crate.
-    ///
-    /// (`Priority` and `Visibility` don't matter in this data structure,
-    /// we just reuse Scope for convenience.)
-    pub scope: Scope,
-
-    /// External crates are added by their name in `Cargo.toml`. using `extern crate a as b` adds
-    /// *both* `a` and `b` to this map.
-    ///
-    /// This is used to look up paths prefixed with `::`.
-    pub extern_crates: Map<Ident, CrateId>,
-}

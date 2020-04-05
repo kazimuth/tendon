@@ -68,7 +68,6 @@ pub struct Module {
 pub struct StructItem {
     pub metadata: Metadata,
     pub type_metadata: TypeMetadata,
-    pub inherent_impl: InherentImpl,
     /// The fields of this struct.
     pub fields: Vec<StructField>,
     /// How this struct is defined.
@@ -96,7 +95,6 @@ pub struct StructField {
 pub struct EnumItem {
     pub metadata: Metadata,
     pub type_metadata: TypeMetadata,
-    pub inherent_impl: InherentImpl,
     pub generic_params: GenericParams,
     /// The variants of this enum.
     pub variants: Vec<EnumVariant>,
@@ -113,14 +111,12 @@ pub struct EnumVariant {
 #[derive(Serialize, Deserialize)]
 pub struct UnionItem {
     pub metadata: Metadata,
-    pub inherent_impl: InherentImpl,
 }
 
 /// A trait declaration.
 #[derive(Serialize, Deserialize)]
 pub struct TraitItem {
     pub metadata: Metadata,
-    pub inherent_impl: InherentImpl,
 }
 
 /// A macro-by-example, `macro_rules!`.
@@ -152,10 +148,6 @@ pub struct AttributeMacroItem {
 pub struct DeriveMacroItem {
     pub metadata: Metadata,
 }
-
-/// The inherent implementation of a type: all methods implemented directly on that type.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct InherentImpl {}
 
 /// A function (or method).
 #[derive(Debug, Serialize, Deserialize)]
@@ -247,7 +239,7 @@ pub struct ConstParamItem {
 }
 
 /// Generics embedded at a use site.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct GenericParams {
     /// Lifetime parameters to a type.
     pub lifetimes: Vec<LifetimeId>,
