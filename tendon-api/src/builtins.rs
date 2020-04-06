@@ -51,6 +51,9 @@ lazy_static! {
         result.insert("'static".into(), STATIC.clone());
         result
     };
+
+    pub static ref ROOT_SCOPE_NAME: Ident = "{root}".into();
+    pub static ref IMPL_SCOPE_NAME: Ident = "{impl}".into();
 }
 
 /// Get the builtins table for a namespace, if one exists.

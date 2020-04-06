@@ -417,6 +417,15 @@ mod tests {
     use tendon_api::identities::{TEST_CRATE_A, TEST_CRATE_B};
     use tendon_api::items::{EnumItem, GenericParams};
 
+    fn fake_type(name: &str) -> TypeItem {
+        TypeItem::Enum(EnumItem {
+            metadata: Metadata::fake(name),
+            type_metadata: TypeMetadata::default(),
+            generic_params: GenericParams::default(),
+            variants: vec![],
+        })
+    }
+
     #[test]
     fn resolve_current() {
         let db = Db::fake_db();
@@ -426,22 +435,12 @@ mod tests {
         let mut crate_ = Crate::new(test_crate_a.clone());
         let root = crate_.add_root_scope(Metadata::fake("{root}")).unwrap();
         let mod_a = crate_
-            .add(&root, Scope::new(Metadata::fake("a"), true, None))
+            .add(&root, Scope::new(Metadata::fake("a"), true))
             .unwrap();
         let mod_a_b = crate_
-            .add(&mod_a, Scope::new(Metadata::fake("b"), true, None))
+            .add(&mod_a, Scope::new(Metadata::fake("b"), true))
             .unwrap();
-        let type_a_b_c = crate_
-            .add(
-                &mod_a_b,
-                TypeItem::Enum(EnumItem {
-                    metadata: Metadata::fake("C"),
-                    type_metadata: TypeMetadata::default(),
-                    generic_params: GenericParams::default(),
-                    variants: vec![],
-                }),
-            )
-            .unwrap();
+        let type_a_b_c = crate_.add(&mod_a_b, fake_type("C")).unwrap();
 
         crate_
             .add_binding::<TypeItem>(
@@ -497,5 +496,23 @@ mod tests {
             &UnresolvedPath::fake("a::CLimited"),
         );
         assert_eq!(invisible, Err::<Identity, _>(ResolveError::Pending));
+
+        /*
+        /// Add a scope for attached functions
+        let scope_a_b_c = crate.add(&mod_a_b, Scope::new(Metadata::fake("C"), false)).unwrap();
+        /// And the invisible {impl} scope; which inherits from the containing module.
+        ///
+        let scope_a_b_c_impl = crate_.add(&scope_a_b_c, Scope::new(Metadata::fake("{impl}"), false, Some(mod_a_b.clone()))).unwrap();
+        */
+    }
+
+    #[test]
+    fn resolve_deps() {
+        let test_crate_a = (*TEST_CRATE_A).clone();
+        let mut crate_ = Crate::new(test_crate_a.clone());
+        let a_root = crate_.add_root_scope(Metadata::fake("{root}")).unwrap();
+        let a_b = crate_
+            .add(&a_root, Scope::new(Metadata::fake("b"), true))
+            .unwrap();
     }
 }

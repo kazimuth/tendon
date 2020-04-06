@@ -27,10 +27,6 @@ use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use tracing::error;
 
-lazy_static! {
-    pub static ref ROOT_SCOPE_NAME: Ident = "{root}".into();
-}
-
 mod serializers;
 
 /// A database of everything -- all declarations tendon cares about in a crate + its dependencies.
@@ -159,7 +155,7 @@ impl Crate {
         Crate {
             id,
             extern_crate_bindings: Map::default(),
-            prelude: Scope::new(Metadata::fake("{prelude}"), false, None),
+            prelude: Scope::new(Metadata::fake("{prelude}"), false),
             types: Namespace::new(),
             symbols: Namespace::new(),
             macros: Namespace::new(),
@@ -192,7 +188,7 @@ impl Crate {
         self.get_binding_by(containing_scope, I::namespace_id(), name)
     }
 
-    /// Look up a binding in a scope. Checks prelude and inherited scopes as well. Does not check visibilities.
+    /// Look up a binding in a scope. Checks prelude as well. Does not check visibilities.
     #[inline(never)]
     pub fn get_binding_by(
         &self,
@@ -209,12 +205,6 @@ impl Crate {
         if let Some(name) = scope.get_by(namespace_id, name) {
             return Some(name);
         }
-        if let Some(inherits_from) = &scope.inherits_from {
-            if let Some(inherited) = self.get_binding_by(inherits_from, namespace_id, name) {
-                return Some(inherited);
-            }
-        }
-        // this does redundant work in the inherited case... whatever.
         if let Some(prelude) = self.prelude.get_by(namespace_id, name) {
             return Some(prelude);
         }
@@ -268,7 +258,7 @@ impl Crate {
     /// Add the root scope.
     pub fn add_root_scope(&mut self, metadata: Metadata) -> Result<Identity, DatabaseError> {
         assert!(&metadata.name[..] == "{root}");
-        let item = Scope::new(metadata, true, None);
+        let item = Scope::new(metadata, true);
 
         match self.scopes.0.entry(vec![]) {
             HEntry::Vacant(vacant) => {
@@ -326,6 +316,7 @@ impl Crate {
             .map_err(|_| DatabaseError::BindingAlreadyPresent)
     }
 
+    /// Add a binding to the prelude.
     pub fn add_prelude_binding_by(
         &mut self,
         namespace_id: NamespaceId,
@@ -336,6 +327,106 @@ impl Crate {
         self.prelude
             .insert_by(namespace_id, name, target, visibility, Priority::Explicit)
             .map_err(|_| DatabaseError::BindingAlreadyPresent)
+    }
+
+    /// Add a back link (for a glob import).
+    /// Also copies all existing bindings.
+    /// TODO test
+    pub fn add_back_link(
+        &mut self,
+        copy_from: &Identity,
+        into: &Identity,
+        visibility: Visibility,
+    ) -> Result<(), DatabaseError> {
+        assert_eq!(copy_from.crate_, self.id);
+        assert_eq!(into.crate_, self.id);
+        assert!(self.get::<Scope>(copy_from).is_some());
+        assert!(self.get::<Scope>(into).is_some());
+
+        {
+            let copy_from_ = self.get_mut::<Scope>(copy_from).unwrap();
+            copy_from_.add_back_link(into.clone(), visibility.clone());
+        }
+
+        // do some cloning to appease borrowck
+        for namespace_id in (&[
+            NamespaceId::Type,
+            NamespaceId::Macro,
+            NamespaceId::Scope,
+            NamespaceId::Symbol,
+        ])
+            .into_iter()
+            .cloned()
+        {
+            let bindings = {
+                self.get::<Scope>(copy_from)
+                    .unwrap()
+                    .iter_by(namespace_id)
+                    .filter_map(|(name, binding)| {
+                        if binding.visibility.is_visible_in(into) {
+                            Some((name.clone(), binding.identity.clone()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            };
+
+            let into = self.get_mut::<Scope>(into).unwrap();
+
+            for (name, target) in bindings {
+                into.insert_by(
+                    namespace_id,
+                    name.clone(),
+                    target,
+                    visibility.clone(),
+                    Priority::Glob,
+                )
+                .map_err(|_| DatabaseError::BindingAlreadyPresent)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Copy from a scope into one of our scopes (for a glob import).
+    /// Like `add_back_link`, except for when we're glob-importing from a frozen dependency crate.
+    /// TODO test
+    pub fn copy_from(
+        &mut self,
+        copy_from: &Scope,
+        into: &Identity,
+        visibility: Visibility,
+    ) -> Result<(), DatabaseError> {
+        let into_ = self
+            .get_mut::<Scope>(into)
+            .expect("into must be initialized");
+
+        for namespace_id in (&[
+            NamespaceId::Type,
+            NamespaceId::Macro,
+            NamespaceId::Scope,
+            NamespaceId::Symbol,
+        ])
+            .into_iter()
+            .cloned()
+        {
+            for (name, binding) in copy_from.iter_by(namespace_id) {
+                if !binding.visibility.is_visible_in(into) {
+                    continue;
+                }
+                into_
+                    .insert_by(
+                        namespace_id,
+                        name.clone(),
+                        binding.identity.clone(),
+                        visibility.clone(),
+                        Priority::Glob,
+                    )
+                    .map_err(|_| DatabaseError::BindingAlreadyPresent)?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -435,7 +526,7 @@ mod tests {
         assert!(crate_.get::<Scope>(&root).is_some());
 
         let mod_a = crate_
-            .add(&root, Scope::new(Metadata::fake("a"), true, None))
+            .add(&root, Scope::new(Metadata::fake("a"), true))
             .unwrap();
 
         assert!(crate_.get::<Scope>(&mod_a).is_some());
@@ -448,7 +539,7 @@ mod tests {
         );
 
         let mod_a_b = crate_
-            .add(&mod_a, Scope::new(Metadata::fake("a"), true, None))
+            .add(&mod_a, Scope::new(Metadata::fake("a"), true))
             .unwrap();
 
         let type_a_b_c = crate_

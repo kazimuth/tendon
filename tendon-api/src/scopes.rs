@@ -4,9 +4,11 @@ use crate::attributes::{Metadata, Visibility};
 use crate::database::NamespaceLookup;
 use crate::identities::Identity;
 use crate::paths::Ident;
+use crate::scopes::Priority::{Explicit, Glob};
 use crate::Map;
 use hashbrown::hash_map::Entry;
 use serde::{Deserialize, Serialize};
+use tracing::error;
 
 /// A scope, containing bindings for all 4 namespaces.
 ///
@@ -22,18 +24,20 @@ pub struct Scope {
     pub metadata: Metadata,
     /// If this is a module or something else.
     pub is_module: bool,
-    /// If this scope inherits from another scope. For instance, an `impl` block with type parameters
-    /// creates a new scope that inherits everything from its containing module.
-    pub inherits_from: Option<Identity>,
+    /// Scopes (in the current crate) that glob-import from this scope.
+    /// When we add a binding here, we have to go to all of those and add it there too (with the
+    /// accompanying visibility.)
+    back_links: Vec<(Identity, Visibility)>,
     /// Bindings
     bindings: [Map<Ident, Binding>; 4],
 }
 impl Scope {
-    pub fn new(metadata: Metadata, is_module: bool, inherits_from: Option<Identity>) -> Scope {
+    /// Create a new module scope.
+    pub fn new(metadata: Metadata, is_module: bool) -> Scope {
         Scope {
             metadata,
             is_module,
-            inherits_from,
+            back_links: Default::default(),
             bindings: Default::default(),
         }
     }
@@ -44,6 +48,7 @@ impl Scope {
     }
 
     /// Insert a binding by namespace id. Returns Err if already present.
+    /// Does NOT update back links!
     pub fn insert_by(
         &mut self,
         namespace_id: NamespaceId,
@@ -53,7 +58,16 @@ impl Scope {
         priority: Priority,
     ) -> Result<(), ()> {
         match self.bindings[namespace_id as usize].entry(ident) {
-            Entry::Occupied(_) => Err(()),
+            Entry::Occupied(occ) => {
+                let binding = occ.get();
+                match (binding.priority, priority) {
+                    (Glob, _) | (Explicit, Explicit) => {
+                        error!("binding priority inversion?");
+                        Err(())
+                    }
+                    (Explicit, Glob) => Ok(()),
+                }
+            }
             Entry::Vacant(vac) => {
                 vac.insert(Binding {
                     identity: target,
@@ -76,6 +90,7 @@ impl Scope {
     }
 
     /// Insert a binding in a namespace. Returns Err if already present.
+    /// Does NOT update back links!
     pub fn insert<I: NamespaceLookup>(
         &mut self,
         ident: Ident,
@@ -90,12 +105,25 @@ impl Scope {
     pub fn iter<I: NamespaceLookup>(&self) -> impl Iterator<Item = (&Ident, &Binding)> {
         self.iter_by(I::namespace_id())
     }
+
+    /// Add a back link. Doesn't copy any bindings!
+    pub fn add_back_link(&mut self, link: Identity, visibility: Visibility) {
+        for (id, _) in &self.back_links {
+            assert!(id != &link);
+        }
+        self.back_links.push((link, visibility));
+    }
+
+    /// Iterate over back links.
+    pub fn back_links(&self) -> &[(Identity, Visibility)] {
+        &self.back_links[..]
+    }
 }
 
 /// A name binding. (Nothing to do with the idea of "language bindings".)
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Binding {
-    /// The final target this binding points to. If this points to another binding
+    /// The final target this bind | (Glob, Glob)ing points to. If this points to another binding
     /// (e.g. a reexport), that chain is followed.
     pub identity: Identity,
 
