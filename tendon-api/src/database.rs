@@ -295,10 +295,6 @@ impl Crate {
         visibility: Visibility,
         priority: Priority,
     ) -> Result<(), DatabaseError> {
-        println!(
-            "add_binding_by {:?} {:?} {:?} {:?}",
-            containing_scope, namespace_id, name, target
-        );
         assert!(
             &containing_scope.crate_ == &self.id,
             "can't add a binding to another crate!"

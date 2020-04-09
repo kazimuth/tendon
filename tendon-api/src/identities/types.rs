@@ -417,7 +417,6 @@ mod tests {
                 }),
             ],
         });
-        println!("{:?}", type_);
         assert_eq!(&format!("{:?}", type_),
             "(test_crate_a[0.0.0]::test::Type<A=test_crate_a[0.0.0]::other::KindaType>, *mut [!; 5i32], &test_crate_a[0.0.0]::Type::\'param [!], unsafe fn(<! as test_crate_a[0.0.0]::TestTrait>::Wow, ...) -> (dyn test_crate_a[0.0.0]::TestTrait), (impl test_crate_a[0.0.0]::TestTrait))");
     }

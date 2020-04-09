@@ -738,10 +738,6 @@ mod tests {
         )
         .unwrap();
 
-        println!("{:?}", db.get_crate(&test_crate_a).get::<Scope>(&a_root));
-
-        println!("{:?}", crate_b.prelude);
-
         assert!(crate_b
             .prelude
             .get::<MacroItem>(&"test_macro".into())
