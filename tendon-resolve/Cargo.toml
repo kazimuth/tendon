@@ -25,3 +25,4 @@ rayon = "1"
 toml = "0.5"
 failure = "0.1.5"
 spoor = { path = "../spoor" }
+tempdir = "0.3.7"

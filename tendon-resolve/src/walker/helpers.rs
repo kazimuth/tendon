@@ -302,6 +302,10 @@ pub fn add_std_prelude(crate_: &mut Crate, no_std: bool) -> Result<(), WalkError
         let last: Ident = path_.iter().last().unwrap().into();
         let identity = Identity::new(&crate_id, &path_);
 
+        if I::namespace_id() == NamespaceId::Type {
+            add_to_prelude::<Scope>(crate_, crate_id, path)?;
+        }
+
         crate_.add_prelude_binding_by(I::namespace_id(), last, identity)?;
 
         Ok(())
@@ -431,6 +435,7 @@ fn find_source_file(parent: &LocationMetadata, item: &syn::ItemMod) -> Result<Pa
 mod tests {
     use super::*;
     use tendon_api::attributes::{Metadata, TypeMetadata};
+    use tendon_api::crates::CrateData;
     use tendon_api::database::Db;
     use tendon_api::identities::{TEST_CRATE_A, TEST_CRATE_B, TEST_CRATE_C};
     use tendon_api::items::{EnumItem, GenericParams};
@@ -666,6 +671,38 @@ mod tests {
             &UnresolvedPath::fake("crate::b_alt::B")
         )
         .is_ok());
+
+        let empty: &[&str] = &[];
+        assert_eq!(
+            try_to_resolve(
+                &db,
+                &crate_c,
+                &c_other,
+                NamespaceId::Type,
+                &UnresolvedPath::new(false, empty)
+            ),
+            Err(ResolveError::Impossible)
+        );
+        assert_eq!(
+            try_to_resolve(
+                &db,
+                &crate_c,
+                &c_other,
+                NamespaceId::Type,
+                &UnresolvedPath::fake("::nonexistent::crate_")
+            ),
+            Err(ResolveError::Impossible)
+        );
+        assert_eq!(
+            try_to_resolve(
+                &db,
+                &crate_c,
+                &c_other,
+                NamespaceId::Type,
+                &UnresolvedPath::fake("::super::super::nonexistent")
+            ),
+            Err(ResolveError::Impossible)
+        );
     }
 
     #[test]
@@ -709,5 +746,125 @@ mod tests {
             .prelude
             .get::<MacroItem>(&"test_macro".into())
             .is_some());
+    }
+
+    #[test]
+    fn debug() {
+        let p = UnresolvedPath::fake("thing::somewhere");
+        let p = ResolvingPath {
+            path: Cow::from(&p.path),
+            rooted: p.rooted,
+        };
+
+        assert_eq!(format!("{:?}", p), "thing::somewhere");
+    }
+
+    #[test]
+    fn init_prelude() {
+        let mut with_std = Crate::new((*TEST_CRATE_A).clone());
+        add_std_prelude(&mut with_std, false).unwrap();
+
+        assert!(with_std.prelude.get::<TypeItem>(&"Option".into()).is_some());
+        assert!(with_std.prelude.get::<Scope>(&"Option".into()).is_some());
+        assert!(with_std
+            .prelude
+            .get::<MacroItem>(&"include_bytes".into())
+            .is_some());
+        assert!(with_std.prelude.get::<SymbolItem>(&"Some".into()).is_some());
+
+        assert!(with_std.prelude.get::<TypeItem>(&"Vec".into()).is_some());
+        assert!(with_std.prelude.get::<Scope>(&"Vec".into()).is_some());
+
+        let mut no_std = Crate::new((*TEST_CRATE_A).clone());
+        add_std_prelude(&mut no_std, true).unwrap();
+
+        assert!(no_std.prelude.get::<TypeItem>(&"Option".into()).is_some());
+        assert!(no_std.prelude.get::<Scope>(&"Option".into()).is_some());
+        assert!(no_std
+            .prelude
+            .get::<MacroItem>(&"include_bytes".into())
+            .is_some());
+        assert!(no_std.prelude.get::<SymbolItem>(&"Some".into()).is_some());
+
+        assert!(no_std.prelude.get::<TypeItem>(&"Vec".into()).is_none());
+        assert!(no_std.prelude.get::<Scope>(&"Vec".into()).is_none());
+    }
+
+    #[test]
+    fn find_file() {
+        let test_crate_a = (*TEST_CRATE_A).clone();
+
+        let temp_dir = tempdir::TempDir::new("tendon_test").unwrap();
+        let dir = temp_dir.path();
+
+        let root = dir.join("root.rs");
+        let sub_mod = dir.join("sub_mod");
+        let sub_mod_file = sub_mod.join("mod.rs");
+        let sub_mod_child = sub_mod.join("child.rs");
+
+        let sub_mod_new = dir.join("sub_mod_new");
+        let sub_mod_new_file = dir.join("sub_mod_new.rs");
+        let sub_mod_new_child = sub_mod_new.join("child.rs");
+
+        let renamed_file = dir.join("renamed.rs");
+
+        fs::File::create(&root).unwrap();
+
+        fs::create_dir(&sub_mod).unwrap();
+        fs::File::create(&sub_mod_file).unwrap();
+        fs::File::create(&sub_mod_child).unwrap();
+
+        fs::create_dir(&sub_mod_new).unwrap();
+        fs::File::create(&sub_mod_new_file).unwrap();
+        fs::File::create(&sub_mod_new_child).unwrap();
+
+        fs::File::create(&renamed_file).unwrap();
+
+        let item_sub_mod = syn::parse_str::<syn::ItemMod>("mod sub_mod;").unwrap();
+        let item_sub_mod_new = syn::parse_str::<syn::ItemMod>("mod sub_mod_new;").unwrap();
+        let item_child = syn::parse_str::<syn::ItemMod>("mod child;").unwrap();
+        let item_renamed =
+            syn::parse_str::<syn::ItemMod>("#[path = \"renamed\"] mod thing;").unwrap();
+
+        let mut crate_data = CrateData::fake(test_crate_a.clone());
+        crate_data.entry = root.clone();
+
+        let crate_root = Identity::root(&test_crate_a);
+
+        let mut loc = LocationMetadata {
+            source_file: root.clone(),
+            module_path: crate_root.clone(),
+            macro_invocation: None,
+            crate_data: &crate_data,
+        };
+
+        assert_eq!(
+            &find_source_file(&loc, &item_sub_mod).unwrap(),
+            &sub_mod_file
+        );
+        assert_eq!(
+            &find_source_file(&loc, &item_sub_mod_new).unwrap(),
+            &sub_mod_new_file
+        );
+        assert_eq!(
+            &find_source_file(&loc, &item_renamed).unwrap(),
+            &renamed_file
+        );
+
+        loc.source_file = sub_mod_file.clone();
+        loc.module_path = crate_root.clone_join("sub_mod");
+        assert_eq!(
+            &find_source_file(&loc, &item_child).unwrap(),
+            &sub_mod_child
+        );
+
+        loc.source_file = sub_mod_new_file.clone();
+        loc.module_path = crate_root.clone_join("sub_mod_new");
+        assert_eq!(
+            &find_source_file(&loc, &item_child).unwrap(),
+            &sub_mod_new_child
+        );
+
+        // might wanna add a check for renamed submodules, that can get wacky...
     }
 }
