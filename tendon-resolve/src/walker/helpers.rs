@@ -13,7 +13,7 @@ use tendon_api::identities::{CrateId, Identity};
 use tendon_api::items::{MacroItem, SymbolItem, TypeItem};
 use tendon_api::paths::{Ident, UnresolvedPath};
 use tendon_api::scopes::{NamespaceId, Priority, Scope};
-use tracing::error;
+use tracing::{error, info_span};
 
 /// Resolve an item in the current crate or the database of dependencies.
 ///
@@ -46,6 +46,22 @@ pub(crate) fn try_to_resolve(
         path: Cow::from(&path.path[..]),
         rooted: path.rooted,
     };
+
+    let namespace_ = match namespace {
+        NamespaceId::Scope => "scope",
+        NamespaceId::Type => "type",
+        NamespaceId::Symbol => "symbol",
+        NamespaceId::Macro => "macro",
+    };
+    let path_ = format!("{:?}", path);
+    let in_module_ = format!("{:?}", in_module);
+    let span = info_span!(
+        "try_to_resolve",
+        namespace = namespace_,
+        path = &path_[..],
+        in_module = &in_module_[..]
+    );
+    let _enter = span.enter();
 
     try_to_resolve_rec(
         db,
@@ -705,7 +721,7 @@ mod tests {
                 &walker_c.crate_,
                 &c_other,
                 NamespaceId::Type,
-                &UnresolvedPath::fake("::super::super::nonexistent")
+                &UnresolvedPath::fake("super::super::nonexistent")
             ),
             Err(ResolveError::Impossible)
         );
