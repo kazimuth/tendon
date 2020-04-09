@@ -124,8 +124,6 @@ pub struct TraitItem {
 pub struct DeclarativeMacroItem {
     /// Other metadata.
     pub metadata: Metadata,
-    /// If this macro is `#[macro_export]`.
-    pub macro_export: bool,
     /// Note: currently, macros-by-example are re-parsed every time they're invoked, because the
     /// parsed forms aren't Send / Serialize. This should probably be fixed...
     pub tokens: Tokens,

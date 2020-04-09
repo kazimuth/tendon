@@ -179,7 +179,7 @@ impl Crate {
         I::get_namespace_mut(self).0.get_mut(&identity.path[..])
     }
 
-    /// Look up a binding in a scope. Checks prelude and inherited scopes as well. Does not check visibilities.
+    /// Look up a binding in a scope. Checks prelude as well. Does not check visibilities.
     pub fn get_binding<I: NamespaceLookup>(
         &self,
         containing_scope: &Identity,
@@ -301,6 +301,10 @@ impl Crate {
         visibility: Visibility,
         priority: Priority,
     ) -> Result<(), DatabaseError> {
+        println!(
+            "add_binding_by {:?} {:?} {:?} {:?}",
+            containing_scope, namespace_id, name, target
+        );
         assert!(
             &containing_scope.crate_ == &self.id,
             "can't add a binding to another crate!"
@@ -327,106 +331,6 @@ impl Crate {
         self.prelude
             .insert_by(namespace_id, name, target, visibility, Priority::Explicit)
             .map_err(|_| DatabaseError::BindingAlreadyPresent)
-    }
-
-    /// Add a back link (for a glob import).
-    /// Also copies all existing bindings.
-    /// TODO test
-    pub fn add_back_link(
-        &mut self,
-        copy_from: &Identity,
-        into: &Identity,
-        visibility: Visibility,
-    ) -> Result<(), DatabaseError> {
-        assert_eq!(copy_from.crate_, self.id);
-        assert_eq!(into.crate_, self.id);
-        assert!(self.get::<Scope>(copy_from).is_some());
-        assert!(self.get::<Scope>(into).is_some());
-
-        {
-            let copy_from_ = self.get_mut::<Scope>(copy_from).unwrap();
-            copy_from_.add_back_link(into.clone(), visibility.clone());
-        }
-
-        // do some cloning to appease borrowck
-        for namespace_id in (&[
-            NamespaceId::Type,
-            NamespaceId::Macro,
-            NamespaceId::Scope,
-            NamespaceId::Symbol,
-        ])
-            .into_iter()
-            .cloned()
-        {
-            let bindings = {
-                self.get::<Scope>(copy_from)
-                    .unwrap()
-                    .iter_by(namespace_id)
-                    .filter_map(|(name, binding)| {
-                        if binding.visibility.is_visible_in(into) {
-                            Some((name.clone(), binding.identity.clone()))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>()
-            };
-
-            let into = self.get_mut::<Scope>(into).unwrap();
-
-            for (name, target) in bindings {
-                into.insert_by(
-                    namespace_id,
-                    name.clone(),
-                    target,
-                    visibility.clone(),
-                    Priority::Glob,
-                )
-                .map_err(|_| DatabaseError::BindingAlreadyPresent)?;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Copy from a scope into one of our scopes (for a glob import).
-    /// Like `add_back_link`, except for when we're glob-importing from a frozen dependency crate.
-    /// TODO test
-    pub fn copy_from(
-        &mut self,
-        copy_from: &Scope,
-        into: &Identity,
-        visibility: Visibility,
-    ) -> Result<(), DatabaseError> {
-        let into_ = self
-            .get_mut::<Scope>(into)
-            .expect("into must be initialized");
-
-        for namespace_id in (&[
-            NamespaceId::Type,
-            NamespaceId::Macro,
-            NamespaceId::Scope,
-            NamespaceId::Symbol,
-        ])
-            .into_iter()
-            .cloned()
-        {
-            for (name, binding) in copy_from.iter_by(namespace_id) {
-                if !binding.visibility.is_visible_in(into) {
-                    continue;
-                }
-                into_
-                    .insert_by(
-                        namespace_id,
-                        name.clone(),
-                        binding.identity.clone(),
-                        visibility.clone(),
-                        Priority::Glob,
-                    )
-                    .map_err(|_| DatabaseError::BindingAlreadyPresent)?;
-            }
-        }
-        Ok(())
     }
 }
 
@@ -474,7 +378,7 @@ impl NamespaceLookup for SymbolItem {
 }
 impl NamespaceLookup for MacroItem {
     fn namespace_id() -> NamespaceId {
-        NamespaceId::Type
+        NamespaceId::Macro
     }
     fn get_namespace(crate_: &Crate) -> &Namespace<Self> {
         &crate_.macros

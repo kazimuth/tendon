@@ -12,12 +12,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Metadata available for all items, struct fields, etc.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Metadata {
     /// The identifier of this item.
     pub name: Ident,
     /// The visibility of this item.
-    /// We can only bind fully `pub` items so we only track whether that's true.
     pub visibility: Visibility,
     /// Docs for this item.
     pub docs: Option<String>,
@@ -53,6 +52,26 @@ impl Metadata {
             extra_attributes: vec![],
             span: Span::fake(),
         }
+    }
+}
+impl fmt::Debug for Metadata {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        if let Some(_) = &self.docs {
+            write!(f, "#[docs = ...]")?;
+        }
+        if let Some(deprecated) = &self.deprecated {
+            write!(f, "#[deprecated = {:?}]", deprecated)?;
+        }
+        if let Some(must_use) = &self.must_use {
+            write!(f, "#[must_use = {:?}]", must_use)?;
+        }
+        for attr in &self.extra_attributes {
+            write!(f, "{:?}", attr)?;
+        }
+        write!(f, "{:?} `{}` {:?}", self.visibility, self.name, self.span)?;
+
+        write!(f, "\")")?;
+        Ok(())
     }
 }
 
@@ -243,7 +262,7 @@ impl fmt::Debug for MetaInner {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 /// The visibility of an item.
 /// TODO: do we need more rules to handle wacky shadowing situations?
 pub enum Visibility {
@@ -273,6 +292,14 @@ impl Visibility {
         let l = my_scope.path.len();
 
         &my_scope.path[0..l] == &in_scope.path[0..l]
+    }
+}
+impl fmt::Debug for Visibility {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        match &self {
+            Visibility::InScope(id) => write!(f, "pub({:?})", id),
+            Visibility::Pub => write!(f, "pub"),
+        }
     }
 }
 
@@ -359,6 +386,8 @@ macro_rules! impl_has_metadata {
 
 use crate::identities::TraitId;
 use crate::items::*;
+use syn::export::fmt::Error;
+use syn::export::Formatter;
 
 impl_has_metadata!(
     enum MacroItem {

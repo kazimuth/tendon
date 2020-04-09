@@ -8,6 +8,7 @@ use crate::scopes::Priority::{Explicit, Glob};
 use crate::Map;
 use hashbrown::hash_map::Entry;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use tracing::error;
 
 /// A scope, containing bindings for all 4 namespaces.
@@ -18,16 +19,12 @@ use tracing::error;
 ///
 /// Also, we're cheeky and put lifetimes in the type namespace, but their names have ticks so
 /// its basically distinct.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Scope {
     /// Metadata on a scope (e.g. module doc commments)
     pub metadata: Metadata,
     /// If this is a module or something else.
     pub is_module: bool,
-    /// Scopes (in the current crate) that glob-import from this scope.
-    /// When we add a binding here, we have to go to all of those and add it there too (with the
-    /// accompanying visibility.)
-    back_links: Vec<(Identity, Visibility)>,
     /// Bindings
     bindings: [Map<Ident, Binding>; 4],
 }
@@ -37,7 +34,6 @@ impl Scope {
         Scope {
             metadata,
             is_module,
-            back_links: Default::default(),
             bindings: Default::default(),
         }
     }
@@ -105,18 +101,27 @@ impl Scope {
     pub fn iter<I: NamespaceLookup>(&self) -> impl Iterator<Item = (&Ident, &Binding)> {
         self.iter_by(I::namespace_id())
     }
+}
+impl fmt::Debug for Scope {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        let mut s = f.debug_struct("Scope");
+        s.field("metadata", &self.metadata);
+        s.field("is_module", &self.is_module);
 
-    /// Add a back link. Doesn't copy any bindings!
-    pub fn add_back_link(&mut self, link: Identity, visibility: Visibility) {
-        for (id, _) in &self.back_links {
-            assert!(id != &link);
+        let get_name = |id: NamespaceId| match id {
+            NamespaceId::Type => "types",
+            NamespaceId::Macro => "macros",
+            NamespaceId::Symbol => "symbols",
+            NamespaceId::Scope => "scopes",
+        };
+
+        for (bindings, ns) in self.bindings.iter().zip(NamespaceId::values().iter()) {
+            if bindings.len() > 0 {
+                s.field(get_name(*ns), bindings);
+            }
         }
-        self.back_links.push((link, visibility));
-    }
 
-    /// Iterate over back links.
-    pub fn back_links(&self) -> &[(Identity, Visibility)] {
-        &self.back_links[..]
+        s.finish()
     }
 }
 
@@ -142,6 +147,17 @@ pub enum NamespaceId {
     Symbol = 1,
     Macro = 2,
     Scope = 3,
+}
+impl NamespaceId {
+    /// Invariant: will always be in integer order.
+    pub fn values() -> [NamespaceId; 4] {
+        [
+            NamespaceId::Type,
+            NamespaceId::Symbol,
+            NamespaceId::Macro,
+            NamespaceId::Scope,
+        ]
+    }
 }
 
 /// A binding priority. Bindings created through globs (`use thing::*`) have lower

@@ -243,7 +243,6 @@ mod tests {
         // for this test, nothing but the name matters.
         DeclarativeMacroItem {
             metadata: Metadata::fake(name),
-            macro_export: false,
             tokens: Tokens::from(""),
         }
     }

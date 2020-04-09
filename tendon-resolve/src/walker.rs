@@ -102,17 +102,15 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path as FsPath, PathBuf};
 use std::sync::Arc;
-use tendon_api::attributes::Span;
+use tendon_api::attributes::{Span, Visibility};
 use tendon_api::crates::CrateData;
-use tendon_api::database::{Crate, Db, NamespaceLookup};
+use tendon_api::database::{Crate, Db};
 use tendon_api::identities::{CrateId, Identity};
-use tendon_api::items::DeclarativeMacroItem;
 use tendon_api::paths::Ident;
 use tendon_api::tokens::Tokens;
 use tendon_api::{Map, Set};
 use tracing::{trace, warn};
 
-use tendon_api::scopes::Scope;
 use textual_scope::TextualScope;
 
 mod helpers;
@@ -262,9 +260,12 @@ pub(crate) struct Walker<'a> {
 /// Discarded once we've finished parsing the current crate.
 struct ScopeInProgress {
     /// Back links: a map from scopes to glob imports.
+    /// When we add a binding here, we have to go to all of those and add it there too (with the
+    /// accompanying visibility.)
     /// If `crate::a` has `use crate::b::*`, then `crate::a` imports everything from `crate::b`,
     /// but also gets a back link. as more items are resolved in B, they get added to A.
-    back_links: Set<Identity>,
+    /// Only relevant in the current crate; if we import from a dependency, we know it's frozen.
+    back_links: Vec<(Identity, Visibility)>,
 
     /// Imports that are explicit but may not be resolved yet.
     /// If an explicit import exists, we never add any glob names that match it.

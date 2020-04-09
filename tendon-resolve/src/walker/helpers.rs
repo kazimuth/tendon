@@ -1,21 +1,18 @@
 use super::{LocationMetadata, WalkError};
 use crate::lower::attributes::extract_attribute;
-use crate::walker::Walker;
 use std::borrow::Cow;
 use std::fmt;
 use std::fs;
 use std::path::PathBuf;
 use syn;
-use tendon_api::attributes::{Metadata, Span, Visibility};
-use tendon_api::builtins::{ALLOC_CRATE, BUILTIN_TYPES, CORE_CRATE, STD_CRATE};
-use tendon_api::crates::CrateData;
+use tendon_api::attributes::Visibility;
+use tendon_api::builtins::{ALLOC_CRATE, BUILTIN_TYPES, CORE_CRATE};
 use tendon_api::database::{Crate, Db, NamespaceLookup};
 use tendon_api::identities::{CrateId, Identity};
 use tendon_api::items::{MacroItem, SymbolItem, TypeItem};
 use tendon_api::paths::{Ident, UnresolvedPath};
-use tendon_api::scopes::{Binding, NamespaceId, Priority, Scope};
-use tendon_api::Map;
-use tracing::{error, info};
+use tendon_api::scopes::{NamespaceId, Priority, Scope};
+use tracing::error;
 
 /// Resolve an item in the current crate or the database of dependencies.
 ///
@@ -101,7 +98,7 @@ fn try_to_resolve_rec(
             orig_module,
             &target_module,
             namespace_id,
-            path,
+            new_path,
         );
     }
 
@@ -188,23 +185,29 @@ quick_error! {
 
 /// Add a crate dep, not necessarily with an import statement.
 /// Adds only to prelude/extern_crate_bindings, doesn't add to root scope.
-pub fn add_crate_dep(crate_: &mut Crate, name: Ident, extern_crate_id: &CrateId) {
+pub fn add_crate_dep(crate_: &mut Crate, extern_crate_id: &CrateId, name: Ident) {
     if let Some(_) = crate_
         .extern_crate_bindings
         .insert(name.clone(), extern_crate_id.clone())
     {
         panic!("can't add crate dep twice!");
     }
-    crate_.add_prelude_binding_by(NamespaceId::Scope, name, Identity::root(extern_crate_id));
+    crate_
+        .add_prelude_binding_by(NamespaceId::Scope, name, Identity::root(extern_crate_id))
+        .expect("prelude binding already present?");
 }
 
-/// Add an `extern crate` statement. Crate should have already been added
-/// and root scope should exist. Handles importing `#[macro_use]` macros, which are added to the *prelude* (not the textual scopes!).
+/// Add an `extern crate` statement. The extern crate should already be in the Db, and the current
+/// crate's root scope should exist.
+///
+/// Handles importing `#[macro_use]` macros, which are added to the *prelude* (not the textual scopes!).
+///
 /// See also `add_crate_dep`.
 ///
 /// Subtle effects:
 /// ```no_build
 /// pub extern crate core as core_;
+/// //                       ^ `name`
 //
 //  pub use crate::core as corea; // fails: undefined in root
 //  pub use crate::core_ as coreb; // works
@@ -216,25 +219,20 @@ pub fn add_root_extern_crate(
     db: &Db,
     crate_: &mut Crate,
     extern_crate_id: &CrateId,
-    rename: Option<&Ident>,
+    name: &Ident,
     visibility: Visibility,
     macro_use: bool,
 ) -> Result<(), WalkError> {
     let extern_crate_root_id = Identity::root(extern_crate_id);
 
-    // find the name to add to the root scope
-    let name = if let Some(rename) = rename {
-        // add rename to scopes too
-        add_crate_dep(crate_, rename.clone(), extern_crate_id);
-        rename.clone()
-    } else {
-        let name = Ident::from(&extern_crate_id.name[..]);
-        name
-    };
+    if !crate_.extern_crate_bindings.contains_key(name) {
+        add_crate_dep(crate_, extern_crate_id, name.clone());
+    }
+
     // add dep as `crate::dep`
     crate_.add_binding::<Scope>(
         &Identity::root(&crate_.id),
-        name,
+        name.clone(),
         extern_crate_root_id.clone(),
         visibility,
         Priority::Explicit,
@@ -290,7 +288,7 @@ pub fn add_std_prelude(crate_: &mut Crate, no_std: bool) -> Result<(), WalkError
 
     let core_ = &*CORE_CRATE;
     let alloc_ = &*ALLOC_CRATE;
-    let std_ = &*STD_CRATE;
+    //let std_ = &*STD_CRATE;
 
     // add traits
     add_to_prelude::<TypeItem>(crate_, core_, "marker::Copy")?;
@@ -411,8 +409,7 @@ fn find_source_file(parent: &LocationMetadata, item: &syn::ItemMod) -> Result<Pa
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::walker::UnexpandedItem::UnresolvedMacroInvocation;
-    use tendon_api::attributes::TypeMetadata;
+    use tendon_api::attributes::{Metadata, TypeMetadata};
     use tendon_api::database::Db;
     use tendon_api::identities::{TEST_CRATE_A, TEST_CRATE_B};
     use tendon_api::items::{EnumItem, GenericParams};
@@ -461,13 +458,6 @@ mod tests {
             )
             .unwrap();
 
-        let in_root = crate_
-            .get_binding::<TypeItem>(&root, &"CRenamed".into())
-            .unwrap();
-        let in_a_b = crate_
-            .get_binding::<TypeItem>(&mod_a_b, &"C".into())
-            .unwrap();
-
         let root_abc = try_to_resolve(
             &db,
             &crate_,
@@ -507,12 +497,47 @@ mod tests {
     }
 
     #[test]
-    fn resolve_deps() {
+    fn extern_crate() {}
+
+    #[test]
+    fn macro_use() {
         let test_crate_a = (*TEST_CRATE_A).clone();
-        let mut crate_ = Crate::new(test_crate_a.clone());
-        let a_root = crate_.add_root_scope(Metadata::fake("{root}")).unwrap();
-        let a_b = crate_
-            .add(&a_root, Scope::new(Metadata::fake("b"), true))
+        let test_crate_b = (*TEST_CRATE_B).clone();
+
+        let db = Db::fake_db();
+
+        let mut crate_a = Crate::new(test_crate_a.clone());
+        let a_root = crate_a.add_root_scope(Metadata::fake("{root}")).unwrap();
+        crate_a
+            .add_binding::<MacroItem>(
+                &a_root,
+                "test_macro".into(),
+                Identity::new(&test_crate_a, &["test_macro"]),
+                Visibility::Pub,
+                Priority::Explicit,
+            )
             .unwrap();
+        db.insert_crate(crate_a);
+
+        let mut crate_b = Crate::new(test_crate_b.clone());
+        let b_root = crate_b.add_root_scope(Metadata::fake("{root}")).unwrap();
+        add_crate_dep(&mut crate_b, &test_crate_a, "crate_a".into());
+        add_root_extern_crate(
+            &db,
+            &mut crate_b,
+            &test_crate_a,
+            &"crate_a".into(),
+            Visibility::InScope(b_root.clone()),
+            true,
+        )
+        .unwrap();
+
+        println!("{:?}", db.get_crate(&test_crate_a).get::<Scope>(&a_root));
+
+        println!("{:?}", crate_b.prelude);
+
+        assert!(crate_b
+            .get_binding::<MacroItem>(&b_root, &"test_macro".into())
+            .is_some());
     }
 }
