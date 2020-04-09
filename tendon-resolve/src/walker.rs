@@ -267,14 +267,6 @@ impl<'a> Walker<'a> {
         }
     }
 
-    pub fn split(&mut self) -> (&mut Crate, &'a Db) {
-        let Walker {
-            ref mut crate_, db, ..
-        } = self;
-
-        (crate_, db)
-    }
-
     /// Complete the walker, inserting the parsed crate into the database.
     pub fn complete(self) {
         let Walker { db, crate_, .. } = self;
