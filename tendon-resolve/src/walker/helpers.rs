@@ -1,5 +1,6 @@
 use super::{LocationMetadata, WalkError};
 use crate::lower::attributes::extract_attribute;
+use crate::walker::Walker;
 use std::borrow::Cow;
 use std::fmt;
 use std::fs;
@@ -204,17 +205,18 @@ quick_error! {
 /// Add a crate dep, not necessarily with an import statement.
 /// Adds only to prelude/extern_crate_bindings, doesn't add to root scope.
 pub fn add_crate_dep(
-    crate_: &mut Crate,
+    walker: &mut Walker,
     extern_crate_id: &CrateId,
     name: Ident,
 ) -> Result<(), WalkError> {
-    if let Some(_) = crate_
+    if let Some(_) = walker
+        .crate_
         .extern_crate_bindings
         .insert(name.clone(), extern_crate_id.clone())
     {
         panic!("can't add crate dep twice!");
     }
-    crate_.add_prelude_binding_by(NamespaceId::Scope, name, Identity::root(extern_crate_id))?;
+    walker.add_prelude_binding_by(NamespaceId::Scope, name, Identity::root(extern_crate_id))?;
     Ok(())
 }
 
@@ -237,8 +239,7 @@ pub fn add_crate_dep(
 //  pub use ::core_ as coref; // works
 // ```
 pub fn add_root_extern_crate(
-    db: &Db,
-    crate_: &mut Crate,
+    walker: &mut Walker,
     extern_crate_id: &CrateId,
     name: &Ident,
     visibility: Visibility,
@@ -246,28 +247,28 @@ pub fn add_root_extern_crate(
 ) -> Result<(), WalkError> {
     let extern_crate_root_id = Identity::root(extern_crate_id);
 
-    if !crate_.extern_crate_bindings.contains_key(name) {
-        add_crate_dep(crate_, extern_crate_id, name.clone())?;
+    if !walker.crate_.extern_crate_bindings.contains_key(name) {
+        add_crate_dep(walker, extern_crate_id, name.clone())?;
     }
 
     // add dep as `crate::dep`
-    crate_.add_binding::<Scope>(
-        &Identity::root(&crate_.id),
+    walker.add_binding::<Scope>(
+        &Identity::root(&walker.crate_.id),
         name.clone(),
         extern_crate_root_id.clone(),
         visibility,
         Priority::Explicit,
     )?;
 
-    let extern_crate = db.get_crate(extern_crate_id);
-    let crate_root = extern_crate
-        .get::<Scope>(&extern_crate_root_id)
-        .ok_or(WalkError::ModuleNotFound)?;
-
     if macro_use {
+        let extern_crate = walker.db.get_crate(extern_crate_id);
+        let crate_root = extern_crate
+            .get::<Scope>(&extern_crate_root_id)
+            .ok_or(WalkError::ModuleNotFound)?;
+
         // add all macros to prelude!
         for (name, dep_binding) in crate_root.iter::<MacroItem>() {
-            crate_.add_prelude_binding_by(
+            walker.add_prelude_binding_by(
                 NamespaceId::Macro,
                 name.clone(),
                 dep_binding.identity.clone(),
@@ -287,14 +288,14 @@ pub fn add_root_extern_crate(
 /// prelude to the correct paths.
 ///
 /// TODO: do these all live in the right place? how do we make sure the identities are correct?
-pub fn add_std_prelude(crate_: &mut Crate, no_std: bool) -> Result<(), WalkError> {
+pub fn add_std_prelude(walker: &mut Walker, no_std: bool) -> Result<(), WalkError> {
     for (name, builtin) in &*BUILTIN_TYPES {
-        crate_.add_prelude_binding_by(NamespaceId::Type, name.clone(), builtin.clone())?;
+        walker.add_prelude_binding_by(NamespaceId::Type, name.clone(), builtin.clone())?;
     }
 
     #[inline(never)]
     fn add_to_prelude<I: NamespaceLookup>(
-        crate_: &mut Crate,
+        walker_: &mut Walker,
         crate_id: &CrateId,
         path: &str,
     ) -> Result<(), WalkError> {
@@ -303,10 +304,10 @@ pub fn add_std_prelude(crate_: &mut Crate, no_std: bool) -> Result<(), WalkError
         let identity = Identity::new(&crate_id, &path_);
 
         if I::namespace_id() == NamespaceId::Type {
-            add_to_prelude::<Scope>(crate_, crate_id, path)?;
+            add_to_prelude::<Scope>(walker_, crate_id, path)?;
         }
 
-        crate_.add_prelude_binding_by(I::namespace_id(), last, identity)?;
+        walker_.add_prelude_binding_by(I::namespace_id(), last, identity)?;
 
         Ok(())
     }
@@ -316,76 +317,76 @@ pub fn add_std_prelude(crate_: &mut Crate, no_std: bool) -> Result<(), WalkError
     //let std_ = &*STD_CRATE;
 
     // add traits
-    add_to_prelude::<TypeItem>(crate_, core_, "marker::Copy")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "marker::Send")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "marker::Sized")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "marker::Sync")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "marker::Unpin")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "ops::Drop")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "ops::Fn")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "ops::FnMut")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "ops::FnOnce")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "clone::Clone")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "cmp::Eq")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "cmp::Ord")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "cmp::PartialEq")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "cmp::PartialOrd")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "convert::AsMut")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "convert::AsRef")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "convert::From")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "convert::Into")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "default::Default")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "iter::DoubleEndedIterator")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "iter::ExactSizeIterator")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "iter::Extend")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "iter::IntoIterator")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "iter::Iterator")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "option::Option")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "result::Result")?;
-    add_to_prelude::<TypeItem>(crate_, core_, "hash::macros::Hash;")?;
+    add_to_prelude::<TypeItem>(walker, core_, "marker::Copy")?;
+    add_to_prelude::<TypeItem>(walker, core_, "marker::Send")?;
+    add_to_prelude::<TypeItem>(walker, core_, "marker::Sized")?;
+    add_to_prelude::<TypeItem>(walker, core_, "marker::Sync")?;
+    add_to_prelude::<TypeItem>(walker, core_, "marker::Unpin")?;
+    add_to_prelude::<TypeItem>(walker, core_, "ops::Drop")?;
+    add_to_prelude::<TypeItem>(walker, core_, "ops::Fn")?;
+    add_to_prelude::<TypeItem>(walker, core_, "ops::FnMut")?;
+    add_to_prelude::<TypeItem>(walker, core_, "ops::FnOnce")?;
+    add_to_prelude::<TypeItem>(walker, core_, "clone::Clone")?;
+    add_to_prelude::<TypeItem>(walker, core_, "cmp::Eq")?;
+    add_to_prelude::<TypeItem>(walker, core_, "cmp::Ord")?;
+    add_to_prelude::<TypeItem>(walker, core_, "cmp::PartialEq")?;
+    add_to_prelude::<TypeItem>(walker, core_, "cmp::PartialOrd")?;
+    add_to_prelude::<TypeItem>(walker, core_, "convert::AsMut")?;
+    add_to_prelude::<TypeItem>(walker, core_, "convert::AsRef")?;
+    add_to_prelude::<TypeItem>(walker, core_, "convert::From")?;
+    add_to_prelude::<TypeItem>(walker, core_, "convert::Into")?;
+    add_to_prelude::<TypeItem>(walker, core_, "default::Default")?;
+    add_to_prelude::<TypeItem>(walker, core_, "iter::DoubleEndedIterator")?;
+    add_to_prelude::<TypeItem>(walker, core_, "iter::ExactSizeIterator")?;
+    add_to_prelude::<TypeItem>(walker, core_, "iter::Extend")?;
+    add_to_prelude::<TypeItem>(walker, core_, "iter::IntoIterator")?;
+    add_to_prelude::<TypeItem>(walker, core_, "iter::Iterator")?;
+    add_to_prelude::<TypeItem>(walker, core_, "option::Option")?;
+    add_to_prelude::<TypeItem>(walker, core_, "result::Result")?;
+    add_to_prelude::<TypeItem>(walker, core_, "hash::macros::Hash;")?;
 
     // add symbols, of which there aren't many.
-    add_to_prelude::<SymbolItem>(crate_, core_, "mem::drop")?;
-    add_to_prelude::<SymbolItem>(crate_, core_, "option::Option::None")?;
-    add_to_prelude::<SymbolItem>(crate_, core_, "option::Option::Some")?;
-    add_to_prelude::<SymbolItem>(crate_, core_, "result::Result::Err")?;
-    add_to_prelude::<SymbolItem>(crate_, core_, "result::Result::Ok")?;
+    add_to_prelude::<SymbolItem>(walker, core_, "mem::drop")?;
+    add_to_prelude::<SymbolItem>(walker, core_, "option::Option::None")?;
+    add_to_prelude::<SymbolItem>(walker, core_, "option::Option::Some")?;
+    add_to_prelude::<SymbolItem>(walker, core_, "result::Result::Err")?;
+    add_to_prelude::<SymbolItem>(walker, core_, "result::Result::Ok")?;
 
     // add macros.
-    add_to_prelude::<MacroItem>(crate_, core_, "asm")?;
-    add_to_prelude::<MacroItem>(crate_, core_, "assert")?;
-    add_to_prelude::<MacroItem>(crate_, core_, "cfg")?;
-    add_to_prelude::<MacroItem>(crate_, core_, "column")?;
-    add_to_prelude::<MacroItem>(crate_, core_, "compile_error")?;
-    add_to_prelude::<MacroItem>(crate_, core_, "concat")?;
-    add_to_prelude::<MacroItem>(crate_, core_, "concat_idents")?;
-    add_to_prelude::<MacroItem>(crate_, core_, "env")?;
-    add_to_prelude::<MacroItem>(crate_, core_, "file")?;
-    add_to_prelude::<MacroItem>(crate_, core_, "format_args")?;
-    add_to_prelude::<MacroItem>(crate_, core_, "format_args_nl")?;
-    add_to_prelude::<MacroItem>(crate_, core_, "global_asm")?;
-    add_to_prelude::<MacroItem>(crate_, core_, "include")?;
-    add_to_prelude::<MacroItem>(crate_, core_, "include_bytes")?;
-    add_to_prelude::<MacroItem>(crate_, core_, "include_str")?;
-    add_to_prelude::<MacroItem>(crate_, core_, "line")?;
-    add_to_prelude::<MacroItem>(crate_, core_, "log_syntax")?;
-    add_to_prelude::<MacroItem>(crate_, core_, "module_path")?;
-    add_to_prelude::<MacroItem>(crate_, core_, "option_env")?;
-    add_to_prelude::<MacroItem>(crate_, core_, "stringify")?;
-    add_to_prelude::<MacroItem>(crate_, core_, "trace_macros")?;
-    add_to_prelude::<MacroItem>(crate_, core_, "macros::builtin::bench")?;
-    add_to_prelude::<MacroItem>(crate_, core_, "macros::builtin::global_allocator")?;
-    add_to_prelude::<MacroItem>(crate_, core_, "macros::builtin::test")?;
-    add_to_prelude::<MacroItem>(crate_, core_, "macros::builtin::test_case")?;
+    add_to_prelude::<MacroItem>(walker, core_, "asm")?;
+    add_to_prelude::<MacroItem>(walker, core_, "assert")?;
+    add_to_prelude::<MacroItem>(walker, core_, "cfg")?;
+    add_to_prelude::<MacroItem>(walker, core_, "column")?;
+    add_to_prelude::<MacroItem>(walker, core_, "compile_error")?;
+    add_to_prelude::<MacroItem>(walker, core_, "concat")?;
+    add_to_prelude::<MacroItem>(walker, core_, "concat_idents")?;
+    add_to_prelude::<MacroItem>(walker, core_, "env")?;
+    add_to_prelude::<MacroItem>(walker, core_, "file")?;
+    add_to_prelude::<MacroItem>(walker, core_, "format_args")?;
+    add_to_prelude::<MacroItem>(walker, core_, "format_args_nl")?;
+    add_to_prelude::<MacroItem>(walker, core_, "global_asm")?;
+    add_to_prelude::<MacroItem>(walker, core_, "include")?;
+    add_to_prelude::<MacroItem>(walker, core_, "include_bytes")?;
+    add_to_prelude::<MacroItem>(walker, core_, "include_str")?;
+    add_to_prelude::<MacroItem>(walker, core_, "line")?;
+    add_to_prelude::<MacroItem>(walker, core_, "log_syntax")?;
+    add_to_prelude::<MacroItem>(walker, core_, "module_path")?;
+    add_to_prelude::<MacroItem>(walker, core_, "option_env")?;
+    add_to_prelude::<MacroItem>(walker, core_, "stringify")?;
+    add_to_prelude::<MacroItem>(walker, core_, "trace_macros")?;
+    add_to_prelude::<MacroItem>(walker, core_, "macros::builtin::bench")?;
+    add_to_prelude::<MacroItem>(walker, core_, "macros::builtin::global_allocator")?;
+    add_to_prelude::<MacroItem>(walker, core_, "macros::builtin::test")?;
+    add_to_prelude::<MacroItem>(walker, core_, "macros::builtin::test_case")?;
 
     // extra stuff from the std prelude. not present if we're currently in core.
     // we resolve these to alloc cause... that's the truth? idk
-    if !no_std && &crate_.id != &*CORE_CRATE {
-        add_to_prelude::<TypeItem>(crate_, alloc_, "borrow::ToOwned")?;
-        add_to_prelude::<TypeItem>(crate_, alloc_, "boxed::Box")?;
-        add_to_prelude::<TypeItem>(crate_, alloc_, "string::String")?;
-        add_to_prelude::<TypeItem>(crate_, alloc_, "string::ToString")?;
-        add_to_prelude::<TypeItem>(crate_, alloc_, "vec::Vec")?;
+    if !no_std && &walker.crate_.id != &*CORE_CRATE {
+        add_to_prelude::<TypeItem>(walker, alloc_, "borrow::ToOwned")?;
+        add_to_prelude::<TypeItem>(walker, alloc_, "boxed::Box")?;
+        add_to_prelude::<TypeItem>(walker, alloc_, "string::String")?;
+        add_to_prelude::<TypeItem>(walker, alloc_, "string::ToString")?;
+        add_to_prelude::<TypeItem>(walker, alloc_, "vec::Vec")?;
     }
 
     Ok(())
@@ -455,17 +456,18 @@ mod tests {
 
         let test_crate_a = (*TEST_CRATE_A).clone();
 
-        let mut crate_ = Crate::new(test_crate_a.clone());
-        let root = crate_.add_root_scope(Metadata::fake("{root}")).unwrap();
-        let mod_a = crate_
+        let mut walker = Walker::new(&db, &test_crate_a);
+
+        let root = walker.add_root_scope(Metadata::fake("{root}")).unwrap();
+        let mod_a = walker
             .add(&root, Scope::new(Metadata::fake("a"), true))
             .unwrap();
-        let mod_a_b = crate_
+        let mod_a_b = walker
             .add(&mod_a, Scope::new(Metadata::fake("b"), true))
             .unwrap();
-        let type_a_b_c = crate_.add(&mod_a_b, fake_type("C")).unwrap();
+        let type_a_b_c = walker.add(&mod_a_b, fake_type("C")).unwrap();
 
-        crate_
+        walker
             .add_binding::<TypeItem>(
                 &root,
                 "CRenamed".into(),
@@ -474,7 +476,7 @@ mod tests {
                 Priority::Explicit,
             )
             .unwrap();
-        crate_
+        walker
             .add_binding::<TypeItem>(
                 &mod_a,
                 "CLimited".into(),
@@ -485,8 +487,8 @@ mod tests {
             .unwrap();
 
         let root_abc = try_to_resolve(
-            &db,
-            &crate_,
+            &walker.db,
+            &walker.crate_,
             &root,
             NamespaceId::Type,
             &UnresolvedPath::fake("a::b::C"),
@@ -495,8 +497,8 @@ mod tests {
         assert_eq!(root_abc, type_a_b_c);
 
         let ab_sscr = try_to_resolve(
-            &db,
-            &crate_,
+            &walker.db,
+            &walker.crate_,
             &mod_a_b,
             NamespaceId::Type,
             &UnresolvedPath::fake("super::super::CRenamed"),
@@ -505,8 +507,8 @@ mod tests {
         assert_eq!(ab_sscr, type_a_b_c);
 
         let invisible = try_to_resolve(
-            &db,
-            &crate_,
+            &walker.db,
+            &walker.crate_,
             &root,
             NamespaceId::Type,
             &UnresolvedPath::fake("a::CLimited"),
@@ -522,9 +524,9 @@ mod tests {
 
         let db = Db::fake_db();
 
-        let mut crate_a = Crate::new(test_crate_a.clone());
-        let a_root = crate_a.add_root_scope(Metadata::fake("{root}")).unwrap();
-        crate_a
+        let mut walker_a = Walker::new(&db, &test_crate_a);
+        let a_root = walker_a.add_root_scope(Metadata::fake("{root}")).unwrap();
+        walker_a
             .add_binding::<TypeItem>(
                 &a_root,
                 "A".into(),
@@ -533,11 +535,11 @@ mod tests {
                 Priority::Explicit,
             )
             .unwrap();
-        db.insert_crate(crate_a);
+        walker_a.complete();
 
-        let mut crate_b = Crate::new(test_crate_b.clone());
-        let b_root = crate_b.add_root_scope(Metadata::fake("{root}")).unwrap();
-        crate_b
+        let mut walker_b = Walker::new(&db, &test_crate_b);
+        let b_root = walker_b.add_root_scope(Metadata::fake("{root}")).unwrap();
+        walker_b
             .add_binding::<TypeItem>(
                 &b_root,
                 "B".into(),
@@ -546,11 +548,11 @@ mod tests {
                 Priority::Explicit,
             )
             .unwrap();
-        db.insert_crate(crate_b);
+        walker_b.complete();
 
-        let mut crate_c = Crate::new(test_crate_c.clone());
-        let c_root = crate_c.add_root_scope(Metadata::fake("{root}")).unwrap();
-        let c_other = crate_c
+        let mut walker_c = Walker::new(&db, &test_crate_c);
+        let c_root = walker_c.add_root_scope(Metadata::fake("{root}")).unwrap();
+        let c_other = walker_c
             .add(&c_root, Scope::new(Metadata::fake("other"), true))
             .unwrap();
 
@@ -560,11 +562,10 @@ mod tests {
 
         // in cargo.toml: test_crate_a renamed "a", test_crate_b renamed "b"
         // in root: `extern crate b as b_alt`
-        add_crate_dep(&mut crate_c, &test_crate_a, a_name.clone()).unwrap();
-        add_crate_dep(&mut crate_c, &test_crate_b, b_name.clone()).unwrap();
+        add_crate_dep(&mut walker_c, &test_crate_a, a_name.clone()).unwrap();
+        add_crate_dep(&mut walker_c, &test_crate_b, b_name.clone()).unwrap();
         add_root_extern_crate(
-            &db,
-            &mut crate_c,
+            &mut walker_c,
             &test_crate_b,
             &b_name_alt.clone(),
             Visibility::Pub,
@@ -573,23 +574,28 @@ mod tests {
         .unwrap();
 
         // ::a, ::b, ::b_alt exist
-        assert!(crate_c.extern_crate_bindings.get(&a_name).is_some());
-        assert!(crate_c.extern_crate_bindings.get(&b_name).is_some());
-        assert!(crate_c.extern_crate_bindings.get(&b_name_alt).is_some());
+        assert!(walker_c.crate_.extern_crate_bindings.get(&a_name).is_some());
+        assert!(walker_c.crate_.extern_crate_bindings.get(&b_name).is_some());
+        assert!(walker_c
+            .crate_
+            .extern_crate_bindings
+            .get(&b_name_alt)
+            .is_some());
 
         // a, b, b_alt in prelude
-        assert!(crate_c.prelude.get::<Scope>(&a_name).is_some());
-        assert!(crate_c.prelude.get::<Scope>(&b_name).is_some());
-        assert!(crate_c.prelude.get::<Scope>(&b_name_alt).is_some());
+        assert!(walker_c.crate_.prelude.get::<Scope>(&a_name).is_some());
+        assert!(walker_c.crate_.prelude.get::<Scope>(&b_name).is_some());
+        assert!(walker_c.crate_.prelude.get::<Scope>(&b_name_alt).is_some());
 
         // b_alt in crate root (only, others aren't brought in)
-        // don't use `crate_c.get_binding` 'cause it falls back to prelude :^)
-        let c_root_scope = crate_c.get::<Scope>(&c_root).unwrap();
+        // don't use `walker_c.crate_.get_binding` 'cause it falls back to prelude :^)
+        let c_root_scope = walker_c.crate_.get::<Scope>(&c_root).unwrap();
         assert!(c_root_scope.get::<Scope>(&a_name).is_none());
         assert!(c_root_scope.get::<Scope>(&b_name).is_none());
         assert!(c_root_scope.get::<Scope>(&b_name_alt).is_some());
         assert!(
-            &crate_c
+            &walker_c
+                .crate_
                 .get_binding::<Scope>(&c_root, &b_name_alt)
                 .unwrap()
                 .visibility
@@ -599,7 +605,7 @@ mod tests {
         // same checks w/ try_to_resolve
         assert!(try_to_resolve(
             &db,
-            &crate_c,
+            &walker_c.crate_,
             &c_other,
             NamespaceId::Type,
             &UnresolvedPath::fake("::a::A")
@@ -607,7 +613,7 @@ mod tests {
         .is_ok());
         assert!(try_to_resolve(
             &db,
-            &crate_c,
+            &walker_c.crate_,
             &c_other,
             NamespaceId::Type,
             &UnresolvedPath::fake("::b::B")
@@ -615,7 +621,7 @@ mod tests {
         .is_ok());
         assert!(try_to_resolve(
             &db,
-            &crate_c,
+            &walker_c.crate_,
             &c_other,
             NamespaceId::Type,
             &UnresolvedPath::fake("::b_alt::B")
@@ -624,7 +630,7 @@ mod tests {
 
         assert!(try_to_resolve(
             &db,
-            &crate_c,
+            &walker_c.crate_,
             &c_other,
             NamespaceId::Type,
             &UnresolvedPath::fake("a::A")
@@ -632,7 +638,7 @@ mod tests {
         .is_ok());
         assert!(try_to_resolve(
             &db,
-            &crate_c,
+            &walker_c.crate_,
             &c_other,
             NamespaceId::Type,
             &UnresolvedPath::fake("b::B")
@@ -640,7 +646,7 @@ mod tests {
         .is_ok());
         assert!(try_to_resolve(
             &db,
-            &crate_c,
+            &walker_c.crate_,
             &c_other,
             NamespaceId::Type,
             &UnresolvedPath::fake("b_alt::B")
@@ -649,7 +655,7 @@ mod tests {
 
         assert!(try_to_resolve(
             &db,
-            &crate_c,
+            &walker_c.crate_,
             &c_other,
             NamespaceId::Type,
             &UnresolvedPath::fake("crate::a::A")
@@ -657,7 +663,7 @@ mod tests {
         .is_err());
         assert!(try_to_resolve(
             &db,
-            &crate_c,
+            &walker_c.crate_,
             &c_other,
             NamespaceId::Type,
             &UnresolvedPath::fake("crate::b::B")
@@ -665,7 +671,7 @@ mod tests {
         .is_err());
         assert!(try_to_resolve(
             &db,
-            &crate_c,
+            &walker_c.crate_,
             &c_other,
             NamespaceId::Type,
             &UnresolvedPath::fake("crate::b_alt::B")
@@ -676,7 +682,7 @@ mod tests {
         assert_eq!(
             try_to_resolve(
                 &db,
-                &crate_c,
+                &walker_c.crate_,
                 &c_other,
                 NamespaceId::Type,
                 &UnresolvedPath::new(false, empty)
@@ -686,7 +692,7 @@ mod tests {
         assert_eq!(
             try_to_resolve(
                 &db,
-                &crate_c,
+                &walker_c.crate_,
                 &c_other,
                 NamespaceId::Type,
                 &UnresolvedPath::fake("::nonexistent::crate_")
@@ -696,7 +702,7 @@ mod tests {
         assert_eq!(
             try_to_resolve(
                 &db,
-                &crate_c,
+                &walker_c.crate_,
                 &c_other,
                 NamespaceId::Type,
                 &UnresolvedPath::fake("::super::super::nonexistent")
@@ -712,9 +718,9 @@ mod tests {
 
         let db = Db::fake_db();
 
-        let mut crate_a = Crate::new(test_crate_a.clone());
-        let a_root = crate_a.add_root_scope(Metadata::fake("{root}")).unwrap();
-        crate_a
+        let mut walker_a = Walker::new(&db, &test_crate_a);
+        let a_root = walker_a.add_root_scope(Metadata::fake("{root}")).unwrap();
+        walker_a
             .add_binding::<MacroItem>(
                 &a_root,
                 "test_macro".into(),
@@ -723,14 +729,13 @@ mod tests {
                 Priority::Explicit,
             )
             .unwrap();
-        db.insert_crate(crate_a);
+        walker_a.complete();
 
-        let mut crate_b = Crate::new(test_crate_b.clone());
-        let b_root = crate_b.add_root_scope(Metadata::fake("{root}")).unwrap();
-        add_crate_dep(&mut crate_b, &test_crate_a, "crate_a".into()).unwrap();
+        let mut walker_b = Walker::new(&db, &test_crate_b);
+        let b_root = walker_b.add_root_scope(Metadata::fake("{root}")).unwrap();
+        add_crate_dep(&mut walker_b, &test_crate_a, "crate_a".into()).unwrap();
         add_root_extern_crate(
-            &db,
-            &mut crate_b,
+            &mut walker_b,
             &test_crate_a,
             &"crate_a".into(),
             Visibility::InScope(b_root.clone()),
@@ -738,7 +743,8 @@ mod tests {
         )
         .unwrap();
 
-        assert!(crate_b
+        assert!(walker_b
+            .crate_
             .prelude
             .get::<MacroItem>(&"test_macro".into())
             .is_some());
@@ -757,33 +763,73 @@ mod tests {
 
     #[test]
     fn init_prelude() {
-        let mut with_std = Crate::new((*TEST_CRATE_A).clone());
+        let db = Db::fake_db();
+
+        let mut with_std = Walker::new(&db, &*TEST_CRATE_A);
         add_std_prelude(&mut with_std, false).unwrap();
 
-        assert!(with_std.prelude.get::<TypeItem>(&"Option".into()).is_some());
-        assert!(with_std.prelude.get::<Scope>(&"Option".into()).is_some());
         assert!(with_std
+            .crate_
+            .prelude
+            .get::<TypeItem>(&"Option".into())
+            .is_some());
+        assert!(with_std
+            .crate_
+            .prelude
+            .get::<Scope>(&"Option".into())
+            .is_some());
+        assert!(with_std
+            .crate_
             .prelude
             .get::<MacroItem>(&"include_bytes".into())
             .is_some());
-        assert!(with_std.prelude.get::<SymbolItem>(&"Some".into()).is_some());
+        assert!(with_std
+            .crate_
+            .prelude
+            .get::<SymbolItem>(&"Some".into())
+            .is_some());
 
-        assert!(with_std.prelude.get::<TypeItem>(&"Vec".into()).is_some());
-        assert!(with_std.prelude.get::<Scope>(&"Vec".into()).is_some());
+        assert!(with_std
+            .crate_
+            .prelude
+            .get::<TypeItem>(&"Vec".into())
+            .is_some());
+        assert!(with_std
+            .crate_
+            .prelude
+            .get::<Scope>(&"Vec".into())
+            .is_some());
 
-        let mut no_std = Crate::new((*TEST_CRATE_A).clone());
+        let mut no_std = Walker::new(&db, &*TEST_CRATE_B);
         add_std_prelude(&mut no_std, true).unwrap();
 
-        assert!(no_std.prelude.get::<TypeItem>(&"Option".into()).is_some());
-        assert!(no_std.prelude.get::<Scope>(&"Option".into()).is_some());
         assert!(no_std
+            .crate_
+            .prelude
+            .get::<TypeItem>(&"Option".into())
+            .is_some());
+        assert!(no_std
+            .crate_
+            .prelude
+            .get::<Scope>(&"Option".into())
+            .is_some());
+        assert!(no_std
+            .crate_
             .prelude
             .get::<MacroItem>(&"include_bytes".into())
             .is_some());
-        assert!(no_std.prelude.get::<SymbolItem>(&"Some".into()).is_some());
+        assert!(no_std
+            .crate_
+            .prelude
+            .get::<SymbolItem>(&"Some".into())
+            .is_some());
 
-        assert!(no_std.prelude.get::<TypeItem>(&"Vec".into()).is_none());
-        assert!(no_std.prelude.get::<Scope>(&"Vec".into()).is_none());
+        assert!(no_std
+            .crate_
+            .prelude
+            .get::<TypeItem>(&"Vec".into())
+            .is_none());
+        assert!(no_std.crate_.prelude.get::<Scope>(&"Vec".into()).is_none());
     }
 
     #[test]

@@ -97,21 +97,22 @@
 //! https://internals.rust-lang.org/t/relative-paths-and-rust-2018-use-statements/7875
 //! https://internals.rust-lang.org/t/up-to-date-documentation-on-macro-resolution-order/11877/5
 
+use hashbrown::hash_map::Entry as HEntry;
 use lazy_static::lazy_static;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path as FsPath, PathBuf};
 use std::sync::Arc;
-use tendon_api::attributes::{Span, Visibility};
+use tendon_api::attributes::{Metadata, Span, Visibility};
 use tendon_api::crates::CrateData;
-use tendon_api::database::{Crate, Db};
+use tendon_api::database::{Crate, Db, NamespaceLookup};
 use tendon_api::identities::{CrateId, Identity};
 use tendon_api::paths::Ident;
+use tendon_api::scopes::{NamespaceId, Priority, Scope};
 use tendon_api::tokens::Tokens;
 use tendon_api::{Map, Set};
-use tracing::{trace, warn};
-
 use textual_scope::TextualScope;
+use tracing::{error, trace, warn};
 
 mod helpers;
 mod textual_scope;
@@ -160,7 +161,7 @@ quick_error! {
         MalformedPathAttribute(tokens: String) {
             display("malformed `#[path]` attribute: {}", tokens)
         }
-        Database(err: tendon_api::database::DatabaseError) {
+        Database(err: DatabaseError) {
             from()
             cause(err)
             display("database error during walking: {}", err)
@@ -240,7 +241,7 @@ fn warn(cause: impl Into<WalkError>, span: &Span) {
 /// The first phase: walk files, parse, find imports, expand macros.
 /// As items cease to have anything to do with macros they are dumped in the Db; after macro
 /// expansion order no longer matters.
-pub(crate) struct Walker<'a> {
+pub struct Walker<'a> {
     /// A Db containing resolved definitions for all dependencies.
     /// During this phase, we insert `ModuleItems` and `MacroItems` into this database.
     /// The only items that go in here are `#[macro_export]`-marked macros.
@@ -254,6 +255,166 @@ pub(crate) struct Walker<'a> {
 
     /// Live metadata, will be discarded once we're finished with this crate.
     scopes_in_progress: Map<Identity, ScopeInProgress>,
+}
+impl<'a> Walker<'a> {
+    /// Create a new walker. The crate_id must have been registered in the Db at creation time.
+    pub fn new(db: &'a Db, crate_id: &CrateId) -> Walker<'a> {
+        Walker {
+            db,
+            crate_data: db.crate_data(crate_id),
+            crate_: Crate::new(crate_id.clone()),
+            scopes_in_progress: Map::default(),
+        }
+    }
+
+    pub fn split(&mut self) -> (&mut Crate, &'a Db) {
+        let Walker {
+            ref mut crate_, db, ..
+        } = self;
+
+        (crate_, db)
+    }
+
+    /// Complete the walker, inserting the parsed crate into the database.
+    pub fn complete(self) {
+        let Walker { db, crate_, .. } = self;
+        db.insert_crate(crate_);
+    }
+
+    /// Add an item to a crate. The item is added at `{containing_scope}::{item.metadata().name}`.
+    /// The containing_scope must be in this crate.
+    /// Also adds a Binding to the containing scope.
+    pub fn add<I: NamespaceLookup>(
+        &mut self,
+        containing_scope: &Identity,
+        item: I,
+    ) -> Result<Identity, DatabaseError> {
+        assert_eq!(
+            containing_scope.crate_, self.crate_.id,
+            "can't add item to a different crate!!"
+        );
+
+        let name = item.metadata().name.clone();
+        let visibility = item.metadata().visibility.clone();
+
+        let identity = containing_scope.clone_join(name.clone());
+        let Identity { path, crate_ } = identity.clone();
+
+        match I::get_namespace_mut(&mut self.crate_).0.entry(path) {
+            HEntry::Vacant(vacant) => {
+                vacant.insert(item);
+            }
+            HEntry::Occupied(occupied) => {
+                error!(
+                    "{:?} ({:?}) already defined!",
+                    Identity::new(&crate_, occupied.key()),
+                    I::namespace_id()
+                );
+                return Err(DatabaseError::ItemAlreadyPresent);
+            }
+        }
+
+        self.add_binding::<I>(
+            &containing_scope,
+            name,
+            identity.clone(),
+            visibility,
+            Priority::Explicit,
+        )?;
+
+        Ok(identity)
+    }
+
+    /// Add a binding to a scope. Doesn't have to target something in this crate.
+    pub fn add_binding<I: NamespaceLookup>(
+        &mut self,
+        containing_scope: &Identity,
+        name: Ident,
+        target: Identity,
+        visibility: Visibility,
+        priority: Priority,
+    ) -> Result<(), DatabaseError> {
+        self.add_binding_by(
+            containing_scope,
+            I::namespace_id(),
+            name,
+            target,
+            visibility,
+            priority,
+        )
+    }
+
+    #[inline(never)]
+    pub fn add_binding_by(
+        &mut self,
+        containing_scope: &Identity,
+        namespace_id: NamespaceId,
+        name: Ident,
+        target: Identity,
+        visibility: Visibility,
+        priority: Priority,
+    ) -> Result<(), DatabaseError> {
+        assert!(
+            &containing_scope.crate_ == &self.crate_.id,
+            "can't add a binding to another crate!"
+        );
+
+        let scope = self
+            .crate_
+            .get_mut::<Scope>(containing_scope)
+            .ok_or(DatabaseError::NoSuchScope)?;
+
+        // TODO allow replacing bindings somehow?
+        scope
+            .insert_by(namespace_id, name, target, visibility, priority)
+            .map_err(|_| DatabaseError::BindingAlreadyPresent)
+    }
+
+    /// Add a binding to the prelude.
+    pub fn add_prelude_binding_by(
+        &mut self,
+        namespace_id: NamespaceId,
+        name: Ident,
+        target: Identity,
+    ) -> Result<(), DatabaseError> {
+        let visibility = Visibility::InScope(Identity::root(&self.crate_.id));
+        self.crate_
+            .prelude
+            .insert_by(namespace_id, name, target, visibility, Priority::Explicit)
+            .map_err(|_| DatabaseError::BindingAlreadyPresent)
+    }
+
+    /// Add the root scope.
+    pub fn add_root_scope(&mut self, metadata: Metadata) -> Result<Identity, DatabaseError> {
+        assert!(&metadata.name[..] == "{root}");
+        let item = Scope::new(metadata, true);
+
+        match self.crate_.scopes.0.entry(vec![]) {
+            HEntry::Vacant(vacant) => {
+                vacant.insert(item);
+                Ok(Identity::root(&self.crate_.id))
+            }
+            HEntry::Occupied(_) => {
+                error!("{:?} root already defined!", &self.crate_.id);
+                Err(DatabaseError::ItemAlreadyPresent)
+            }
+        }
+    }
+}
+
+quick_error::quick_error! {
+    #[derive(Debug, Clone, Copy)]
+    pub enum DatabaseError {
+        ItemAlreadyPresent {
+            display("item is already present")
+        }
+        BindingAlreadyPresent {
+            display("binding is already present")
+        }
+        NoSuchScope {
+            display("no such scope")
+        }
+    }
 }
 
 /// Metadata for scopes in the crate that have not completed resolution.
@@ -270,6 +431,79 @@ struct ScopeInProgress {
     /// Imports that are explicit but may not be resolved yet.
     /// If an explicit import exists, we never add any glob names that match it.
     reserved_explicit_imports: Set<Ident>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tendon_api::attributes::TypeMetadata;
+    use tendon_api::identities::TEST_CRATE_A;
+    use tendon_api::items::{EnumItem, GenericParams, TypeItem};
+
+    #[test]
+    fn crate_building() {
+        let db = Db::fake_db();
+        let test_crate_a = (*TEST_CRATE_A).clone();
+
+        let mut walker = Walker::new(&db, &test_crate_a);
+
+        let root = walker.add_root_scope(Metadata::fake("{root}")).unwrap();
+
+        assert!(walker.crate_.get::<Scope>(&root).is_some());
+
+        let mod_a = walker
+            .add(&root, Scope::new(Metadata::fake("a"), true))
+            .unwrap();
+
+        assert!(walker.crate_.get::<Scope>(&mod_a).is_some());
+        assert!(
+            &walker
+                .crate_
+                .get_binding::<Scope>(&root, &"a".into())
+                .unwrap()
+                .identity
+                == &mod_a
+        );
+
+        let mod_a_b = walker
+            .add(&mod_a, Scope::new(Metadata::fake("a"), true))
+            .unwrap();
+
+        let type_a_b_c = walker
+            .add(
+                &mod_a_b,
+                TypeItem::Enum(EnumItem {
+                    metadata: Metadata::fake("C"),
+                    type_metadata: TypeMetadata::default(),
+                    generic_params: GenericParams::default(),
+                    variants: vec![],
+                }),
+            )
+            .unwrap();
+
+        walker
+            .add_binding::<TypeItem>(
+                &root,
+                "CRenamed".into(),
+                type_a_b_c.clone(),
+                Visibility::InScope(root.clone()),
+                Priority::Explicit,
+            )
+            .unwrap();
+
+        let in_root = walker
+            .crate_
+            .get_binding::<TypeItem>(&root, &"CRenamed".into())
+            .unwrap();
+        let in_a_b = walker
+            .crate_
+            .get_binding::<TypeItem>(&mod_a_b, &"C".into())
+            .unwrap();
+
+        assert_eq!(in_root.identity, in_a_b.identity);
+        assert_eq!(in_root.visibility, Visibility::InScope(root.clone()));
+        assert_eq!(in_a_b.visibility, Visibility::Pub);
+    }
 }
 
 /*

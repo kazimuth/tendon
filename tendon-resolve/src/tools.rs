@@ -98,7 +98,7 @@ pub fn add_rust_sources(
     crates.insert(
         libcore.clone(),
         CrateData {
-            id: libcore.clone(),
+            crate_id: libcore.clone(),
             deps: Map::default(),
             is_proc_macro: false,
             entry: sources.join("libcore").join("lib.rs"),
@@ -114,7 +114,7 @@ pub fn add_rust_sources(
     crates.insert(
         liballoc.clone(),
         CrateData {
-            id: liballoc.clone(),
+            crate_id: liballoc.clone(),
             deps: deps.clone(),
             is_proc_macro: false,
             entry: sources.join("liballoc").join("lib.rs"),
@@ -129,7 +129,7 @@ pub fn add_rust_sources(
     crates.insert(
         libstd.clone(),
         CrateData {
-            id: libstd.clone(),
+            crate_id: libstd.clone(),
             deps,
             is_proc_macro: false,
             entry: sources.join("libstd").join("lib.rs"),
@@ -240,7 +240,7 @@ pub fn lower_crates(metadata: &Metadata) -> Map<CrateId, CrateData> {
         result.insert(
             abs_crate.clone(),
             CrateData {
-                id: abs_crate,
+                crate_id: abs_crate,
                 manifest_path,
                 entry,
                 features,

@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CrateData {
     /// Which crate this is.
-    pub id: CrateId,
+    pub crate_id: CrateId,
     /// The dependencies of this crate (note: renamed according to Cargo.toml, but NOT according to
     /// `extern crate ... as ...;` statements
     pub deps: Map<Ident, CrateId>,
@@ -32,7 +32,7 @@ pub struct CrateData {
 impl CrateData {
     pub fn fake(id: CrateId) -> Self {
         CrateData {
-            id,
+            crate_id: id,
             deps: Default::default(),
             features: Default::default(),
             manifest_path: Default::default(),
