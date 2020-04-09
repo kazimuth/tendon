@@ -179,7 +179,7 @@ impl Crate {
         I::get_namespace_mut(self).0.get_mut(&identity.path[..])
     }
 
-    /// Look up a binding in a scope. Checks prelude as well. Does not check visibilities.
+    /// Look up a binding in a scope. Does NOT check prelude or visibility!
     pub fn get_binding<I: NamespaceLookup>(
         &self,
         containing_scope: &Identity,
@@ -188,7 +188,7 @@ impl Crate {
         self.get_binding_by(containing_scope, I::namespace_id(), name)
     }
 
-    /// Look up a binding in a scope. Checks prelude as well. Does not check visibilities.
+    /// Look up a binding in a scope. Does NOT check prelude or visibility!
     #[inline(never)]
     pub fn get_binding_by(
         &self,
@@ -202,13 +202,7 @@ impl Crate {
             error!("no such scope: {:?}", containing_scope);
             return None;
         };
-        if let Some(name) = scope.get_by(namespace_id, name) {
-            return Some(name);
-        }
-        if let Some(prelude) = self.prelude.get_by(namespace_id, name) {
-            return Some(prelude);
-        }
-        None
+        scope.get_by(namespace_id, name)
     }
 
     /// Add an item to a crate. The item is added at `{containing_scope}::{item.metadata().name}`.

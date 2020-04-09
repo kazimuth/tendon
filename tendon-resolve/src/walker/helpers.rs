@@ -46,7 +46,15 @@ pub(crate) fn try_to_resolve(
         rooted: path.rooted,
     };
 
-    try_to_resolve_rec(db, crate_in_progress, in_module, in_module, namespace, path)
+    try_to_resolve_rec(
+        db,
+        crate_in_progress,
+        in_module,
+        in_module,
+        namespace,
+        true,
+        path,
+    )
 }
 
 fn try_to_resolve_rec(
@@ -55,6 +63,7 @@ fn try_to_resolve_rec(
     orig_module: &Identity,
     in_module: &Identity,
     namespace_id: NamespaceId,
+    check_prelude: bool,
     path: ResolvingPath,
 ) -> Result<Identity, ResolveError> {
     if path.path.len() == 0 {
@@ -98,6 +107,7 @@ fn try_to_resolve_rec(
             orig_module,
             &target_module,
             namespace_id,
+            false,
             new_path,
         );
     }
@@ -105,6 +115,13 @@ fn try_to_resolve_rec(
     let get_binding_by = |namespace_id, ident| -> Result<Identity, ResolveError> {
         let binding = in_crate
             .get_binding_by(in_module, namespace_id, ident)
+            .or_else(|| {
+                if check_prelude {
+                    in_crate.prelude.get_by(namespace_id, ident)
+                } else {
+                    None
+                }
+            })
             .ok_or(ResolveError::Pending)?;
 
         if binding.visibility.is_visible_in(orig_module) {
@@ -145,6 +162,7 @@ fn try_to_resolve_rec(
             orig_module,
             &target_module,
             namespace_id,
+            false,
             remaining,
         )
     }
@@ -185,16 +203,19 @@ quick_error! {
 
 /// Add a crate dep, not necessarily with an import statement.
 /// Adds only to prelude/extern_crate_bindings, doesn't add to root scope.
-pub fn add_crate_dep(crate_: &mut Crate, extern_crate_id: &CrateId, name: Ident) {
+pub fn add_crate_dep(
+    crate_: &mut Crate,
+    extern_crate_id: &CrateId,
+    name: Ident,
+) -> Result<(), WalkError> {
     if let Some(_) = crate_
         .extern_crate_bindings
         .insert(name.clone(), extern_crate_id.clone())
     {
         panic!("can't add crate dep twice!");
     }
-    crate_
-        .add_prelude_binding_by(NamespaceId::Scope, name, Identity::root(extern_crate_id))
-        .expect("prelude binding already present?");
+    crate_.add_prelude_binding_by(NamespaceId::Scope, name, Identity::root(extern_crate_id))?;
+    Ok(())
 }
 
 /// Add an `extern crate` statement. The extern crate should already be in the Db, and the current
@@ -226,7 +247,7 @@ pub fn add_root_extern_crate(
     let extern_crate_root_id = Identity::root(extern_crate_id);
 
     if !crate_.extern_crate_bindings.contains_key(name) {
-        add_crate_dep(crate_, extern_crate_id, name.clone());
+        add_crate_dep(crate_, extern_crate_id, name.clone())?;
     }
 
     // add dep as `crate::dep`
@@ -279,7 +300,7 @@ pub fn add_std_prelude(crate_: &mut Crate, no_std: bool) -> Result<(), WalkError
     ) -> Result<(), WalkError> {
         let path_ = path.split("::").collect::<Vec<_>>();
         let last: Ident = path_.iter().last().unwrap().into();
-        let identity = Identity::new(crate_id, &path_);
+        let identity = Identity::new(&crate_id, &path_);
 
         crate_.add_prelude_binding_by(I::namespace_id(), last, identity)?;
 
@@ -411,7 +432,7 @@ mod tests {
     use super::*;
     use tendon_api::attributes::{Metadata, TypeMetadata};
     use tendon_api::database::Db;
-    use tendon_api::identities::{TEST_CRATE_A, TEST_CRATE_B};
+    use tendon_api::identities::{TEST_CRATE_A, TEST_CRATE_B, TEST_CRATE_C};
     use tendon_api::items::{EnumItem, GenericParams};
 
     fn fake_type(name: &str) -> TypeItem {
@@ -486,18 +507,166 @@ mod tests {
             &UnresolvedPath::fake("a::CLimited"),
         );
         assert_eq!(invisible, Err::<Identity, _>(ResolveError::Pending));
-
-        /*
-        /// Add a scope for attached functions
-        let scope_a_b_c = crate.add(&mod_a_b, Scope::new(Metadata::fake("C"), false)).unwrap();
-        /// And the invisible {impl} scope; which inherits from the containing module.
-        ///
-        let scope_a_b_c_impl = crate_.add(&scope_a_b_c, Scope::new(Metadata::fake("{impl}"), false, Some(mod_a_b.clone()))).unwrap();
-        */
     }
 
     #[test]
-    fn extern_crate() {}
+    fn extern_crate() {
+        let test_crate_a = (*TEST_CRATE_A).clone();
+        let test_crate_b = (*TEST_CRATE_B).clone();
+        let test_crate_c = (*TEST_CRATE_C).clone();
+
+        let db = Db::fake_db();
+
+        let mut crate_a = Crate::new(test_crate_a.clone());
+        let a_root = crate_a.add_root_scope(Metadata::fake("{root}")).unwrap();
+        crate_a
+            .add_binding::<TypeItem>(
+                &a_root,
+                "A".into(),
+                Identity::new(&test_crate_a, &["A"]),
+                Visibility::Pub,
+                Priority::Explicit,
+            )
+            .unwrap();
+        db.insert_crate(crate_a);
+
+        let mut crate_b = Crate::new(test_crate_b.clone());
+        let b_root = crate_b.add_root_scope(Metadata::fake("{root}")).unwrap();
+        crate_b
+            .add_binding::<TypeItem>(
+                &b_root,
+                "B".into(),
+                Identity::new(&test_crate_a, &["B"]),
+                Visibility::Pub,
+                Priority::Explicit,
+            )
+            .unwrap();
+        db.insert_crate(crate_b);
+
+        let mut crate_c = Crate::new(test_crate_c.clone());
+        let c_root = crate_c.add_root_scope(Metadata::fake("{root}")).unwrap();
+        let c_other = crate_c
+            .add(&c_root, Scope::new(Metadata::fake("other"), true))
+            .unwrap();
+
+        let a_name: Ident = "a".into();
+        let b_name: Ident = "b".into();
+        let b_name_alt: Ident = "b_alt".into();
+
+        // in cargo.toml: test_crate_a renamed "a", test_crate_b renamed "b"
+        // in root: `extern crate b as b_alt`
+        add_crate_dep(&mut crate_c, &test_crate_a, a_name.clone()).unwrap();
+        add_crate_dep(&mut crate_c, &test_crate_b, b_name.clone()).unwrap();
+        add_root_extern_crate(
+            &db,
+            &mut crate_c,
+            &test_crate_b,
+            &b_name_alt.clone(),
+            Visibility::Pub,
+            false,
+        )
+        .unwrap();
+
+        // ::a, ::b, ::b_alt exist
+        assert!(crate_c.extern_crate_bindings.get(&a_name).is_some());
+        assert!(crate_c.extern_crate_bindings.get(&b_name).is_some());
+        assert!(crate_c.extern_crate_bindings.get(&b_name_alt).is_some());
+
+        // a, b, b_alt in prelude
+        assert!(crate_c.prelude.get::<Scope>(&a_name).is_some());
+        assert!(crate_c.prelude.get::<Scope>(&b_name).is_some());
+        assert!(crate_c.prelude.get::<Scope>(&b_name_alt).is_some());
+
+        // b_alt in crate root (only, others aren't brought in)
+        // don't use `crate_c.get_binding` 'cause it falls back to prelude :^)
+        let c_root_scope = crate_c.get::<Scope>(&c_root).unwrap();
+        assert!(c_root_scope.get::<Scope>(&a_name).is_none());
+        assert!(c_root_scope.get::<Scope>(&b_name).is_none());
+        assert!(c_root_scope.get::<Scope>(&b_name_alt).is_some());
+        assert!(
+            &crate_c
+                .get_binding::<Scope>(&c_root, &b_name_alt)
+                .unwrap()
+                .visibility
+                == &Visibility::Pub
+        );
+
+        // same checks w/ try_to_resolve
+        assert!(try_to_resolve(
+            &db,
+            &crate_c,
+            &c_other,
+            NamespaceId::Type,
+            &UnresolvedPath::fake("::a::A")
+        )
+        .is_ok());
+        assert!(try_to_resolve(
+            &db,
+            &crate_c,
+            &c_other,
+            NamespaceId::Type,
+            &UnresolvedPath::fake("::b::B")
+        )
+        .is_ok());
+        assert!(try_to_resolve(
+            &db,
+            &crate_c,
+            &c_other,
+            NamespaceId::Type,
+            &UnresolvedPath::fake("::b_alt::B")
+        )
+        .is_ok());
+
+        assert!(try_to_resolve(
+            &db,
+            &crate_c,
+            &c_other,
+            NamespaceId::Type,
+            &UnresolvedPath::fake("a::A")
+        )
+        .is_ok());
+        assert!(try_to_resolve(
+            &db,
+            &crate_c,
+            &c_other,
+            NamespaceId::Type,
+            &UnresolvedPath::fake("b::B")
+        )
+        .is_ok());
+        assert!(try_to_resolve(
+            &db,
+            &crate_c,
+            &c_other,
+            NamespaceId::Type,
+            &UnresolvedPath::fake("b_alt::B")
+        )
+        .is_ok());
+
+        assert!(try_to_resolve(
+            &db,
+            &crate_c,
+            &c_other,
+            NamespaceId::Type,
+            &UnresolvedPath::fake("crate::a::A")
+        )
+        .is_err());
+        assert!(try_to_resolve(
+            &db,
+            &crate_c,
+            &c_other,
+            NamespaceId::Type,
+            &UnresolvedPath::fake("crate::b::B")
+        )
+        .is_err());
+        assert!(try_to_resolve(
+            &db,
+            &crate_c,
+            &c_other,
+            NamespaceId::Type,
+            &UnresolvedPath::fake("crate::b_alt::B")
+        )
+        .is_ok());
+    }
 
     #[test]
     fn macro_use() {
@@ -521,7 +690,7 @@ mod tests {
 
         let mut crate_b = Crate::new(test_crate_b.clone());
         let b_root = crate_b.add_root_scope(Metadata::fake("{root}")).unwrap();
-        add_crate_dep(&mut crate_b, &test_crate_a, "crate_a".into());
+        add_crate_dep(&mut crate_b, &test_crate_a, "crate_a".into()).unwrap();
         add_root_extern_crate(
             &db,
             &mut crate_b,
@@ -537,7 +706,8 @@ mod tests {
         println!("{:?}", crate_b.prelude);
 
         assert!(crate_b
-            .get_binding::<MacroItem>(&b_root, &"test_macro".into())
+            .prelude
+            .get::<MacroItem>(&"test_macro".into())
             .is_some());
     }
 }

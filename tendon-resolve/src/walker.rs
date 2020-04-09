@@ -160,29 +160,29 @@ quick_error! {
         MalformedPathAttribute(tokens: String) {
             display("malformed `#[path]` attribute: {}", tokens)
         }
+        Database(err: tendon_api::database::DatabaseError) {
+            from()
+            cause(err)
+            display("database error during walking: {}", err)
+        }
         Root {
             display("files at fs root??")
         }
         ModuleNotFound {
             display("couldn't find source file")
         }
-        NonPub {
-            display("skipping non-pub item (will never be accessible)")
-        }
-        NotYetResolved {
-            display("item is not yet resolved")
-        }
-        CannotResolve {
-            display("item cannot resolve")
-        }
-        Impossible {
-            display("some invariant was violated (but we're still going, dammit...)")
-        }
-        Database(err: tendon_api::database::DatabaseError) {
-            from()
-            cause(err)
-            display("database error during walking: {}", err)
-        }
+        //NonPub {
+        //    display("skipping non-pub item (will never be accessible)")
+        //}
+        //NotYetResolved {
+        //    display("item is not yet resolved")
+        //}
+        //CannotResolve {
+        //    display("item cannot resolve")
+        //}
+        //Impossible {
+        //    display("some invariant was violated (but we're still going, dammit...)")
+        //}
     }
 }
 
